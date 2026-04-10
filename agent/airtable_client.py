@@ -1,0 +1,448 @@
+# agent/airtable_client.py — Integración con Airtable
+# FENIX KIDS ACADEMY — tablas: LEADS, FAMILIAS, NIÑOS, HORARIOS, RESERVAS
+
+"""
+Gestiona las tablas de Airtable para FENIX KIDS ACADEMY.
+
+Flujo LEAD_NUEVO:
+  1. Primer mensaje → crear registro en LEADS (TELEFONO + CONVERSION=CONSULTA + AGENT_ACTUAL=IVAN)
+  2. Ivan cierra → AGENT_ACTUAL=NIXIE, MODO_NIXIE=lead_nuevo
+  3. Nixie recolecta datos → crear FAMILIA + NIÑOS
+  4. Nixie confirma horario → CONVERSION=AGENDA + crear RESERVA
+  5. Crear evento Google Calendar
+
+Flujo CLIENTE_INSCRIPTO:
+  1. Padre escribe directo → NIXIE busca en FAMILIAS por nombre
+  2. Recupera NIÑOS vinculados
+  3. Padre elige horario → crear RESERVA
+  4. Crear evento Google Calendar
+
+Variables de entorno:
+  AIRTABLE_API_KEY   → Personal Access Token
+  AIRTABLE_BASE_ID   → apph96UwbdbHoEdYr
+"""
+
+import os
+import logging
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
+logger = logging.getLogger("agentkit")
+
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "apph96UwbdbHoEdYr")
+
+_BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}"
+
+# Nombres de tablas
+_LEADS     = "LEADS"
+_FAMILIAS  = "FAMILIAS"
+_NINOS     = "NIÑOS"
+_HORARIOS  = "HORARIOS"
+_RESERVAS  = "RESERVAS"
+
+
+# ── Helpers de bajo nivel ──────────────────────────────────────────────────────
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+async def _post(table: str, campos: dict) -> dict | None:
+    """Crea un registro nuevo. Retorna el registro creado o None."""
+    if not AIRTABLE_API_KEY:
+        logger.warning("AIRTABLE_API_KEY no configurado")
+        return None
+    url = f"{_BASE_URL}/{table}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(url, json={"fields": campos}, headers=_headers(), timeout=10)
+            if r.status_code in (200, 201):
+                return r.json()
+            logger.error(f"POST {table} → {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"POST {table} error: {e}")
+    return None
+
+
+async def _patch(table: str, record_id: str, campos: dict) -> bool:
+    """Actualiza campos de un registro existente. Retorna True si fue exitoso."""
+    if not AIRTABLE_API_KEY or not record_id:
+        return False
+    url = f"{_BASE_URL}/{table}/{record_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.patch(url, json={"fields": campos}, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                return True
+            logger.error(f"PATCH {table}/{record_id} → {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"PATCH {table}/{record_id} error: {e}")
+    return False
+
+
+async def _get_records(table: str, formula: str = "", max_records: int = 10) -> list[dict]:
+    """Busca registros con un filtro formula. Retorna lista de records."""
+    if not AIRTABLE_API_KEY:
+        return []
+    url = f"{_BASE_URL}/{table}"
+    params = {"maxRecords": max_records}
+    if formula:
+        params["filterByFormula"] = formula
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, params=params, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                return r.json().get("records", [])
+            logger.error(f"GET {table} → {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"GET {table} error: {e}")
+    return []
+
+
+async def _delete(table: str, record_id: str) -> bool:
+    """Elimina un registro. Retorna True si fue exitoso."""
+    if not AIRTABLE_API_KEY or not record_id:
+        return False
+    url = f"{_BASE_URL}/{table}/{record_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.delete(url, headers=_headers(), timeout=10)
+            return r.status_code == 200
+        except Exception as e:
+            logger.error(f"DELETE {table}/{record_id} error: {e}")
+    return False
+
+
+# ── LEADS ─────────────────────────────────────────────────────────────────────
+
+async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
+    """
+    Crea un registro nuevo en LEADS.
+    Retorna el record_id del registro creado, o None si falla.
+    """
+    # Verificar si ya existe
+    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    if records:
+        return records[0]["id"]
+
+    resultado = await _post(_LEADS, {
+        "TELEFONO": telefono,
+        "ROMPEHIELOS": rompehielos,
+        "CONVERSION": "CONSULTA",
+        "AGENT_ACTUAL": "IVAN",
+    })
+    if resultado:
+        record_id = resultado["id"]
+        logger.info(f"Lead creado en Airtable: {telefono} → {record_id}")
+        return record_id
+    return None
+
+
+async def obtener_lead_record_id(telefono: str) -> str | None:
+    """Retorna el record_id del LEAD para este teléfono, o None."""
+    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    return records[0]["id"] if records else None
+
+
+async def actualizar_conversion_lead(telefono: str, estado: str) -> bool:
+    """
+    Actualiza el campo CONVERSION del LEAD.
+    Estado puede ser: CONSULTA, AGENDA, INSCRIPTO
+    """
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return False
+    return await _patch(_LEADS, record_id, {"CONVERSION": estado})
+
+
+async def actualizar_agent_lead(telefono: str, agent: str, modo_nixie: str | None = None) -> bool:
+    """Actualiza AGENT_ACTUAL y opcionalmente MODO_NIXIE en LEADS."""
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return False
+    campos: dict = {"AGENT_ACTUAL": agent.upper()}
+    if modo_nixie:
+        campos["MODO_NIXIE"] = modo_nixie
+    return await _patch(_LEADS, record_id, campos)
+
+
+async def marcar_formulario_lead(telefono: str) -> bool:
+    """Marca FORMULARIO=True en LEADS."""
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return False
+    return await _patch(_LEADS, record_id, {"FORMULARIO": True})
+
+
+async def vincular_familia_a_lead(telefono: str, familia_record_id: str) -> bool:
+    """Vincula el LEAD con el registro de FAMILIA creado."""
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return False
+    return await _patch(_LEADS, record_id, {"FAMILIA": [familia_record_id]})
+
+
+async def eliminar_lead(telefono: str) -> bool:
+    """Elimina el registro de LEADS para este teléfono."""
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return True
+    return await _delete(_LEADS, record_id)
+
+
+# ── FAMILIAS ──────────────────────────────────────────────────────────────────
+
+async def buscar_familia_por_nombre(nombre: str, apellido: str) -> dict | None:
+    """
+    Busca una FAMILIA por nombre y apellido del padre o madre.
+    Retorna el record completo o None.
+    """
+    nombre = nombre.strip()
+    apellido = apellido.strip()
+    # Buscar por NOMBRE PADRE + APELLIDO PADRE
+    formula = (
+        f"OR("
+        f"AND(LOWER({{NOMBRE PADRE}})=LOWER('{nombre}'), LOWER({{APELLIDO PADRE}})=LOWER('{apellido}')),"
+        f"AND(LOWER({{NOMBRE MADRE}})=LOWER('{nombre}'), LOWER({{APELLIDO MADRE}})=LOWER('{apellido}'))"
+        f")"
+    )
+    records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
+    return records[0] if records else None
+
+
+async def buscar_familia_por_telefono(telefono: str) -> dict | None:
+    """Busca una FAMILIA por CELL PADRE o CELL MADRE."""
+    formula = f"OR({{CELL PADRE}}='{telefono}', {{CELL MADRE}}='{telefono}')"
+    records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
+    return records[0] if records else None
+
+
+async def crear_familia(datos: dict) -> str | None:
+    """
+    Crea un registro en FAMILIAS con los datos de padre y madre.
+
+    datos = {
+        "padre": {"nombre", "apellido", "ci", "telefono", "email", "fecha_nacimiento"},
+        "madre": {"nombre", "apellido", "ci", "telefono", "email", "fecha_nacimiento"},
+    }
+
+    Retorna el record_id de la FAMILIA creada.
+    """
+    campos: dict = {}
+
+    padre = datos.get("padre") or {}
+    if padre.get("nombre"):
+        campos["NOMBRE PADRE"] = padre["nombre"]
+    if padre.get("apellido"):
+        campos["APELLIDO PADRE"] = padre["apellido"]
+    if padre.get("ci"):
+        campos["CI PADRE"] = str(padre["ci"]).strip()
+    if padre.get("email"):
+        campos["EMAIL PADRE"] = padre["email"]
+    if padre.get("telefono"):
+        campos["CELL PADRE"] = str(padre["telefono"]).strip()
+    if padre.get("fecha_nacimiento"):
+        campos["FECHA NACIMIENTO PADRE"] = padre["fecha_nacimiento"]
+
+    madre = datos.get("madre") or {}
+    if madre.get("nombre"):
+        campos["NOMBRE MADRE"] = madre["nombre"]
+    if madre.get("apellido"):
+        campos["APELLIDO MADRE"] = madre["apellido"]
+    if madre.get("ci"):
+        campos["CI MADRE"] = str(madre["ci"]).strip()
+    if madre.get("email"):
+        campos["EMAIL MADRE"] = madre["email"]
+    if madre.get("telefono"):
+        campos["CELL MADRE"] = str(madre["telefono"]).strip()
+    if madre.get("fecha_nacimiento"):
+        campos["FECHA NACIMIENTO MADRE"] = madre["fecha_nacimiento"]
+
+    if not campos:
+        logger.warning("crear_familia: no hay datos suficientes")
+        return None
+
+    resultado = await _post(_FAMILIAS, campos)
+    if resultado:
+        logger.info(f"Familia creada: {resultado['id']}")
+        return resultado["id"]
+    return None
+
+
+# ── NIÑOS ─────────────────────────────────────────────────────────────────────
+
+async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
+    """
+    Crea un registro en NIÑOS vinculado a una FAMILIA.
+
+    datos_nino = {nombre, apellido, ci, fecha_nacimiento, sexo, talla_remera}
+    Retorna el record_id del NIÑO creado.
+    """
+    campos: dict = {}
+
+    if datos_nino.get("nombre"):
+        campos["NOMBRE"] = datos_nino["nombre"]
+    if datos_nino.get("apellido"):
+        campos["APELLIDO"] = datos_nino["apellido"]
+    if datos_nino.get("ci"):
+        campos["CI"] = str(datos_nino["ci"]).strip()
+    if datos_nino.get("fecha_nacimiento"):
+        campos["FECHA NACIMIENTO"] = datos_nino["fecha_nacimiento"]
+    if datos_nino.get("sexo"):
+        sexo = datos_nino["sexo"].upper()
+        if sexo in ("H", "HOMBRE", "MASCULINO", "M", "BOY"):
+            campos["SEXO"] = "HOMBRE"
+        elif sexo in ("F", "MUJER", "FEMENINO", "GIRL"):
+            campos["SEXO"] = "MUJER"
+    if datos_nino.get("talla_remera"):
+        campos["TALLA REMERA"] = str(datos_nino["talla_remera"]).strip()
+
+    campos["FAMILIA"] = [familia_id]
+
+    resultado = await _post(_NINOS, campos)
+    if resultado:
+        logger.info(f"Niño creado: {resultado['id']} en familia {familia_id}")
+        return resultado["id"]
+    return None
+
+
+async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
+    """
+    Retorna la lista de NIÑOS vinculados a una FAMILIA.
+    Cada item: {"id": record_id, "nombre_completo": "...", "nombre": "...", "apellido": "..."}
+    """
+    formula = f"{{FAMILIA}}='{familia_id}'"
+    records = await _get_records(_NINOS, formula=formula, max_records=20)
+    resultado = []
+    for r in records:
+        f = r.get("fields", {})
+        resultado.append({
+            "id": r["id"],
+            "nombre_completo": f.get("NOMBRE COMPLETO", ""),
+            "nombre": f.get("NOMBRE", ""),
+            "apellido": f.get("APELLIDO", ""),
+        })
+    return resultado
+
+
+# ── HORARIOS ──────────────────────────────────────────────────────────────────
+
+async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
+    """
+    Retorna los próximos HORARIOS disponibles.
+    Cada item: {"id", "horario", "fecha", "hora", "dia"}
+    """
+    from datetime import date
+    hoy = date.today().isoformat()
+    formula = f"IS_AFTER({{FECHA}}, '{hoy}')"
+    records = await _get_records(_HORARIOS, formula=formula, max_records=max_horarios)
+    resultado = []
+    for r in records:
+        f = r.get("fields", {})
+        resultado.append({
+            "id": r["id"],
+            "horario": f.get("HORARIO", ""),
+            "fecha": f.get("FECHA", ""),
+            "hora": f.get("HORA", ""),
+            "dia": f.get("DÍA", ""),
+        })
+    return resultado
+
+
+async def obtener_horario_por_id(horario_id: str) -> dict | None:
+    """Retorna los datos de un HORARIO por su record_id."""
+    url = f"{_BASE_URL}/{_HORARIOS}/{horario_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                f = data.get("fields", {})
+                return {
+                    "id": data["id"],
+                    "horario": f.get("HORARIO", ""),
+                    "fecha": f.get("FECHA", ""),
+                    "hora": f.get("HORA", ""),
+                    "dia": f.get("DÍA", ""),
+                }
+        except Exception as e:
+            logger.error(f"GET HORARIO {horario_id}: {e}")
+    return None
+
+
+# ── RESERVAS ──────────────────────────────────────────────────────────────────
+
+async def crear_reserva(nino_id: str, horario_id: str) -> str | None:
+    """
+    Crea una RESERVA vinculando NIÑO + HORARIO.
+    Retorna el record_id de la RESERVA creada.
+    """
+    # Verificar que no exista ya esa reserva
+    formula = f"AND({{NIÑO}}='{nino_id}', {{HORARIO}}='{horario_id}')"
+    existing = await _get_records(_RESERVAS, formula=formula, max_records=1)
+    if existing:
+        logger.info(f"Reserva ya existe: {nino_id} + {horario_id}")
+        return existing[0]["id"]
+
+    resultado = await _post(_RESERVAS, {
+        "NIÑO": [nino_id],
+        "HORARIO": [horario_id],
+    })
+    if resultado:
+        logger.info(f"Reserva creada: {resultado['id']}")
+        return resultado["id"]
+    return None
+
+
+async def eliminar_reserva(reserva_id: str) -> bool:
+    """Elimina una RESERVA."""
+    return await _delete(_RESERVAS, reserva_id)
+
+
+# ── Flujo completo: crear familia + niños desde datos del formulario ──────────
+
+async def crear_familia_completa(
+    telefono: str,
+    datos_formulario: dict,
+) -> tuple[str | None, list[str]]:
+    """
+    Crea FAMILIA + NIÑOS a partir de los datos extraídos por Haiku.
+    Vincula la FAMILIA al LEAD.
+
+    Retorna (familia_id, [nino_ids])
+    """
+    from agent.ab_test import guardar_familia_id
+
+    # Crear FAMILIA
+    familia_id = await crear_familia({
+        "padre": datos_formulario.get("padre"),
+        "madre": datos_formulario.get("madre"),
+    })
+
+    if not familia_id:
+        logger.error(f"No se pudo crear FAMILIA para {telefono}")
+        return None, []
+
+    # Guardar familia_id en estado local
+    await guardar_familia_id(telefono, familia_id)
+
+    # Vincular LEAD → FAMILIA
+    await vincular_familia_a_lead(telefono, familia_id)
+
+    # Crear NIÑOS
+    nino_ids = []
+    for nino_data in datos_formulario.get("ninos", []):
+        nino_id = await crear_nino(nino_data, familia_id)
+        if nino_id:
+            nino_ids.append(nino_id)
+
+    # Marcar formulario completo en LEADS
+    await marcar_formulario_lead(telefono)
+
+    logger.info(f"Familia completa creada para {telefono}: familia={familia_id}, niños={nino_ids}")
+    return familia_id, nino_ids

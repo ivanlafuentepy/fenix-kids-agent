@@ -1,0 +1,54 @@
+# Configuración del negocio — FENIX KIDS ACADEMY
+negocio:
+  nombre: "FENIX KIDS ACADEMY"
+  descripcion: >
+    Centro de entrenamiento funcional y emocional para niños de 3 a 12 años.
+    Entrenamiento al aire libre usando retos reales (trepar, correr, equilibrio)
+    para generar cambios internos: autoestima, carácter y seguridad.
+    Ubicado en el PARQUE FENIX dentro de LA CASONA LAFUENTE, Asunción, Paraguay.
+  direccion: "Maestras Paraguayas 2056, Asunción"
+  maps: "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
+  horario_clases: "Sábados: 9:30h | 11:00h | 16:00h | 17:30h"
+  duracion_clase: "80 minutos aproximadamente"
+  edad_minima: 3
+  edad_maxima: 12
+
+agentes:
+  ivan:
+    nombre: "Profe Ivan Lafuente"
+    rol: "Director, entrenador y agente de ventas"
+    tono: "empático, profesional, motivador, humano"
+  nixie:
+    nombre: "Nixie"
+    rol: "Asistente operativa de agenda y reservas"
+    tono: "amable, simple, eficiente, directa"
+
+precios:
+  clase_prueba: "90.000 Gs (descontable de la primera cuota si se inscriben)"
+  matricula_anual: "200.000 Gs (incluye camisilla Fenix Kids)"
+  plan_quincenal:
+    mensual: "250.000 Gs/mes"
+    promo_debito: "190.000 Gs/mes (débito automático Bancard)"
+    promo_trimestral: "540.000 Gs/trimestre"
+  plan_semanal:
+    mensual: "350.000 Gs/mes"
+    promo_debito: "290.000 Gs/mes (débito automático Bancard)"
+    promo_trimestral: "840.000 Gs/trimestre"
+
+politicas:
+  debito_automatico: "Se puede cancelar en cualquier momento sin multas ni preguntas."
+  faltas: "Si no asisten en el mes, no se recupera la clase ni el dinero."
+  hermanos: "Casos especiales para familias — consultar directamente."
+
+airtable:
+  base_id: "apph96UwbdbHoEdYr"
+  tablas:
+    leads: "LEADS"
+    familias: "FAMILIAS"
+    ninos: "NIÑOS"
+    horarios: "HORARIOS"
+    reservas: "RESERVAS"
+
+metadata:
+  creado: "2026-04-06"
+  version: "1.0"
