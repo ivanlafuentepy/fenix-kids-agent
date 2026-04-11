@@ -259,14 +259,14 @@ config/
 | `ANTHROPIC_API_KEY` | ✅ Configurada | API de Claude |
 | `AIRTABLE_API_KEY` | ✅ Configurada | Token de Airtable |
 | `AIRTABLE_BASE_ID` | ✅ Configurada | `apph96UwbdbHoEdYr` |
-| `META_ACCESS_TOKEN` | ⏳ Pendiente | Token de Meta WhatsApp para Fenix |
-| `META_PHONE_NUMBER_ID` | ⏳ Pendiente | ID del número de Fenix en Meta |
-| `META_VERIFY_TOKEN` | ✅ Listo | `fenix-kids-2026` |
-| `TELEGRAM_BOT_TOKEN` | ⏳ Pendiente | Token del bot de Telegram de Fenix |
-| `TELEGRAM_GROUP_ID` | ⏳ Pendiente | ID del grupo de Telegram de Fenix |
-| `GOOGLE_CALENDAR_ID` | ⏳ Pendiente | Email del calendario de Fenix |
-| `GOOGLE_CREDENTIALS_JSON` | ⏳ Pendiente | JSON de la Service Account de Fenix |
-| `GROQ_API_KEY` | ⏳ Pendiente | Para transcripción de audios |
+| `META_ACCESS_TOKEN` | ✅ Configurada | Token de Meta WhatsApp para Fenix |
+| `META_PHONE_NUMBER_ID` | ✅ Configurada | `1096172613571013` |
+| `META_VERIFY_TOKEN` | ✅ Configurada | `fenix-kids-2026` |
+| `TELEGRAM_BOT_TOKEN` | ✅ Configurada | Bot de Telegram de Fenix |
+| `TELEGRAM_GROUP_ID` | ✅ Configurada | `-1003965489354` |
+| `GOOGLE_CALENDAR_ID` | ✅ Configurada | Calendar de Fenix Kids |
+| `GOOGLE_CREDENTIALS_JSON` | ✅ Configurada | Service Account en `config/google_credentials_fenix.json` (local) — falta cargar JSON en Railway |
+| `GROQ_API_KEY` | ✅ Configurada | Para transcripción de audios |
 
 ---
 
@@ -274,15 +274,16 @@ config/
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | Crear app de Meta WhatsApp para Fenix Kids | ⏳ Pendiente |
-| 2 | Crear bot de Telegram + grupo para Fenix | ⏳ Pendiente |
-| 3 | Crear Service Account de Google Calendar | ⏳ Pendiente |
-| 4 | Crear repo en GitHub | ⏳ Pendiente |
-| 5 | Crear proyecto en Railway + conectar repo | ⏳ Pendiente |
-| 6 | Cargar todas las variables en Railway | ⏳ Pendiente |
-| 7 | Registrar webhook de WhatsApp | ⏳ Pendiente |
-| 8 | Registrar webhook de Telegram | ⏳ Pendiente |
-| 9 | Probar con test local (`python tests/test_local.py`) | ⏳ Pendiente |
+| 1 | Crear app de Meta WhatsApp para Fenix Kids | ✅ Hecho |
+| 2 | Crear bot de Telegram + grupo para Fenix | ✅ Hecho |
+| 3 | Crear Service Account de Google Calendar | ✅ Hecho |
+| 4 | Crear repo en GitHub (`ivanlafuentepy/fenix-kids-agent`) | ✅ Hecho |
+| 5 | Crear proyecto en Railway + conectar repo | ❓ Por confirmar con usuario |
+| 6 | Cargar todas las variables en Railway | ❓ Por confirmar con usuario |
+| 7 | Registrar webhook de WhatsApp en Meta apuntando a Railway | ❓ Por confirmar con usuario |
+| 8 | Registrar webhook de Telegram | ❓ Por confirmar con usuario |
+| 9 | Probar con test local (`python tests/test_local.py`) | ❓ Por confirmar con usuario |
+| 10 | Pegar `GOOGLE_CREDENTIALS_JSON` en Railway (versión one-line del archivo) | ⏳ Pendiente |
 
 ---
 
@@ -292,3 +293,4 @@ config/
 |---|---|
 | 2026-04-06 | Proyecto creado. Copiado desde Dorita y adaptado para FENIX KIDS ACADEMY. Dual agente: Profe Ivan + Nixie. Nueva estructura Airtable: LEADS, FAMILIAS, NIÑOS, HORARIOS, RESERVAS. Creados todos los archivos del agente. |
 | 2026-04-06 | Airtable: creada tabla LEADS, campo TALLA REMERA en NIÑOS, opciones 16:00 y 17:30 en HORARIOS. |
+| 2026-04-11 | Sistema de auto-organización: slash command `/cierre`, trigger `yosoyfenix` para briefing al inicio, memorias persistentes en `~/.claude/.../memory/` (project_state, feedback_session_close, feedback_yosoyfenix_trigger, reference_fenix_resumen, user_ivan). Verificación del `.env` real: META, TELEGRAM, GOOGLE_CALENDAR y GROQ ya estaban configuradas — el resumen estaba desactualizado desde el commit inicial. Sección 10 y 11 sincronizadas con la realidad. Pendiente confirmar con el usuario el estado del deploy en Railway. |
