@@ -234,8 +234,8 @@ async def webhook_handler(request: Request):
 
             # ── Comando reset ─────────────────────────────────────────────────
             if texto.lower() == "holayosoylasalsa":
-                await cancelar_seguimiento(telefono)
-                await cancelar_recordatorios(telefono)
+                cancelar_seguimiento(telefono)
+                cancelar_recordatorios(telefono)
                 await limpiar_estado_completo(telefono)
                 await eliminar_lead(telefono)
                 await proveedor.enviar_mensaje(telefono, "Reset completo ✅")
@@ -243,7 +243,7 @@ async def webhook_handler(request: Request):
                 continue
 
             # ── Cancelar timers pendientes ────────────────────────────────────
-            await cancelar_seguimiento(telefono)
+            cancelar_seguimiento(telefono)
 
             # ── Espejo en Telegram ────────────────────────────────────────────
             topic_id = await obtener_o_crear_topic(telefono, texto[:30])
@@ -343,7 +343,7 @@ async def webhook_handler(request: Request):
                         await actualizar_conversion_lead(telefono, "AGENDA")
                         logger.info(f"Formulario completo para {telefono}: familia={familia_id}")
                         # Cancelar recordatorios de formulario si los había
-                        await cancelar_recordatorios(telefono)
+                        cancelar_recordatorios(telefono)
                     if not await esta_convertido(telefono):
                         # Programar recordatorios de formulario si aún no completó
                         programar_recordatorios_formulario(
