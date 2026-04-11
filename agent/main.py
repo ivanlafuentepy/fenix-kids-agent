@@ -48,7 +48,7 @@ from agent.airtable_client import (
     marcar_formulario_lead, crear_familia_completa,
     obtener_ninos_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre,
-    eliminar_lead,
+    eliminar_lead, eliminar_todo_de_telefono,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -233,15 +233,28 @@ async def webhook_handler(request: Request):
             logger.info(f"[WA] {telefono}: {texto[:80]}")
 
             # ── Comando reset ─────────────────────────────────────────────────
-            if texto.lower() == "holayosoylasalsa":
+            if texto.lower() in ("holayosoyfenix", "holayosoylasalsa"):
                 cancelar_seguimiento(telefono)
                 cancelar_recordatorios(telefono)
+                # Borrar también el evento Calendar si existía
+                event_id_prev = await obtener_calendar_event_id(telefono)
+                if event_id_prev:
+                    try:
+                        await borrar_evento_google(event_id_prev)
+                    except Exception as e:
+                        logger.error(f"Error borrando evento Calendar en reset: {e}")
+                # Borrar todo de Airtable (LEAD + FAMILIA + NIÑOS + RESERVAS)
+                contador = await eliminar_todo_de_telefono(telefono)
                 await limpiar_estado_completo(telefono)
-                await eliminar_lead(telefono)
-                await proveedor.enviar_mensaje(telefono, "Reset completo ✅")
+                resumen = (
+                    f"Reset completo ✅\n"
+                    f"Borrados: lead={contador['lead']}, familia={contador['familia']}, "
+                    f"niños={contador['ninos']}, reservas={contador['reservas']}"
+                )
+                await proveedor.enviar_mensaje(telefono, resumen)
                 topic_reset = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
                 if topic_reset:
-                    await enviar_a_topic(topic_reset, "⚙️ RESET completo ejecutado", telefono=telefono)
+                    await enviar_a_topic(topic_reset, f"⚙️ RESET completo — {resumen}", telefono=telefono)
                 continue
 
             # ── Cancelar timers pendientes ────────────────────────────────────

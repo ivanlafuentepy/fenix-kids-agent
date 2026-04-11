@@ -195,6 +195,47 @@ async def eliminar_lead(telefono: str) -> bool:
     return await _delete(_LEADS, record_id)
 
 
+async def eliminar_todo_de_telefono(telefono: str) -> dict:
+    """
+    Reset completo en Airtable para un teléfono:
+      1. Busca FAMILIA por teléfono
+      2. Borra todas las RESERVAS de cada NIÑO de esa familia
+      3. Borra los NIÑOS
+      4. Borra la FAMILIA
+      5. Borra el LEAD
+
+    Retorna dict con contadores: {"familia", "ninos", "reservas", "lead"}.
+    """
+    contador = {"familia": 0, "ninos": 0, "reservas": 0, "lead": 0}
+
+    familia = await buscar_familia_por_telefono(telefono)
+    if familia:
+        familia_id = familia["id"]
+        # Borrar niños y sus reservas
+        ninos = await obtener_ninos_de_familia(familia_id)
+        for nino in ninos:
+            nino_id = nino["id"]
+            # Las reservas del niño
+            formula = f"FIND('{nino_id}', ARRAYJOIN({{NIÑO}}))"
+            reservas = await _get_records(_RESERVAS, formula=formula, max_records=20)
+            for r in reservas:
+                if await _delete(_RESERVAS, r["id"]):
+                    contador["reservas"] += 1
+            if await _delete(_NINOS, nino_id):
+                contador["ninos"] += 1
+        # Borrar familia
+        if await _delete(_FAMILIAS, familia_id):
+            contador["familia"] += 1
+
+    # Borrar lead
+    lead_id = await obtener_lead_record_id(telefono)
+    if lead_id and await _delete(_LEADS, lead_id):
+        contador["lead"] += 1
+
+    logger.info(f"[AIRTABLE] Reset total para {telefono}: {contador}")
+    return contador
+
+
 # ── FAMILIAS ──────────────────────────────────────────────────────────────────
 
 async def buscar_familia_por_nombre(nombre: str, apellido: str) -> dict | None:
