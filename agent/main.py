@@ -248,7 +248,7 @@ async def webhook_handler(request: Request):
             cancelar_seguimiento(telefono)
 
             # ── Espejo en Telegram ────────────────────────────────────────────
-            topic_id = await obtener_o_crear_topic(telefono, texto[:30])
+            topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
             if topic_id:
                 await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono)
 
