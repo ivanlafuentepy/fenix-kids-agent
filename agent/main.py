@@ -239,7 +239,9 @@ async def webhook_handler(request: Request):
                 await limpiar_estado_completo(telefono)
                 await eliminar_lead(telefono)
                 await proveedor.enviar_mensaje(telefono, "Reset completo ✅")
-                await enviar_a_topic(telefono, "⚙️ RESET completo ejecutado")
+                topic_reset = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
+                if topic_reset:
+                    await enviar_a_topic(topic_reset, "⚙️ RESET completo ejecutado", telefono=telefono)
                 continue
 
             # ── Cancelar timers pendientes ────────────────────────────────────
@@ -248,7 +250,7 @@ async def webhook_handler(request: Request):
             # ── Espejo en Telegram ────────────────────────────────────────────
             topic_id = await obtener_o_crear_topic(telefono, texto[:30])
             if topic_id:
-                await enviar_a_topic(telefono, f"👤 {texto}")
+                await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono)
 
             # ── Verificar si Ivan (admin) está respondiendo manualmente ───────
             if not await dorita_esta_activa(telefono):
@@ -370,7 +372,7 @@ async def webhook_handler(request: Request):
             # ── Espejo respuesta en Telegram ──────────────────────────────────
             agente_label = "🐼 NIXIE" if agent_actual == "nixie" else "👨‍🏫 IVAN"
             if topic_id:
-                await enviar_a_topic(telefono, f"{agente_label}: {respuesta}")
+                await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
             # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
             if es_nuevo:
@@ -482,12 +484,12 @@ async def telegram_webhook(request: Request):
         # Comandos de control
         if texto_tg.strip() == "/silenciar":
             await silenciar_dorita(telefono)
-            await enviar_a_topic(telefono, "🔇 Agente IA silenciado. Ivan activo.")
+            await enviar_a_topic(thread_id, "🔇 Agente IA silenciado. Ivan activo.", telefono=telefono)
             return {"status": "ok"}
 
         if texto_tg.strip() == "/reactivar":
             await reactivar_dorita(telefono)
-            await enviar_a_topic(telefono, "🔊 Agente IA reactivado.")
+            await enviar_a_topic(thread_id, "🔊 Agente IA reactivado.", telefono=telefono)
             return {"status": "ok"}
 
         # Reenviar mensaje de Ivan al WhatsApp del lead
