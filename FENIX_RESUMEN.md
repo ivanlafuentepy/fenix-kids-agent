@@ -265,7 +265,7 @@ config/
 | `TELEGRAM_BOT_TOKEN` | ✅ Configurada | Bot de Telegram de Fenix |
 | `TELEGRAM_GROUP_ID` | ✅ Configurada | `-1003965489354` |
 | `GOOGLE_CALENDAR_ID` | ✅ Configurada | Calendar de Fenix Kids |
-| `GOOGLE_CREDENTIALS_JSON` | ✅ Configurada | Service Account en `config/google_credentials_fenix.json` (local) — falta cargar JSON en Railway |
+| `GOOGLE_CREDENTIALS_JSON` | ✅ Configurada | Service Account en `config/google_credentials_fenix.json` (local) y cargada en Railway |
 | `GROQ_API_KEY` | ✅ Configurada | Para transcripción de audios |
 
 ---
@@ -278,12 +278,13 @@ config/
 | 2 | Crear bot de Telegram + grupo para Fenix | ✅ Hecho |
 | 3 | Crear Service Account de Google Calendar | ✅ Hecho |
 | 4 | Crear repo en GitHub (`ivanlafuentepy/fenix-kids-agent`) | ✅ Hecho |
-| 5 | Crear proyecto en Railway + conectar repo | ❓ Por confirmar con usuario |
-| 6 | Cargar todas las variables en Railway | ❓ Por confirmar con usuario |
-| 7 | Registrar webhook de WhatsApp en Meta apuntando a Railway | ❓ Por confirmar con usuario |
-| 8 | Registrar webhook de Telegram | ❓ Por confirmar con usuario |
-| 9 | Probar con test local (`python tests/test_local.py`) | ❓ Por confirmar con usuario |
-| 10 | Pegar `GOOGLE_CREDENTIALS_JSON` en Railway (versión one-line del archivo) | ⏳ Pendiente |
+| 5 | Crear proyecto en Railway + conectar repo | ✅ Hecho |
+| 6 | Cargar todas las variables en Railway | ✅ Hecho |
+| 7 | Registrar webhook de WhatsApp en Meta apuntando a Railway | ✅ Hecho |
+| 8 | Registrar webhook de Telegram | ✅ Hecho |
+| 9 | Probar con test local (`python tests/test_local.py`) | ✅ Hecho |
+| 10 | Pegar `GOOGLE_CREDENTIALS_JSON` en Railway (versión one-line del archivo) | ✅ Hecho |
+| 11 | Ajustar flujo conversacional de Fenix (Ivan/Nixie) | ⏳ Próxima sesión |
 
 ---
 
@@ -294,3 +295,4 @@ config/
 | 2026-04-06 | Proyecto creado. Copiado desde Dorita y adaptado para FENIX KIDS ACADEMY. Dual agente: Profe Ivan + Nixie. Nueva estructura Airtable: LEADS, FAMILIAS, NIÑOS, HORARIOS, RESERVAS. Creados todos los archivos del agente. |
 | 2026-04-06 | Airtable: creada tabla LEADS, campo TALLA REMERA en NIÑOS, opciones 16:00 y 17:30 en HORARIOS. |
 | 2026-04-11 | Sistema de auto-organización: slash command `/cierre`, trigger `yosoyfenix` para briefing al inicio, memorias persistentes en `~/.claude/.../memory/` (project_state, feedback_session_close, feedback_yosoyfenix_trigger, reference_fenix_resumen, user_ivan). Verificación del `.env` real: META, TELEGRAM, GOOGLE_CALENDAR y GROQ ya estaban configuradas — el resumen estaba desactualizado desde el commit inicial. Sección 10 y 11 sincronizadas con la realidad. Pendiente confirmar con el usuario el estado del deploy en Railway. |
+| 2026-04-11 (cierre 2) | Confirmado por el usuario: deploy en Railway funcionando, webhook de Meta apuntando a Railway, `GOOGLE_CREDENTIALS_JSON` cargado, leads/familias reales en Airtable. Sección 11: items 5–10 marcados ✅. Estado del proyecto = **en producción**. Único frente abierto: ajustar flujo conversacional de Ivan/Nixie en próxima sesión. |
