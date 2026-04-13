@@ -9,6 +9,7 @@ Lee los prompts desde config/prompts.yaml y los selecciona según el agente acti
 
 import os
 import yaml
+import asyncio
 import logging
 from datetime import datetime
 from anthropic import AsyncAnthropic
@@ -115,29 +116,38 @@ async def generar_respuesta(
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
     mensajes.append({"role": "user", "content": mensaje})
 
-    try:
-        response = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=mensajes,
-        )
-        respuesta = response.content[0].text
-        logger.info(
-            f"[{agent_actual.upper()}] Respuesta generada "
-            f"({response.usage.input_tokens} in / {response.usage.output_tokens} out)"
-        )
-        return respuesta
+    # Retry con backoff exponencial (3 intentos)
+    _MAX_REINTENTOS = 3
+    for _intento in range(_MAX_REINTENTOS):
+        try:
+            response = await client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=[
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=mensajes,
+            )
+            respuesta = response.content[0].text
+            logger.info(
+                f"[{agent_actual.upper()}] Respuesta generada "
+                f"({response.usage.input_tokens} in / {response.usage.output_tokens} out)"
+            )
+            return respuesta
 
-    except Exception as e:
-        logger.error(f"Error Claude API: {e}")
-        return obtener_mensaje_error()
+        except Exception as e:
+            _es_transitorio = any(k in str(e).lower() for k in ("timeout", "connect", "overloaded", "529", "rate"))
+            if _es_transitorio and _intento < _MAX_REINTENTOS - 1:
+                _espera = 2 ** _intento
+                logger.warning(f"[Claude API] Reintento {_intento + 1}/{_MAX_REINTENTOS} en {_espera}s — {e}")
+                await asyncio.sleep(_espera)
+            else:
+                logger.error(f"Error Claude API (intento {_intento + 1}): {e}")
+                return obtener_mensaje_error()
 
 
 async def extraer_datos_formulario(historial: list[dict]) -> dict:

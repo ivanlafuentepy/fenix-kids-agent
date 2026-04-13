@@ -228,3 +228,44 @@ async def obtener_estadisticas() -> dict:
             "total_conversiones": convertidos,
             "tasa_conversion": tasa,
         }
+
+
+# ── Modo nocturno ────────────────────────────────────────────────────────────
+
+async def marcar_noche_pendiente(telefono: str):
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            conv.noche_pendiente = True
+            await session.commit()
+
+
+async def tiene_noche_pendiente(telefono: str) -> bool:
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        return bool(conv and conv.noche_pendiente)
+
+
+async def limpiar_noche_pendiente(telefono: str):
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            conv.noche_pendiente = False
+            await session.commit()
+
+
+async def obtener_leads_noche_pendiente() -> list[str]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB.telefono).where(ConversacionAB.noche_pendiente == True)
+        )
+        return [r[0] for r in result.all()]

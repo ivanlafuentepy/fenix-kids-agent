@@ -78,6 +78,8 @@ class ConversacionAB(Base):
     ventana_2_mensajes: Mapped[int] = mapped_column(Integer, default=0)
     ventana_3_inicio: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ventana_3_mensajes: Mapped[int] = mapped_column(Integer, default=0)
+    # Modo nocturno
+    noche_pendiente: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class TopicTelegram(Base):
@@ -103,6 +105,71 @@ class Mensaje(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Recordatorio(Base):
+    """Recordatorio persistente — sobrevive reinicios de Railway."""
+    __tablename__ = "recordatorios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    tipo: Mapped[str] = mapped_column(String(50))  # "clase", etc.
+    programado_para: Mapped[datetime] = mapped_column(DateTime, index=True)  # UTC
+    enviado: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancelado: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+async def crear_recordatorio(telefono: str, tipo: str, programado_para: datetime, payload: str) -> int:
+    """Inserta un recordatorio y retorna su ID."""
+    async with async_session() as session:
+        rec = Recordatorio(telefono=telefono, tipo=tipo, programado_para=programado_para, payload=payload)
+        session.add(rec)
+        await session.commit()
+        await session.refresh(rec)
+        return rec.id
+
+
+async def obtener_recordatorios_pendientes(ahora_utc: datetime) -> list[Recordatorio]:
+    """Retorna recordatorios no enviados ni cancelados cuyo momento ya llegó."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Recordatorio).where(
+                Recordatorio.enviado == False,
+                Recordatorio.cancelado == False,
+                Recordatorio.programado_para <= ahora_utc,
+            )
+        )
+        return list(result.scalars().all())
+
+
+async def marcar_recordatorio_enviado(recordatorio_id: int):
+    """Marca un recordatorio como enviado."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Recordatorio).where(Recordatorio.id == recordatorio_id)
+        )
+        rec = result.scalar_one_or_none()
+        if rec:
+            rec.enviado = True
+            await session.commit()
+
+
+async def cancelar_recordatorios_por_telefono(telefono: str, tipo: str):
+    """Marca como cancelados todos los recordatorios pendientes de este tipo."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Recordatorio).where(
+                Recordatorio.telefono == telefono,
+                Recordatorio.tipo == tipo,
+                Recordatorio.enviado == False,
+                Recordatorio.cancelado == False,
+            )
+        )
+        for rec in result.scalars().all():
+            rec.cancelado = True
+        await session.commit()
+
+
 async def _migrar_columnas_nuevas():
     """
     Agrega columnas nuevas a tablas existentes (para bases de datos ya creadas).
@@ -122,6 +189,7 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "ventana_3_inicio",    "TIMESTAMP"),
         ("conversaciones_ab", "ventana_3_mensajes",  "INTEGER DEFAULT 0"),
         ("conversaciones_ab", "calendar_event_id",   "VARCHAR(200)"),
+        ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:

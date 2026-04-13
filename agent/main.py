@@ -13,14 +13,21 @@ Endpoints:
 
 import os
 import re
+import asyncio
+import random
 import logging
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
 from agent.brain import generar_respuesta, extraer_datos_formulario
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
+from agent.memory import (
+    inicializar_db, guardar_mensaje, obtener_historial,
+    crear_recordatorio, obtener_recordatorios_pendientes,
+    marcar_recordatorio_enviado, cancelar_recordatorios_por_telefono,
+)
 from agent.providers import obtener_proveedor
 from agent.ab_test import (
     asignar_variante, obtener_estadisticas,
@@ -30,6 +37,12 @@ from agent.ab_test import (
     marcar_evento_creado, ya_tiene_evento,
     obtener_agent_actual, actualizar_agent_actual,
     obtener_familia_id,
+    marcar_noche_pendiente, tiene_noche_pendiente,
+)
+from agent.night_mode import (
+    es_horario_nocturno, MENSAJE_NOCHE,
+    wakeup_loop as _noche_wakeup_loop,
+    procesar_leads_pendientes as _noche_procesar_pendientes,
 )
 from agent.calendar_google import (
     insertar_evento_desde_fecha_iso, borrar_evento_google,
@@ -84,9 +97,89 @@ def _es_mensaje_sospechoso(texto: str) -> bool:
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
-# Evita doble procesamiento por webhooks duplicados de Meta
-_mensajes_procesados: set[str] = set()
+# Evita doble procesamiento por webhooks duplicados de Meta (LRU)
+_mensajes_procesados: OrderedDict = OrderedDict()
 _MAX_MENSAJES_PROCESADOS = 500
+
+
+async def _delay_humano(texto: str):
+    """Simula tiempo de tipeo para que el agente no parezca un bot."""
+    base = 1.0 + random.uniform(-0.5, 0.5)
+    bonus = min(2.0, len(texto) / 150 * 0.5)
+    await asyncio.sleep(max(0.3, base + bonus))
+
+
+import json
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
+
+_TZ_PY = ZoneInfo("America/Asuncion")
+
+
+async def _programar_recordatorio_clase(telefono: str, fecha_iso: str):
+    """Programa recordatorio de clase para las 07:00 PY del día de la reserva."""
+    await cancelar_recordatorios_por_telefono(telefono, tipo="clase")
+    dt_clase = datetime.fromisoformat(fecha_iso)
+    dia_clase = dt_clase.astimezone(_TZ_PY).date()
+    envio_local = datetime.combine(dia_clase, time(7, 0), tzinfo=_TZ_PY)
+    envio_utc = envio_local.astimezone(timezone.utc).replace(tzinfo=None)
+    if envio_utc <= datetime.utcnow():
+        logger.info(f"[RECORDATORIO] 07:00 PY ya pasó para {telefono} — omitido")
+        return
+    hora_clase = dt_clase.strftime("%H:%M")
+    payload = json.dumps({"template": "recordatorio_clase", "hora": hora_clase})
+    rec_id = await crear_recordatorio(telefono, "clase", envio_utc, payload)
+    logger.info(f"[RECORDATORIO] Clase programado id={rec_id} para {telefono} — {dia_clase} 07:00 PY")
+
+
+async def _enviar_recordatorio(rec):
+    """Envía un recordatorio pendiente como mensaje de texto."""
+    data = json.loads(rec.payload)
+    hora = data.get("hora", "")
+    msg = f"Hola! Te recordamos que hoy tenés tu clase a las {hora} en Fenix Kids 🥋 Te esperamos!"
+    ok = await proveedor.enviar_mensaje(rec.telefono, msg)
+    if ok:
+        await guardar_mensaje(rec.telefono, "assistant", msg)
+    return ok
+
+
+async def _recordatorios_loop():
+    """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía."""
+    while True:
+        try:
+            pendientes = await obtener_recordatorios_pendientes(datetime.utcnow())
+            for rec in pendientes:
+                try:
+                    await _enviar_recordatorio(rec)
+                    await marcar_recordatorio_enviado(rec.id)
+                    logger.info(f"[RECORDATORIO] Enviado id={rec.id} a {rec.telefono}")
+                except Exception as e:
+                    logger.error(f"[RECORDATORIO] Error enviando id={rec.id}: {e}")
+        except Exception as e:
+            logger.error(f"[RECORDATORIO] Error en loop: {e}")
+        await asyncio.sleep(60)
+
+
+async def _procesar_pendientes_noche():
+    """Wrapper para procesar leads nocturnos con dependencias inyectadas."""
+    await _noche_procesar_pendientes(
+        proveedor=proveedor,
+        obtener_historial_fn=obtener_historial,
+        guardar_mensaje_fn=guardar_mensaje,
+        generar_respuesta_fn=generar_respuesta,
+        obtener_o_crear_topic_fn=obtener_o_crear_topic,
+        enviar_a_topic_fn=enviar_a_topic,
+    )
+
+
+def _fire_and_forget(coro):
+    """Lanza un task async con logging de errores."""
+    task = asyncio.create_task(coro)
+    task.add_done_callback(
+        lambda t: logger.error(f"[BACKGROUND] Task falló: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+    return task
 
 
 @asynccontextmanager
@@ -94,6 +187,17 @@ async def lifespan(app: FastAPI):
     await inicializar_db()
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     tg_group = os.getenv("TELEGRAM_GROUP_ID", "")
+    # Recordatorios persistentes: polling cada 60s sobre PostgreSQL
+    _recordatorios_task = _fire_and_forget(_recordatorios_loop())
+
+    # Modo noche: procesar pendientes si arranca en horario diurno, luego loop 07:00
+    if not es_horario_nocturno():
+        try:
+            await _procesar_pendientes_noche()
+        except Exception as e:
+            logger.error(f"[STARTUP] Error procesando pendientes nocturnos: {e}")
+    _noche_task = _fire_and_forget(_noche_wakeup_loop(_procesar_pendientes_noche))
+
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
     print(f"[STARTUP] Proveedor: {proveedor.__class__.__name__}", flush=True)
     print(
@@ -102,6 +206,8 @@ async def lifespan(app: FastAPI):
         flush=True,
     )
     yield
+    _recordatorios_task.cancel()
+    _noche_task.cancel()
 
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
@@ -219,13 +325,13 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación
+            # Deduplicación (LRU — evicta el más viejo, nunca borra todo)
             if msg.mensaje_id:
                 if msg.mensaje_id in _mensajes_procesados:
                     continue
-                _mensajes_procesados.add(msg.mensaje_id)
-                if len(_mensajes_procesados) > _MAX_MENSAJES_PROCESADOS:
-                    _mensajes_procesados.clear()
+                _mensajes_procesados[msg.mensaje_id] = True
+                while len(_mensajes_procesados) > _MAX_MENSAJES_PROCESADOS:
+                    _mensajes_procesados.popitem(last=False)
 
             telefono = msg.telefono
             texto = msg.texto.strip()
@@ -275,6 +381,20 @@ async def webhook_handler(request: Request):
                 respuesta = "Lo siento, no puedo procesar ese mensaje 🙏"
                 await proveedor.enviar_mensaje(telefono, respuesta)
                 continue
+
+            # ── Modo nocturno (23:00–07:00 PY) ─────────────────────────────
+            if es_horario_nocturno():
+                historial_noche = await obtener_historial(telefono, limite=5)
+                _tiene_actividad = len(historial_noche) > 0
+                if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
+                    # Guardar mensaje + enviar aviso fuera de servicio (1 sola vez)
+                    await guardar_mensaje(telefono, "user", texto)
+                    if not await tiene_noche_pendiente(telefono):
+                        await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
+                        await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
+                    await asignar_variante(telefono)  # crear fila si no existe
+                    await marcar_noche_pendiente(telefono)
+                    continue
 
             # ── Transcribir audio si es necesario ────────────────────────────
             if hasattr(msg, "media_id") and msg.media_id:
@@ -379,7 +499,8 @@ async def webhook_handler(request: Request):
             await guardar_mensaje(telefono, "user", texto)
             await guardar_mensaje(telefono, "assistant", respuesta)
 
-            # ── Enviar respuesta ──────────────────────────────────────────────
+            # ── Enviar respuesta (con delay humano) ────────────────────────────
+            await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
 
             # ── Espejo respuesta en Telegram ──────────────────────────────────
@@ -462,6 +583,13 @@ async def _procesar_confirmacion_reserva(
         hora=hora_str,
         nombre_lead=telefono,
     )
+
+    # Programar recordatorio persistente para el día de la clase (07:00 PY)
+    if fecha_iso:
+        try:
+            await _programar_recordatorio_clase(telefono, fecha_iso)
+        except Exception as _e_rec:
+            logger.error(f"[RECORDATORIO] Error programando para {telefono}: {_e_rec}")
 
 
 # ── Telegram webhook (admin → WhatsApp) ──────────────────────────────────────
