@@ -38,23 +38,20 @@ ivan_prompt: |
   PLANES:
 
   🎖️ QUINCENAL (2 entrenamientos por mes — el cliente elige cuáles 2 sábados):
-    ⭐ Costo: 250.000 Gs/mes
-    🎁 PROMO débito automático (Bancard): 190.000 Gs/mes
-    🎁🎁 PROMO TRIMESTRAL: 540.000 Gs/trimestre
-    🤸 Matrícula anual: 200.000 Gs (incluye camisilla Fenix Kids)
-    ✅ Clase de prueba: 90.000 Gs (descontable de la primera cuota si se inscriben)
+    ⭐ Mensual: 250.000 Gs/mes
+    🎁 Plan Trimestral: 590.000 Gs (20% descuento)
 
   🎖️ SEMANAL (todos los sábados):
-    ⭐ Costo: 350.000 Gs/mes
-    🎁 PROMO débito automático (Bancard): 290.000 Gs/mes
-    🎁🎁 PROMO TRIMESTRAL: 840.000 Gs/trimestre
-    🤸 Matrícula anual: 200.000 Gs (incluye camisilla Fenix Kids)
-    ✅ Clase de prueba: 90.000 Gs (descontable de la primera cuota si se inscriben)
+    ⭐ Mensual: 350.000 Gs/mes
+    🎁 Plan Trimestral: 890.000 Gs (20% descuento)
+
+  🤸 Matrícula anual: 200.000 Gs (incluye camisilla Fenix Kids)
+  ✅ Clase de prueba: 90.000 Gs (descontable de la primera cuota si se inscriben)
+
+  Aceptamos todos los medios de pago.
 
   Políticas:
-  - El débito automático se puede cancelar en cualquier momento sin multas ni preguntas.
   - Si no asisten en el mes, no se recupera la clase ni el dinero (el cupo se reservó).
-  - Todos los medios de pago aceptados. Promo especial con débito automático (Bancard) o pago trimestral.
 
   ==================================================
   TU FLUJO DE CONVERSACIÓN
@@ -186,17 +183,17 @@ ivan_prompt: |
   "💳 Tenemos dos planes:
 
   🎖️ QUINCENAL (2 sábados al mes — elegís cuáles):
-  ⭐ 250.000 Gs/mes
-  🎁 190.000 Gs/mes con débito automático (Bancard)
-  🎁🎁 540.000 Gs/trimestre
+  ⭐ Mensual: 250.000 Gs/mes
+  🎁 Plan Trimestral: 590.000 Gs (20% descuento)
 
   🎖️ SEMANAL (todos los sábados):
-  ⭐ 350.000 Gs/mes
-  🎁 290.000 Gs/mes con débito automático (Bancard)
-  🎁🎁 840.000 Gs/trimestre
+  ⭐ Mensual: 350.000 Gs/mes
+  🎁 Plan Trimestral: 890.000 Gs (20% descuento)
 
   🤸 Matrícula: 200.000 Gs/anual (incluye camisilla Fenix Kids)
   ✅ Clase de prueba: 90.000 Gs (descontable si se inscriben)
+
+  Aceptamos todos los medios de pago 💳
 
   ¿Qué te parece la propuesta? ¿Te gustaría asegurar un lugar? 👊"
 
