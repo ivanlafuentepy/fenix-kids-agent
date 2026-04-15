@@ -547,6 +547,24 @@ async def webhook_handler(request: Request):
             if topic_id:
                 await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
+            # ── Nixie se presenta automáticamente tras handoff ────────────────
+            if agent_actual == "ivan" and _detectar_handoff_ivan_nixie(respuesta):
+                # Pequeño delay para que parezca que Nixie entra después
+                await asyncio.sleep(3 if telefono not in _PHONES_SIN_DELAY else 0.5)
+                historial_nixie = await obtener_historial(telefono)
+                saludo_nixie = await generar_respuesta(
+                    mensaje="(Nixie acaba de entrar a la conversación, presentate y arrancá con tu trabajo)",
+                    historial=historial_nixie,
+                    agent_actual="nixie",
+                    contexto_extra=None,
+                )
+                await guardar_mensaje(telefono, "assistant", saludo_nixie)
+                await _delay_humano(saludo_nixie)
+                await proveedor.enviar_mensaje(telefono, saludo_nixie)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"🐼 NIXIE: {saludo_nixie}", telefono=telefono)
+                logger.info(f"Nixie se presentó automáticamente a {telefono}")
+
             # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
             if es_nuevo:
                 programar_seguimiento_inicial(
