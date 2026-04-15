@@ -71,7 +71,7 @@ config/
 ### Profe Ivan Lafuente
 - **Rol:** atención inicial, diagnóstico emocional, ventas
 - **Activación:** por defecto en todo mensaje nuevo
-- **Flujo:** rompehielos diagnóstico (15 opciones numeradas) → validación empática → propuesta (metodología + precios) → cierre
+- **Flujo:** rompehielos diagnóstico (15 opciones) → análisis conversacional (con delay según cantidad de números) → cierre emocional (por qué FENIX + edad) → pregunta si quiere probar → horarios/precios solo cuando corresponde
 - **Transferencia a Nixie:** cuando dice exactamente *"Perfecto 🙌 En breve te contacta NIXIE, ella se va a encargar de pedirte los datos y hacerte la reserva."*
 
 ### Nixie
@@ -83,7 +83,7 @@ config/
 
 | Modo | Cuándo | Qué hace |
 |---|---|---|
-| `lead_nuevo` | Viene derivada por Ivan (primer agendamiento) | Pide formulario hijo + padre + madre, coordina horario, confirma reserva |
+| `lead_nuevo` | Viene derivada por Ivan (primer agendamiento) | Muestra sábados del mes → padre elige día → pide nombre/apellido hijo, fecha nacimiento, nombre/apellido padre/madre → confirma reserva |
 | `cliente_inscripto` | Padre ya inscripto escribe directo | Pide solo nombre y apellido, busca en Airtable FAMILIAS, muestra hijos, agenda |
 
 ---
@@ -221,12 +221,14 @@ config/
 **Clase de prueba:** 90.000 Gs (descontable de la primera cuota si se inscriben)
 **Matrícula anual:** 200.000 Gs (incluye camisilla Fenix Kids)
 
-| Plan | Mensual | Promo débito auto (Bancard) | Trimestral |
-|---|---|---|---|
-| QUINCENAL (2 sábados/mes) | 250.000 Gs | 190.000 Gs | 540.000 Gs |
-| SEMANAL (todos los sábados) | 350.000 Gs | 290.000 Gs | 840.000 Gs |
+| Plan | Mensual | Trimestral (20% desc) |
+|---|---|---|
+| QUINCENAL (2 sábados/mes, el padre elige cuáles) | 250.000 Gs | 590.000 Gs |
+| SEMANAL (todos los sábados) | 350.000 Gs | 890.000 Gs |
 
-**Horarios:** Sábados 9:30h | 11:00h | 16:00h | 17:30h — 80 min aprox.
+Aceptamos todos los medios de pago. Sin débito automático.
+
+**Horarios:** Sábados 9:30h | 11:00h | 15:30h — 80 min aprox.
 
 ---
 
@@ -267,6 +269,7 @@ config/
 | `GOOGLE_CALENDAR_ID` | ✅ Configurada | Calendar de Fenix Kids |
 | `GOOGLE_CREDENTIALS_JSON` | ✅ Configurada | Service Account en `config/google_credentials_fenix.json` (local) y cargada en Railway |
 | `GROQ_API_KEY` | ✅ Configurada | Para transcripción de audios |
+| `TELEGRAM_IGNORE_PHONES` | ⏳ Agregar en Railway | Números que no se espejan a Telegram (ej: `595982790407`) |
 
 ---
 
@@ -284,7 +287,12 @@ config/
 | 8 | Registrar webhook de Telegram | ✅ Hecho |
 | 9 | Probar con test local (`python tests/test_local.py`) | ✅ Hecho |
 | 10 | Pegar `GOOGLE_CREDENTIALS_JSON` en Railway (versión one-line del archivo) | ✅ Hecho |
-| 11 | Ajustar flujo conversacional de Fenix (Ivan/Nixie) | ⏳ Próxima sesión |
+| 11 | Ajustar flujo conversacional de Ivan (FASE 2 conversacional, delay, cierre emocional) | ✅ Hecho |
+| 12 | Nuevo flujo Nixie clase de prueba (sábados → datos mínimos) | ✅ Hecho |
+| 13 | Fix transcripción de audios (tupla bytes/mime) | ✅ Hecho |
+| 14 | Nixie se presenta automáticamente tras handoff de Ivan | ✅ Hecho |
+| 15 | Agregar `TELEGRAM_IGNORE_PHONES` en Railway | ⏳ Pendiente |
+| 16 | Flujo Nixie para inscripción directa (no clase de prueba) | ⏳ Próxima sesión |
 
 ---
 
@@ -296,3 +304,4 @@ config/
 | 2026-04-06 | Airtable: creada tabla LEADS, campo TALLA REMERA en NIÑOS, opciones 16:00 y 17:30 en HORARIOS. |
 | 2026-04-11 | Sistema de auto-organización: slash command `/cierre`, trigger `yosoyfenix` para briefing al inicio, memorias persistentes en `~/.claude/.../memory/` (project_state, feedback_session_close, feedback_yosoyfenix_trigger, reference_fenix_resumen, user_ivan). Verificación del `.env` real: META, TELEGRAM, GOOGLE_CALENDAR y GROQ ya estaban configuradas — el resumen estaba desactualizado desde el commit inicial. Sección 10 y 11 sincronizadas con la realidad. Pendiente confirmar con el usuario el estado del deploy en Railway. |
 | 2026-04-11 (cierre 2) | Confirmado por el usuario: deploy en Railway funcionando, webhook de Meta apuntando a Railway, `GOOGLE_CREDENTIALS_JSON` cargado, leads/familias reales en Airtable. Sección 11: items 5–10 marcados ✅. Estado del proyecto = **en producción**. Único frente abierto: ajustar flujo conversacional de Ivan/Nixie en próxima sesión. |
+| 2026-04-15 | **Sesión de ajuste de flujo conversacional completa.** Fix transcripción audios (bug tupla bytes/mime). TELEGRAM_IGNORE_PHONES para no espejar número admin. Ivan FASE 2: respuesta conversacional (no bloques numerados), delay por cantidad de números (1→30s, 2→60s, 3→120s, 4→180s, 5+→240s, sin delay para admin), cierre emocional con esencia FENIX (naturaleza, sol, árboles, desafíos reales) + pregunta de edad contextualizada, flujo paso a paso (no tirar toda la info junta), padre que se salta diagnóstico respetado. Nixie: se presenta automáticamente tras handoff, nuevo flujo clase de prueba (muestra sábados del mes → padre elige → datos mínimos uno por uno: nombre/apellido hijo, fecha nacimiento, nombre/apellido padre/madre). Precios actualizados: sin débito auto, trimestral 20% desc (quincenal 590k, semanal 890k). Horarios: 9:30, 11:00, 15:30. Pendiente: flujo Nixie inscripción directa, agregar TELEGRAM_IGNORE_PHONES en Railway. |
