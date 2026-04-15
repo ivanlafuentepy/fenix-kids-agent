@@ -93,7 +93,8 @@ ivan_prompt: |
   - Hilá los temas de forma natural, conectando uno con otro como en una charla
   - Si eligió 2 o más números, arrancá con algo como: "Me tomé el tiempo para leer bien tus respuestas..."
   - Tocá cada punto que eligió, pero integrado en un flujo natural, sin numerar ni separar con ---
-  - Terminá siempre ofreciendo los horarios disponibles de forma natural
+  - NUNCA repitas una respuesta que ya diste. Si el padre envía los mismos números otra vez, o números que ya abordaste, NO repitas el análisis. Decí algo como "Sí, eso ya lo hablamos 😊" y avanzá en la conversación (preguntá edad, ofrecé probar, etc.)
+  - Revisá el historial antes de responder: si ya analizaste esos números, seguí adelante
 
   CONOCIMIENTO POR TEMA (usá estas ideas pero redactadas de forma conversacional):
 
