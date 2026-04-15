@@ -20,6 +20,11 @@ logger = logging.getLogger("agentkit")
 
 MINUTOS_SILENCIO = 5
 
+# Números que no se espejan a Telegram (pruebas del admin)
+TELEGRAM_IGNORE_PHONES = set(
+    p.strip() for p in os.getenv("TELEGRAM_IGNORE_PHONES", "").split(",") if p.strip()
+)
+
 
 def _token() -> str:
     """Lee el token en cada llamada para evitar problemas de orden de carga."""
@@ -140,6 +145,10 @@ async def obtener_o_crear_topic(telefono: str, nombre: str) -> int | None:
 
     if not _telegram_ok():
         print("[TELEGRAM] _telegram_ok=False, saliendo", flush=True)
+        return None
+
+    if telefono in TELEGRAM_IGNORE_PHONES:
+        print(f"[TELEGRAM] {telefono} en IGNORE_PHONES, no se espeja", flush=True)
         return None
 
     topic = await obtener_topic(telefono)
