@@ -109,6 +109,33 @@ async def _delay_humano(texto: str):
     await asyncio.sleep(max(0.3, base + bonus))
 
 
+# Números que no reciben delay de análisis (admin/pruebas)
+_PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "595982790407")}
+
+import re
+
+def _contar_numeros_rompehielos(texto: str) -> int:
+    """Cuenta cuántos números del 1 al 15 envió el lead (respuesta al rompehielos)."""
+    # Buscar números del 1 al 15 en el texto
+    numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto)
+    # Deduplicar
+    return len(set(numeros))
+
+
+def _delay_por_numeros(cantidad: int) -> int:
+    """Retorna el delay en segundos según cantidad de números elegidos."""
+    if cantidad <= 1:
+        return 30
+    elif cantidad == 2:
+        return 60
+    elif cantidad == 3:
+        return 120
+    elif cantidad == 4:
+        return 180
+    else:
+        return 240
+
+
 import json
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
@@ -453,6 +480,14 @@ async def webhook_handler(request: Request):
                     contexto_extra = None
             else:
                 contexto_extra = None
+
+            # ── Delay de análisis (respuesta a números del rompehielos) ────────
+            cant_numeros = _contar_numeros_rompehielos(texto)
+            if (agent_actual == "ivan" and not es_nuevo and cant_numeros > 0
+                    and telefono not in _PHONES_SIN_DELAY):
+                delay_s = _delay_por_numeros(cant_numeros)
+                logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
+                await asyncio.sleep(delay_s)
 
             # ── Generar respuesta ─────────────────────────────────────────────
             respuesta = await generar_respuesta(
