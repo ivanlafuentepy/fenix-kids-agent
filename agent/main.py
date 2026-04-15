@@ -399,10 +399,14 @@ async def webhook_handler(request: Request):
             # ── Transcribir audio si es necesario ────────────────────────────
             if hasattr(msg, "media_id") and msg.media_id:
                 try:
-                    audio_bytes = await descargar_audio_whatsapp(msg.media_id)
+                    audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
                     if audio_bytes:
-                        texto = await transcribir_audio(audio_bytes)
-                        logger.info(f"Audio transcripto: {texto[:80]}")
+                        transcripcion = await transcribir_audio(audio_bytes, mime_type)
+                        if transcripcion:
+                            texto = transcripcion
+                            logger.info(f"Audio transcripto: {texto[:80]}")
+                        else:
+                            logger.warning(f"Transcripción vacía para {msg.media_id}")
                 except Exception as e:
                     logger.error(f"Error transcribiendo audio: {e}")
 
