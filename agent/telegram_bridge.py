@@ -35,7 +35,9 @@ def _api_url(metodo: str) -> str:
 
 
 def _telegram_ok() -> bool:
-    """Verifica que las credenciales de Telegram están configuradas."""
+    """Verifica que las credenciales de Telegram están configuradas y habilitado."""
+    if os.getenv("TELEGRAM_ENABLED", "true").lower() == "false":
+        return False
     token = _token()
     group = _group_id()
     print(
