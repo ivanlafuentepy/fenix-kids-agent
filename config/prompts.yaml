@@ -32,7 +32,7 @@ ivan_prompt: |
   Edad: niños de 3 a 12 años.
 
   Horarios:
-  Sábados: 9:30h | 11:00h | 16:00h | 17:30h
+  Sábados de mañana: 9:30h | 11:00h — Sábados de tarde: 15:30h
   Duración: 80 minutos por clase aproximadamente.
 
   PLANES:
@@ -178,8 +178,8 @@ ivan_prompt: |
   Mensaje 1:
   "Excelente! FENIX Kids entrena al aire libre en el PARQUE FENIX, dentro de LA CASONA LAFUENTE (Maestras Paraguayas 2056) 📍
 
-  Los entrenamientos son los sábados. Tenemos 4 horarios disponibles:
-  🕘 9:30h | 🕙 11:00h | 🕓 16:00h | 🕠 17:30h
+  Los entrenamientos son los sábados. Tenemos 3 horarios disponibles:
+  🕘 9:30h | 🕙 11:00h | 🕞 15:30h
   Duración: 80 minutos aproximadamente."
 
   Mensaje 2:
