@@ -58,13 +58,13 @@ def _contexto_fechas() -> str:
         return f"sábado {d.day} de {meses_es[d.month - 1]}"
 
     hoy_str = f"{dias_es[hoy.weekday()]} {hoy.day} de {meses_es[hoy.month - 1]} de {hoy.year}"
-    sabados = proximos_sabados(4)
+    sabados = proximos_sabados(8)
     sabados_str = "\n".join(f"  - {fmt(s)}" for s in sabados)
 
     return (
         f"Hoy es {hoy_str} (hora Asunción, Paraguay).\n"
         f"Próximos sábados disponibles:\n{sabados_str}\n"
-        f"Horarios de cada sábado: 9:30h | 11:00h | 16:00h | 17:30h\n"
+        f"Horarios de cada sábado: 9:30h | 11:00h | 15:30h\n"
         f"IMPORTANTE: Usá EXACTAMENTE estas fechas al confirmar reservas."
     )
 
@@ -178,37 +178,29 @@ Devolvé ÚNICAMENTE un JSON con esta estructura exacta (sin texto adicional):
     {
       "nombre": "string o null",
       "apellido": "string o null",
-      "ci": "string o null",
+      "ci": null,
       "fecha_nacimiento": "YYYY-MM-DD o null",
-      "sexo": "HOMBRE o MUJER o null",
-      "talla_remera": "string o null"
+      "sexo": null,
+      "talla_remera": null
     }
   ],
   "padre": {
     "nombre": "string o null",
     "apellido": "string o null",
-    "ci": "string o null",
-    "telefono": "string o null",
-    "email": "string o null",
-    "fecha_nacimiento": "YYYY-MM-DD o null"
+    "ci": null,
+    "telefono": null,
+    "email": null,
+    "fecha_nacimiento": null
   },
-  "madre": {
-    "nombre": "string o null",
-    "apellido": "string o null",
-    "ci": "string o null",
-    "telefono": "string o null",
-    "email": "string o null",
-    "fecha_nacimiento": "YYYY-MM-DD o null"
-  }
+  "madre": null
 }
 
 Reglas:
-- Si el dato no aparece en el historial, poné null
-- Para sexo: M, masculino, varón, hombre → HOMBRE; F, femenino, mujer → MUJER
-- Para CI: solo los dígitos, sin puntos ni guiones
+- Solo extraé: nombre y apellido del niño, fecha de nacimiento del niño, nombre y apellido del padre/madre que escribió
+- Los demás campos dejálos en null (no se piden en clase de prueba)
 - Para fecha_nacimiento: convertí al formato YYYY-MM-DD
 - Si hay múltiples niños, incluí uno por cada uno en el array "ninos"
-- Si solo hay datos de uno de los padres, dejá el otro como null
+- El padre/madre es quien está escribiendo (poné sus datos en "padre", dejá "madre" como null)
 
 Historial:
 """ + historial_texto
@@ -232,9 +224,9 @@ Historial:
         padre = datos.get("padre") or {}
         madre = datos.get("madre") or {}
 
-        nino_completo = all(
+        nino_completo = bool(
             ninos and all(
-                n.get("nombre") and n.get("apellido") and n.get("ci") and n.get("fecha_nacimiento")
+                n.get("nombre") and n.get("apellido") and n.get("fecha_nacimiento")
                 for n in ninos
             )
         )
