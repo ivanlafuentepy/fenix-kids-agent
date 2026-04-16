@@ -1,5 +1,5 @@
 # agent/telegram_bridge.py — Integración con Telegram
-# Generado por AgentKit para Salsa Soul Studio
+# FENIX KIDS ACADEMY
 
 """
 Espejo bidireccional entre WhatsApp y Telegram.
@@ -413,8 +413,8 @@ async def notificar_agenda_telegram(
     primer_nombre = (nombre or "").split()[0] if nombre else "alumno"
 
     wa_text_preescrito = (
-        f"Hola {primer_nombre}! Te saluda el profe Iván de Salsa Soul 🕺 "
-        f"Recibí tu reserva, te esperamos el {fecha} a las {hora or ''} 🔥 "
+        f"Hola {primer_nombre}! Te saluda el Profe Iván de FENIX Kids 🌳 "
+        f"Recibí tu reserva, los esperamos el {fecha} a las {hora or ''} 🔥 "
         f"Nos vemos pronto!"
     )
 

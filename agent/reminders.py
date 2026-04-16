@@ -1,5 +1,5 @@
 # agent/reminders.py — Recordatorios automáticos de formulario pendiente
-# Salsa Soul Studio
+# FENIX KIDS ACADEMY
 
 """
 Cuando un lead agenda una clase pero no llena el formulario (FORMULARIO=False en LEADS),
@@ -35,7 +35,7 @@ _tareas_activas: dict[str, list[asyncio.Task]] = {}
 # Tareas de seguimiento inicial (rompehielos sin respuesta): {telefono: [Task, ...]}
 _tareas_seguimiento: dict[str, list[asyncio.Task]] = {}
 
-_HORARIOS_FENIX = "🕘 9:30h | 🕙 11:00h | 🕓 16:00h | 🕠 17:30h"
+_HORARIOS_FENIX = "🕘 9:30h | 🕙 11:00h | 🕞 15:30h"
 
 _MENSAJES_SEGUIMIENTO = {
     "A": [

@@ -395,6 +395,40 @@ async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
     return resultado
 
 
+async def obtener_o_crear_horario(fecha_iso: str, hora: str) -> str | None:
+    """
+    Busca un HORARIO por FECHA + HORA. Si no existe, lo crea.
+
+    Args:
+        fecha_iso: Fecha en formato YYYY-MM-DD (campo FECHA de Airtable)
+        hora: Hora como "9:30" | "11:00" | "15:30" (campo select HORA)
+
+    Retorna el record_id del HORARIO, o None si falla.
+    """
+    # Normalizar hora: el campo HORA en Airtable es select con valores "9:30", "11:00", "15:30"
+    hora_norm = hora.strip().lower().replace("hs", "").replace("h", ":").rstrip(":")
+    # Quitar ceros a la izquierda ("09:30" → "9:30") porque así está en Airtable
+    if hora_norm.startswith("0"):
+        hora_norm = hora_norm[1:]
+
+    # Buscar HORARIO existente — Airtable guarda FECHA en formato ISO (YYYY-MM-DD)
+    formula = f"AND({{FECHA}}='{fecha_iso}', {{HORA}}='{hora_norm}')"
+    records = await _get_records(_HORARIOS, formula=formula, max_records=1)
+    if records:
+        return records[0]["id"]
+
+    # No existe — crearlo
+    resultado = await _post(_HORARIOS, {
+        "FECHA": fecha_iso,
+        "HORA": hora_norm,
+    })
+    if resultado:
+        logger.info(f"Horario creado: {fecha_iso} {hora_norm} → {resultado['id']}")
+        return resultado["id"]
+    logger.error(f"No se pudo crear HORARIO {fecha_iso} {hora_norm}")
+    return None
+
+
 async def obtener_horario_por_id(horario_id: str) -> dict | None:
     """Retorna los datos de un HORARIO por su record_id."""
     url = f"{_BASE_URL}/{_HORARIOS}/{horario_id}"

@@ -1,9 +1,9 @@
-# agent/memory.py — Memoria de conversaciones con SQLite
-# Generado por AgentKit para Salsa Soul Studio
+# agent/memory.py — Memoria de conversaciones
+# FENIX KIDS ACADEMY
 
 """
-Sistema de memoria del agente Dorita. Guarda el historial de conversaciones
-por número de teléfono usando SQLite (local) o PostgreSQL (producción).
+Sistema de memoria del agente. Guarda el historial de conversaciones
+por número de teléfono usando PostgreSQL (producción) o SQLite (desarrollo).
 """
 
 import os

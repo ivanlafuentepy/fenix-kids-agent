@@ -1,21 +1,12 @@
 # agent/calendar_google.py — Integración con Google Calendar
-# Generado por AgentKit para Salsa Soul Studio
+# FENIX KIDS ACADEMY
 
 """
-Crea automáticamente un evento en Google Calendar cuando un alumno
-confirma su primera clase.
+Crea automáticamente un evento en Google Calendar cuando Nixie
+confirma una clase de prueba o una reserva.
 
-Requiere una Service Account de Google Cloud con acceso al calendario
-de ivanlafuente@gmail.com.
-
-Setup:
-    1. Ve a console.cloud.google.com → Nuevo proyecto
-    2. Habilitá la API: "Google Calendar API"
-    3. Credenciales → Crear → Cuenta de servicio
-    4. Descargá el JSON de la cuenta de servicio
-    5. Guardalo en config/google_credentials.json
-    6. Compartí tu Google Calendar con el email de la service account
-       (con permiso "Hacer cambios en eventos")
+Requiere una Service Account de Google Cloud con acceso al calendar
+de FENIX Kids (configurado en GOOGLE_CALENDAR_ID).
 """
 
 import json
@@ -25,8 +16,8 @@ from datetime import datetime, timedelta, date
 
 logger = logging.getLogger("agentkit")
 
-GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "salsasoulon2@gmail.com")
-GOOGLE_CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "config/google_credentials.json")
+GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "")
+GOOGLE_CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "config/google_credentials_fenix.json")
 
 # Días de la semana en español → número Python (0=lunes)
 _DIAS_SEMANA: dict[str, int] = {
@@ -36,13 +27,13 @@ _DIAS_SEMANA: dict[str, int] = {
 
 # Palabras clave que indican confirmación de horario + día concreto
 _KEYWORDS_DIA = list(_DIAS_SEMANA.keys())
-_HORARIOS_ACADEMIA = ["19:30", "17:15", "18:30", "20:30", "21:00", "15:45", "17:30"]
+_HORARIOS_ACADEMIA = ["9:30", "09:30", "11:00", "15:30"]
 _KEYWORDS_CONFIRMACION = [
     "anotad",           # "anotado/a"
     "confirmad",        # "confirmado/a"
     "reservad",         # "reservado/a"
     "te espero",        # "te espero el..."
-    "te esperamos",     # "te esperamos el..." ← forma más común que usa Dorita
+    "te esperamos",     # "te esperamos el..." ← forma común que usa Nixie
     "primera clase",
     "quedás para",
     "quedas para",
@@ -103,26 +94,26 @@ def _proxima_fecha(nombre_dia: str, hora_str: str) -> tuple[datetime, datetime]:
     if dia_num is None:
         raise ValueError(f"Día no reconocido: '{nombre_dia}'")
 
+    # Normalizar hora: aceptar "9:30h", "09:30hs", "9h30", "9:30" → "9:30"
+    hora_clean = hora_str.strip().lower().replace("hs", "").replace("h", ":").rstrip(":")
+
     tz_py    = ZoneInfo("America/Asuncion")
     ahora_py = datetime.now(tz_py)
     hoy      = ahora_py.date()
 
     dias_hasta = (dia_num - hoy.weekday()) % 7
 
+    partes = hora_clean.split(":")
+    hora_int = int(partes[0])
+    minuto_int = int(partes[1]) if len(partes) > 1 and partes[1] else 0
+
     if dias_hasta == 0:
         # Hoy es el día correcto — verificar si la clase ya empezó
-        partes    = hora_str.strip().split(":")
-        hora_int  = int(partes[0])
-        min_int   = int(partes[1]) if len(partes) > 1 else 0
-        hora_clase = ahora_py.replace(hour=hora_int, minute=min_int, second=0, microsecond=0)
+        hora_clase = ahora_py.replace(hour=hora_int, minute=minuto_int, second=0, microsecond=0)
         if ahora_py >= hora_clase:
             dias_hasta = 7  # clase ya empezó → próxima semana
 
     fecha_evento = hoy + timedelta(days=dias_hasta)
-
-    partes = hora_str.strip().split(":")
-    hora_int = int(partes[0])
-    minuto_int = int(partes[1]) if len(partes) > 1 else 0
 
     inicio = datetime(fecha_evento.year, fecha_evento.month, fecha_evento.day,
                       hora_int, minuto_int)
@@ -269,11 +260,11 @@ async def insertar_evento_google(dia: str, hora: str, telefono: str, nombre: str
         nombre_display = nombre or telefono
 
         evento = {
-            "summary": f"Primera clase — {nombre_display} ({telefono})",
+            "summary": f"FENIX Kids — {nombre_display} ({telefono})",
             "description": (
-                f"Alumno: {nombre_display}\n"
+                f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {telefono}\n"
-                f"Registrado via Dorita (WhatsApp)"
+                f"Registrado via Nixie (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}-04:00", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}-04:00",   "timeZone": "America/Asuncion"},
@@ -319,7 +310,7 @@ async def crear_evento_primera_clase(historial: list[dict], telefono: str) -> di
     Extrae los datos del alumno del historial y crea el evento en Google Calendar.
 
     El evento incluye:
-    - Título: "Primera clase — [Nombre] ([teléfono])"
+    - Título: "FENIX Kids — [Nombre] ([teléfono])"
     - Descripción: nombre completo y teléfono
     - Duración: 1 hora
     - Recordatorio: 2 horas antes (popup + email)
@@ -347,11 +338,11 @@ async def crear_evento_primera_clase(historial: list[dict], telefono: str) -> di
         nombre_display = datos.get("nombre_completo") or datos["telefono"]
 
         evento = {
-            "summary": f"Primera clase — {nombre_display} ({datos['telefono']})",
+            "summary": f"FENIX Kids — {nombre_display} ({datos['telefono']})",
             "description": (
-                f"Alumno: {nombre_display}\n"
+                f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {datos['telefono']}\n"
-                f"Registrado via Dorita (WhatsApp)"
+                f"Registrado via Nixie (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}-04:00", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}-04:00",   "timeZone": "America/Asuncion"},
@@ -515,11 +506,11 @@ async def insertar_evento_desde_fecha_iso(
         hora_str   = f"{inicio.hour:02d}:{inicio.minute:02d}"
 
         evento = {
-            "summary": f"Primera clase — {nombre_display} ({telefono})",
+            "summary": f"FENIX Kids — {nombre_display} ({telefono})",
             "description": (
-                f"Alumno: {nombre_display}\n"
+                f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {telefono}\n"
-                f"Registrado via Dorita (WhatsApp)"
+                f"Registrado via Nixie (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}{py_offset_fmt}", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}{py_offset_fmt}",   "timeZone": "America/Asuncion"},
@@ -578,7 +569,7 @@ def generar_link_add_to_calendar(fecha_iso: str, duracion_min: int = 60) -> str:
     fmt = "%Y%m%dT%H%M%SZ"
     params = {
         "action": "TEMPLATE",
-        "text":   "Salsa Soul Studio - Primera Clase",
+        "text":   "FENIX Kids Academy — Clase",
         "dates":  f"{dt_utc.strftime(fmt)}/{fin_utc.strftime(fmt)}",
     }
     return "https://calendar.google.com/calendar/render?" + urlencode(params)

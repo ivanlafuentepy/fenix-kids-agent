@@ -62,6 +62,7 @@ from agent.airtable_client import (
     obtener_ninos_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
+    obtener_o_crear_horario,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -589,8 +590,11 @@ async def _procesar_confirmacion_reserva(
     """
     Cuando Nixie confirma una reserva:
     1. Actualizar CONVERSION=AGENDA en LEADS
-    2. Crear evento en Google Calendar
-    3. Notificar en Telegram
+    2. Obtener/crear HORARIO en Airtable
+    3. Crear RESERVA(s) en Airtable — una por cada niño de la familia
+    4. Crear evento en Google Calendar con nombre real del/los niño/s
+    5. Notificar en Telegram
+    6. Programar recordatorio 07:00 PY del día de la clase
     """
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")
@@ -608,19 +612,49 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"Error calculando fecha ISO: {e}")
 
-    # Crear o actualizar evento en Google Calendar
+    # ── Obtener niños de la familia (para nombre real + RESERVAS) ──────────────
+    familia_id = await obtener_familia_id(telefono)
+    ninos = await obtener_ninos_de_familia(familia_id) if familia_id else []
+
+    # Nombre display para el evento: "Mateo González" | "Mateo y Sofía González" | fallback
+    if ninos:
+        nombres = [n.get("nombre_completo") or n.get("nombre") or "" for n in ninos]
+        nombres = [n for n in nombres if n]
+        if len(nombres) == 1:
+            nombre_display = nombres[0]
+        elif len(nombres) > 1:
+            nombre_display = " y ".join(nombres)
+        else:
+            nombre_display = telefono
+    else:
+        nombre_display = telefono
+
+    # ── Crear RESERVA en Airtable por cada niño ─────────────────────────────────
+    if fecha_iso and ninos:
+        # fecha_iso viene como "YYYY-MM-DDTHH:MM:SS-04:00" → extraer YYYY-MM-DD
+        fecha_airtable = fecha_iso.split("T")[0]
+        try:
+            horario_id = await obtener_o_crear_horario(fecha_airtable, hora_str)
+            if horario_id:
+                for nino in ninos:
+                    rid = await crear_reserva(nino["id"], horario_id)
+                    if rid:
+                        logger.info(f"Reserva creada: {nino.get('nombre_completo', nino['id'])} → {rid}")
+            else:
+                logger.warning(f"No se pudo obtener/crear HORARIO {fecha_airtable} {hora_str}")
+        except Exception as e:
+            logger.error(f"Error creando RESERVA para {telefono}: {e}")
+
+    # ── Crear o actualizar evento en Google Calendar ───────────────────────────
     if fecha_iso:
         event_id_anterior = await obtener_calendar_event_id(telefono)
         if event_id_anterior:
             await borrar_evento_google(event_id_anterior)
 
-        familia_id = await obtener_familia_id(telefono)
-        nombre_familia = telefono  # fallback
-
         evento = await insertar_evento_desde_fecha_iso(
             fecha_iso=fecha_iso,
             telefono=telefono,
-            nombre=nombre_familia,
+            nombre=nombre_display,
         )
         if evento:
             await guardar_calendar_event_id(telefono, evento["evento_id"])
@@ -638,7 +672,7 @@ async def _procesar_confirmacion_reserva(
         telefono=telefono,
         dia=fecha_str,
         hora=hora_str,
-        nombre_lead=telefono,
+        nombre=nombre_display if ninos else None,
     )
 
     # Programar recordatorio persistente para el día de la clase (07:00 PY)

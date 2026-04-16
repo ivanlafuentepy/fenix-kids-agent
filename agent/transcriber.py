@@ -1,5 +1,5 @@
 # agent/transcriber.py — Transcripción de audios de WhatsApp con Groq Whisper
-# Salsa Soul Studio
+# FENIX KIDS ACADEMY
 
 """
 Convierte mensajes de voz de WhatsApp en texto usando Groq Whisper.
