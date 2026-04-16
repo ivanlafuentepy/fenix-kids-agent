@@ -33,7 +33,10 @@ def cargar_config_prompts() -> dict:
 
 def _contexto_fechas() -> str:
     """
-    Inyecta la fecha actual y los próximos sábados disponibles.
+    Inyecta la fecha actual, los sábados restantes del MES CORRIENTE,
+    y los sábados del mes siguiente (como backup por si al padre no le queda
+    bien ninguno del mes actual).
+
     Se agrega al system prompt para que los agentes nunca tengan que calcular fechas.
     """
     from zoneinfo import ZoneInfo
@@ -47,25 +50,57 @@ def _contexto_fechas() -> str:
     meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
-    def proximos_sabados(n: int = 4) -> list[date]:
-        dias_hasta = (5 - hoy.weekday()) % 7  # 5 = sábado
-        if dias_hasta == 0:
-            dias_hasta = 7
-        primero = hoy + td(days=dias_hasta)
-        return [primero + td(weeks=i) for i in range(n)]
+    def sabados_de_mes(anio: int, mes: int, desde: date | None = None) -> list[date]:
+        """Retorna todos los sábados del (anio, mes). Si desde está dado, solo los >= desde."""
+        # Primer día del mes
+        d = date(anio, mes, 1)
+        # Avanzar hasta el primer sábado
+        dias_hasta_sabado = (5 - d.weekday()) % 7
+        primer_sabado = d + td(days=dias_hasta_sabado)
+        # Generar todos los sábados del mes
+        sabados = []
+        s = primer_sabado
+        while s.month == mes:
+            if desde is None or s > desde:  # estrictamente posterior a hoy (no incluir si ya es hoy)
+                sabados.append(s)
+            s += td(days=7)
+        return sabados
 
     def fmt(d: date) -> str:
         return f"sábado {d.day} de {meses_es[d.month - 1]}"
 
+    # Mes actual (solo sábados futuros, excluyendo hoy si es sábado)
+    sabados_actual = sabados_de_mes(hoy.year, hoy.month, desde=hoy)
+
+    # Mes siguiente (todos)
+    if hoy.month == 12:
+        mes_sig, anio_sig = 1, hoy.year + 1
+    else:
+        mes_sig, anio_sig = hoy.month + 1, hoy.year
+    sabados_siguiente = sabados_de_mes(anio_sig, mes_sig)
+
     hoy_str = f"{dias_es[hoy.weekday()]} {hoy.day} de {meses_es[hoy.month - 1]} de {hoy.year}"
-    sabados = proximos_sabados(8)
-    sabados_str = "\n".join(f"  - {fmt(s)}" for s in sabados)
+    nombre_mes_actual = meses_es[hoy.month - 1]
+    nombre_mes_sig = meses_es[mes_sig - 1]
+
+    if sabados_actual:
+        sabados_actual_str = "\n".join(f"  - {fmt(s)}" for s in sabados_actual)
+        bloque_actual = (
+            f"Sábados DISPONIBLES del MES CORRIENTE ({nombre_mes_actual}):\n{sabados_actual_str}"
+        )
+    else:
+        bloque_actual = f"No quedan sábados en {nombre_mes_actual}. Ofrecé directo los de {nombre_mes_sig}."
+
+    sabados_siguiente_str = "\n".join(f"  - {fmt(s)}" for s in sabados_siguiente)
 
     return (
         f"Hoy es {hoy_str} (hora Asunción, Paraguay).\n"
-        f"Próximos sábados disponibles:\n{sabados_str}\n"
+        f"{bloque_actual}\n"
+        f"Sábados del mes siguiente ({nombre_mes_sig}) — USAR SOLO SI el padre dice que no le queda bien ninguno del mes corriente:\n{sabados_siguiente_str}\n"
         f"Horarios de cada sábado: 9:30h | 11:00h | 15:30h\n"
-        f"IMPORTANTE: Usá EXACTAMENTE estas fechas al confirmar reservas."
+        f"REGLA CRÍTICA: Ofrecé PRIMERO solo los sábados del mes corriente. "
+        f"Recién si el padre dice que no le queda bien ninguno, ofrecé los del mes siguiente. "
+        f"NO tires todos los meses juntos."
     )
 
 

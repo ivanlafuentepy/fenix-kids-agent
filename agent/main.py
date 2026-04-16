@@ -470,31 +470,37 @@ async def _procesar_mensaje_webhook(msg):
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
 
-        # ── Detectar activación directa de Nixie ─────────────────────────
-        activacion_nixie = _detectar_activacion_nixie(texto)
-        if activacion_nixie and agent_actual == "ivan":
-            modo_nixie = "cliente_inscripto"
-            agent_actual = "nixie"
-            await actualizar_agent_actual(telefono, "nixie", modo_nixie)
-            await actualizar_agent_lead(telefono, "NIXIE", modo_nixie)
-
         # ── Obtener historial ─────────────────────────────────────────────
         historial = await obtener_historial(telefono)
 
-        # ── Lead nuevo: primer contacto ───────────────────────────────────
+        # ── Lead nuevo: primer contacto + router Ivan/Nixie por teléfono ──
         _, es_nuevo = await asignar_variante(telefono)
         if es_nuevo:
+            # Router: si el teléfono ya está en FAMILIAS (inscripto) → Nixie.
+            # Si no → Ivan (lead de anuncios / nuevo).
+            familia_inscripta = await buscar_familia_por_telefono(telefono)
+            if familia_inscripta:
+                agent_actual = "nixie"
+                modo_nixie = "cliente_inscripto"
+                await actualizar_agent_actual(telefono, "nixie", modo_nixie)
+                logger.info(f"[ROUTER] {telefono} es inscripto → Nixie")
+            else:
+                agent_actual = "ivan"
+                modo_nixie = None
+                logger.info(f"[ROUTER] {telefono} no inscripto → Ivan")
+            # Crear lead en Airtable con el agente correcto
             record_id = await crear_lead(telefono, rompehielos="A")
             if record_id:
                 await guardar_airtable_record_id(telefono, record_id)
+            await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
 
-        # ── Verificar si la familia ya existe por teléfono ────────────────
-        familia_existente = None
+        # ── Si es Nixie cliente_inscripto: inyectar contexto con sus hijos ──
+        contexto_extra = None
         if agent_actual == "nixie" and modo_nixie == "cliente_inscripto":
             familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
                 campos = familia_existente.get("fields", {})
-                nombre_padre = campos.get("NOMBRE PADRE", "")
+                nombre_padre = campos.get("NOMBRE PADRE", "") or campos.get("NOMBRE MADRE", "")
                 hijos_raw = await obtener_ninos_de_familia(familia_existente["id"])
                 nombres_hijos = [h["nombre_completo"] or h["nombre"] for h in hijos_raw]
                 contexto_extra = (
@@ -502,10 +508,6 @@ async def _procesar_mensaje_webhook(msg):
                     f"Su nombre es {nombre_padre}. "
                     f"Sus hijos registrados son: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno aún'}."
                 )
-            else:
-                contexto_extra = None
-        else:
-            contexto_extra = None
 
         # ── Delay de análisis (respuesta a números del rompehielos) ────────
         cant_numeros = _contar_numeros_rompehielos(texto)
@@ -523,39 +525,28 @@ async def _procesar_mensaje_webhook(msg):
             contexto_extra=contexto_extra,
         )
 
-        # ── Detectar handoff Ivan → Nixie ─────────────────────────────────
-        if agent_actual == "ivan" and _detectar_handoff_ivan_nixie(respuesta):
-            await actualizar_agent_actual(telefono, "nixie", "lead_nuevo")
-            await actualizar_agent_lead(telefono, "NIXIE", "lead_nuevo")
-            logger.info(f"Handoff Ivan → Nixie (lead_nuevo) para {telefono}")
-
-        # ── Si Nixie en modo lead_nuevo: intentar extraer formulario ──────
-        if agent_actual == "nixie" and (modo_nixie == "lead_nuevo" or not modo_nixie):
+        # ── Si Ivan está manejando un lead nuevo (no inscripto):
+        #    intentar extraer formulario para crear FAMILIA+NIÑOS ──────────
+        if agent_actual == "ivan":
             historial_completo = historial + [
                 {"role": "user", "content": texto},
                 {"role": "assistant", "content": respuesta},
             ]
-            datos = await extraer_datos_formulario(historial_completo)
-            if datos.get("completo"):
-                familia_id, nino_ids = await crear_familia_completa(telefono, datos)
-                if familia_id:
-                    await marcar_conversion(telefono)
-                    await actualizar_conversion_lead(telefono, "AGENDA")
-                    logger.info(f"Formulario completo para {telefono}: familia={familia_id}")
-                    cancelar_recordatorios(telefono)
-                if not await esta_convertido(telefono):
-                    programar_recordatorios_formulario(
-                        telefono=telefono,
-                        dia="sábado",
-                        hora=None,
-                        proveedor=proveedor,
-                        formulario_check_fn=esta_convertido,
-                        guardar_fn=_guardar_mensaje,
-                    )
+            try:
+                datos = await extraer_datos_formulario(historial_completo)
+                if datos.get("completo") and not await esta_convertido(telefono):
+                    familia_id, nino_ids = await crear_familia_completa(telefono, datos)
+                    if familia_id:
+                        await marcar_conversion(telefono)
+                        await actualizar_conversion_lead(telefono, "AGENDA")
+                        logger.info(f"Formulario completo para {telefono}: familia={familia_id}")
+                        cancelar_recordatorios(telefono)
+            except Exception as e:
+                logger.error(f"[FORMULARIO] Error extrayendo datos para {telefono}: {e}")
 
-        # ── Detectar confirmación de reserva por Nixie ────────────────────
+        # ── Detectar confirmación de reserva (Ivan o Nixie) ───────────────
         confirmacion = _detectar_confirmacion_nixie(respuesta)
-        if agent_actual == "nixie" and confirmacion:
+        if confirmacion:
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta)
 
         # ── Guardar mensajes ──────────────────────────────────────────────
@@ -570,23 +561,6 @@ async def _procesar_mensaje_webhook(msg):
         agente_label = "🐼 NIXIE" if agent_actual == "nixie" else "👨‍🏫 IVAN"
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
-
-        # ── Nixie se presenta automáticamente tras handoff ────────────────
-        if agent_actual == "ivan" and _detectar_handoff_ivan_nixie(respuesta):
-            await asyncio.sleep(3 if telefono not in _PHONES_SIN_DELAY else 0.5)
-            historial_nixie = await obtener_historial(telefono)
-            saludo_nixie = await generar_respuesta(
-                mensaje="(Nixie acaba de entrar a la conversación, presentate y arrancá con tu trabajo)",
-                historial=historial_nixie,
-                agent_actual="nixie",
-                contexto_extra=None,
-            )
-            await guardar_mensaje(telefono, "assistant", saludo_nixie)
-            await _delay_humano(saludo_nixie)
-            await proveedor.enviar_mensaje(telefono, saludo_nixie)
-            if topic_id:
-                await enviar_a_topic(topic_id, f"🐼 NIXIE: {saludo_nixie}", telefono=telefono)
-            logger.info(f"Nixie se presentó automáticamente a {telefono}")
 
         # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
         if es_nuevo:
