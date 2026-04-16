@@ -442,6 +442,40 @@ async def notificar_agenda_telegram(
         return False
 
 
+async def notificar_llamada_urgente(telefono: str, nombre: str, wa_link: str) -> bool:
+    """
+    Envía alerta al grupo de Telegram cuando un lead pide hablar por teléfono.
+    Usa TELEGRAM_AGENDA_GROUP_ID (mismo grupo que notificaciones de agenda).
+    """
+    agenda_group_id = int(os.getenv("TELEGRAM_AGENDA_GROUP_ID", "0"))
+    token = _token()
+    if not token or not agenda_group_id:
+        logger.warning("[Telegram] TELEGRAM_AGENDA_GROUP_ID no configurado — alerta llamada omitida")
+        return False
+
+    texto = (
+        f"🚨 URGENTE — UN PADRE FENIX QUIERE HABLAR CONTIGO\n\n"
+        f"👤 {nombre}\n"
+        f"📱 {telefono}\n\n"
+        f"📲 {wa_link}"
+    )
+
+    url = _api_url("sendMessage")
+    payload = {"chat_id": agenda_group_id, "text": texto}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+            data = r.json()
+            if data.get("ok"):
+                print(f"[TELEGRAM] notif_llamada_urgente OK → {telefono}", flush=True)
+                return True
+            print(f"[TELEGRAM] notif_llamada_urgente FALLÓ: {data}", flush=True)
+            return False
+    except Exception as e:
+        logger.error(f"[Telegram] Error notif llamada urgente: {e}")
+        return False
+
+
 async def configurar_webhook(url_base: str) -> dict:
     """Registra el webhook de Telegram."""
     webhook_url = f"{url_base.rstrip('/')}/telegram/webhook"

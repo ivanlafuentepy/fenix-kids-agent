@@ -53,7 +53,7 @@ from agent.telegram_bridge import (
     dorita_esta_activa, silenciar_dorita, reactivar_dorita,
     obtener_telefono_por_topic,
     configurar_webhook, obtener_info_webhook,
-    notificar_agenda_telegram,
+    notificar_agenda_telegram, notificar_llamada_urgente,
 )
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
@@ -311,6 +311,98 @@ def _detectar_handoff_ivan_nixie(respuesta: str) -> bool:
     return "en breve te contacta nixie" in t or "te contacta nixie" in t
 
 
+# ── Detección de pedido de llamada ───────────────────────────────────────────
+
+_PATRONES_LLAMADA = [
+    r"\bte\s+pued[oe]s?\s+llamar",
+    r"\bpued[oe]\s+llamart?e",
+    r"\bpodr[ií]a\s+llamart?e",
+    r"\bpodemos\s+(?:llamar|hablar|llamarnos)",
+    r"\bpod[eé]s\s+(?:llamar|hablar)",
+    r"\bllamart?e(?:\s|$|\?)",
+    r"\bllamarnos",
+    r"\bhablar\s+(?:con\s+)?(?:vos|usted|contigo|ud|ivan|iván|el profe)",
+    r"\buna\s+llamada",
+    r"\bpor\s+tel[eé]fono",
+    r"\btel[eé]fono\s+(?:tuyo|del profe|de iv[aá]n|personal)",
+    r"\btu\s+n[uú]mero",
+    r"\bme\s+llam[aá]s\??",
+    r"\bque\s+te\s+llame",
+    r"\bquiero\s+(?:hablar|llamar)",
+    r"\bhablar\s+personalmente",
+    r"\bllamada\s+telef[oó]nica",
+]
+
+_REGEX_NOMBRE_PRESENTACION = re.compile(
+    r"\b(?:soy|me llamo|mi nombre es)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)",
+    re.IGNORECASE,
+)
+_PALABRAS_NO_NOMBRE = {
+    "el", "la", "un", "una", "mi", "la mama", "la mamá", "el papa", "el papá",
+    "papa", "papá", "mama", "mamá", "mami", "papi", "de",
+}
+
+
+def _detectar_pedido_llamada(texto: str) -> bool:
+    """Detecta si el padre está pidiendo hablar por teléfono / llamada."""
+    t = texto.lower()
+    return any(re.search(p, t) for p in _PATRONES_LLAMADA)
+
+
+def _extraer_nombre_del_historial(historial: list[dict], texto_nuevo: str = "") -> str | None:
+    """Busca el nombre del padre en mensajes 'soy X', 'me llamo X', etc."""
+    # Empezar por el mensaje nuevo, después historial de más reciente a más viejo
+    textos = [texto_nuevo] if texto_nuevo else []
+    textos += [m.get("content", "") for m in reversed(historial) if m.get("role") == "user"]
+    for t in textos:
+        m = _REGEX_NOMBRE_PRESENTACION.search(t)
+        if not m:
+            continue
+        cand = m.group(1).strip()
+        if cand.lower() in _PALABRAS_NO_NOMBRE:
+            continue
+        # Evitar capturas tipo "la mamá de Juan"
+        primera = cand.split()[0].lower()
+        if primera in _PALABRAS_NO_NOMBRE:
+            continue
+        return cand.title()
+    return None
+
+
+async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nuevo: str):
+    """
+    Manda alerta al admin cuando un lead pide hablar por teléfono.
+    Doble canal: WhatsApp (ADMIN_PHONE) + Telegram (grupo agenda).
+    """
+    from urllib.parse import quote
+
+    nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "el padre"
+    primer_nombre = nombre_padre.split()[0]
+    mensaje_pre = f"Hola {primer_nombre}, soy el profe Ivan otra vez, te puedo llamar ahora?"
+    wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
+
+    alerta = (
+        f"🚨 URGENTE, UN PADRE FENIX QUIERE HABLAR CONTIGO\n\n"
+        f"👤 {nombre_padre}\n"
+        f"📱 {telefono}\n\n"
+        f"📲 {wa_link}"
+    )
+
+    # Canal 1: WhatsApp al admin
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    try:
+        ok = await proveedor.enviar_mensaje(admin_phone, alerta)
+        logger.info(f"[LLAMADA] Alerta WhatsApp al admin {admin_phone}: {'OK' if ok else 'FAIL'}")
+    except Exception as e:
+        logger.error(f"[LLAMADA] Error WhatsApp admin: {e}")
+
+    # Canal 2: Telegram grupo (respaldo)
+    try:
+        await notificar_llamada_urgente(telefono, nombre_padre, wa_link)
+    except Exception as e:
+        logger.error(f"[LLAMADA] Error Telegram: {e}")
+
+
 def _detectar_confirmacion_nixie(respuesta: str) -> dict | None:
     """
     Detecta si Nixie confirmó una reserva.
@@ -432,6 +524,26 @@ async def _procesar_mensaje_webhook(msg):
         # ── Verificar si Ivan (admin) está respondiendo manualmente ───────
         if not await dorita_esta_activa(telefono):
             logger.info(f"Agente silenciado para {telefono} — Ivan activo en Telegram")
+            return
+
+        # ── Pedido de llamada → respuesta fija + alerta urgente al admin ──
+        if _detectar_pedido_llamada(texto):
+            respuesta = (
+                "Ahora mismo no puedo atender llamadas, pero te llamo desde "
+                "mi línea personal en breve 📞"
+            )
+            historial_previo = await obtener_historial(telefono)
+            await guardar_mensaje(telefono, "user", texto)
+            await guardar_mensaje(telefono, "assistant", respuesta)
+            await _delay_humano(respuesta)
+            await proveedor.enviar_mensaje(telefono, respuesta)
+            # Alerta al admin (WhatsApp + Telegram)
+            await _alertar_pedido_llamada(telefono, historial_previo, texto)
+            # Espejar en Telegram del lead
+            if topic_id:
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono)
+                await enviar_a_topic(topic_id, f"🚨 Alerta de llamada enviada al admin", telefono=telefono)
+            logger.info(f"[LLAMADA] Pedido de llamada detectado de {telefono}")
             return
 
         # ── Protección prompt injection ───────────────────────────────────
