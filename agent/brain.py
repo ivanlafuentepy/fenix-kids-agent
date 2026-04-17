@@ -290,12 +290,13 @@ async def resumir_conversacion_para_alerta(historial: list[dict]) -> str:
     )
 
     prompt = """Resumí esta conversación de WhatsApp entre un padre y el agente de FENIX KIDS ACADEMY.
-Formato EXACTO (sin markdown, sin asteriscos):
+Formato EXACTO (sin markdown, sin asteriscos, sin comillas):
 
 Padre: [nombre si lo dijo, sino "no se presentó"]
 Hijo/a: [nombre y edad si los dijo, sino "no mencionó"]
-Números elegidos: [los números del diagnóstico que eligió, ej: "2, 6, 11", o "no eligió"]
-Estado: [en qué parte del flujo están: diagnóstico / validación / ofreciendo probar / pidiendo datos / etc.]
+
+Conversacion:
+[Copiá y pegá TEXTUAL la respuesta más larga que el agente le dio al padre sobre los números/temas que eligió. Si no hay respuesta de análisis, poné "todavía no se analizaron los temas".]
 
 Conversación:
 """ + historial_texto
@@ -303,7 +304,7 @@ Conversación:
     try:
         response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=300,
+            max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text.strip()
