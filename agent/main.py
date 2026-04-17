@@ -552,8 +552,8 @@ async def _procesar_mensaje_webhook(msg):
             await proveedor.enviar_mensaje(telefono, respuesta)
             return
 
-        # ── Modo nocturno (23:00–07:00 PY) ─────────────────────────────
-        if es_horario_nocturno():
+        # ── Modo nocturno (23:00–07:00 PY) — admin puede testear siempre
+        if es_horario_nocturno() and telefono not in _PHONES_SIN_DELAY:
             historial_noche = await obtener_historial(telefono, limite=5)
             _tiene_actividad = len(historial_noche) > 0
             if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
