@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
-from agent.brain import generar_respuesta, resumir_conversacion_para_alerta, extraer_datos_formulario
+from agent.brain import generar_respuesta, extraer_datos_formulario
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
@@ -369,6 +369,30 @@ def _extraer_nombre_del_historial(historial: list[dict], texto_nuevo: str = "") 
     return None
 
 
+_REGEX_NOMBRE_HIJO = re.compile(
+    r"(?:mi\s+hij[oa]\s+(?:se\s+llama\s+)?|se\s+llama\s+|(?:hijo|hija|nene|nena|niño|niña)\s+)([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)",
+    re.IGNORECASE,
+)
+
+
+def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
+    """Busca nombre del hijo en mensajes del padre y respuestas del agente."""
+    # Buscar en mensajes del padre primero
+    for m in reversed(historial):
+        if m.get("role") == "user":
+            match = _REGEX_NOMBRE_HIJO.search(m.get("content", ""))
+            if match:
+                return match.group(1).strip().title()
+    # Buscar en respuestas del agente (ej: "Reserva confirmada ✅ Mateo...")
+    for m in reversed(historial):
+        if m.get("role") == "assistant":
+            contenido = m.get("content", "")
+            match_conf = re.search(r"reserva confirmada[!✅\s]*\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", contenido, re.IGNORECASE)
+            if match_conf:
+                return match_conf.group(1).strip().title()
+    return "no mencionó"
+
+
 async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nuevo: str):
     """
     Manda alerta al admin cuando un lead pide hablar por teléfono.
@@ -376,17 +400,19 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
     """
     from urllib.parse import quote
 
-    nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "el padre"
-    primer_nombre = nombre_padre.split()[0]
-    mensaje_pre = f"Hola {primer_nombre}, soy el profe Ivan otra vez, te puedo llamar ahora?"
+    nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "no se presentó"
+    primer_nombre = nombre_padre.split()[0] if nombre_padre != "no se presentó" else ""
+    mensaje_pre = f"Hola {primer_nombre}, soy el profe Ivan otra vez, te puedo llamar ahora?" if primer_nombre else "Hola, soy el profe Ivan otra vez, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
-    # Resumen de la conversación con Haiku
-    resumen = await resumir_conversacion_para_alerta(historial)
+    # Extraer nombre del hijo del historial (busca "mi hijo X", "se llama X", etc.)
+    nombre_hijo = _extraer_nombre_hijo_historial(historial)
 
     alerta = (
         f"🚨 URGENTE, UN PADRE FENIX QUIERE HABLAR CONTIGO\n\n"
-        f"{resumen}\n\n"
+        f"👤 Padre: {nombre_padre}\n"
+        f"👦 Hijo/a: {nombre_hijo}\n"
+        f"📱 {telefono}\n\n"
         f"📲 {wa_link}"
     )
 
