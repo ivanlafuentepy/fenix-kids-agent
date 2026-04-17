@@ -491,7 +491,7 @@ async def _procesar_mensaje_webhook(msg):
 
     try:
         # ── Comando reset ─────────────────────────────────────────────────
-        if texto.lower() in ("holayosoyfenix", "holayosoylasalsa"):
+        if texto.lower() == "holayosoyfenix":
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             event_id_prev = await obtener_calendar_event_id(telefono)
@@ -515,6 +515,20 @@ async def _procesar_mensaje_webhook(msg):
 
         # ── Cancelar timers pendientes ────────────────────────────────────
         cancelar_seguimiento(telefono)
+
+        # ── Transcribir audio ANTES de todo (para que detectores usen texto real)
+        if hasattr(msg, "media_id") and msg.media_id:
+            try:
+                audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
+                if audio_bytes:
+                    transcripcion = await transcribir_audio(audio_bytes, mime_type)
+                    if transcripcion:
+                        texto = transcripcion
+                        logger.info(f"Audio transcripto: {texto[:80]}")
+                    else:
+                        logger.warning(f"Transcripción vacía para {msg.media_id}")
+            except Exception as e:
+                logger.error(f"Error transcribiendo audio: {e}")
 
         # ── Espejo en Telegram ────────────────────────────────────────────
         topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
@@ -564,20 +578,6 @@ async def _procesar_mensaje_webhook(msg):
                 await asignar_variante(telefono)
                 await marcar_noche_pendiente(telefono)
                 return
-
-        # ── Transcribir audio si es necesario ────────────────────────────
-        if hasattr(msg, "media_id") and msg.media_id:
-            try:
-                audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
-                if audio_bytes:
-                    transcripcion = await transcribir_audio(audio_bytes, mime_type)
-                    if transcripcion:
-                        texto = transcripcion
-                        logger.info(f"Audio transcripto: {texto[:80]}")
-                    else:
-                        logger.warning(f"Transcripción vacía para {msg.media_id}")
-            except Exception as e:
-                logger.error(f"Error transcribiendo audio: {e}")
 
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
@@ -824,9 +824,9 @@ async def telegram_webhook(request: Request):
             await enviar_a_topic(thread_id, "🔇 Agente IA silenciado. Ivan activo.", telefono=telefono)
             return {"status": "ok"}
 
-        if texto_tg.strip() == "/reactivar":
+        if texto_tg.strip() in ("/reactivar", "/fenix"):
             await reactivar_dorita(telefono)
-            await enviar_a_topic(thread_id, "🔊 Agente IA reactivado.", telefono=telefono)
+            await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono)
             return {"status": "ok"}
 
         # Reenviar mensaje de Ivan al WhatsApp del lead
