@@ -274,3 +274,39 @@ Historial:
     except Exception as e:
         logger.error(f"Error extrayendo datos formulario: {e}")
         return {"ninos": [], "padre": None, "madre": None, "completo": False}
+
+
+async def resumir_conversacion_para_alerta(historial: list[dict]) -> str:
+    """
+    Genera un resumen corto de la conversación para la alerta de llamada al admin.
+    Usa Haiku para extraer: nombre padre, nombre/edad hijo, números elegidos, estado.
+    """
+    if not historial:
+        return "Sin historial previo."
+
+    historial_texto = "\n".join(
+        f"{'PADRE' if m['role'] == 'user' else 'AGENTE'}: {m['content']}"
+        for m in historial[-20:]
+    )
+
+    prompt = """Resumí esta conversación de WhatsApp entre un padre y el agente de FENIX KIDS ACADEMY.
+Formato EXACTO (sin markdown, sin asteriscos):
+
+Padre: [nombre si lo dijo, sino "no se presentó"]
+Hijo/a: [nombre y edad si los dijo, sino "no mencionó"]
+Números elegidos: [los números del diagnóstico que eligió, ej: "2, 6, 11", o "no eligió"]
+Estado: [en qué parte del flujo están: diagnóstico / validación / ofreciendo probar / pidiendo datos / etc.]
+
+Conversación:
+""" + historial_texto
+
+    try:
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        logger.error(f"Error resumiendo conversación: {e}")
+        return "No se pudo generar resumen."

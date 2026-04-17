@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
-from agent.brain import generar_respuesta, extraer_datos_formulario
+from agent.brain import generar_respuesta, resumir_conversacion_para_alerta, extraer_datos_formulario
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
@@ -381,10 +381,12 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
     mensaje_pre = f"Hola {primer_nombre}, soy el profe Ivan otra vez, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
+    # Resumen de la conversación con Haiku
+    resumen = await resumir_conversacion_para_alerta(historial)
+
     alerta = (
         f"🚨 URGENTE, UN PADRE FENIX QUIERE HABLAR CONTIGO\n\n"
-        f"👤 {nombre_padre}\n"
-        f"📱 {telefono}\n\n"
+        f"{resumen}\n\n"
         f"📲 {wa_link}"
     )
 
@@ -542,11 +544,19 @@ async def _procesar_mensaje_webhook(msg):
 
         # ── Pedido de llamada → respuesta fija + alerta urgente al admin ──
         if _detectar_pedido_llamada(texto):
-            respuesta = (
-                "Ahora mismo no puedo atender llamadas, pero te llamo desde "
-                "mi línea personal en breve 📞"
-            )
             historial_previo = await obtener_historial(telefono)
+            nombre_padre = _extraer_nombre_del_historial(historial_previo, texto)
+            primer_nombre = nombre_padre.split()[0] if nombre_padre else ""
+            if primer_nombre:
+                respuesta = (
+                    f"Ahora mismo no puedo atender llamadas, aguantame un ratito "
+                    f"{primer_nombre} y te llamo desde mi línea personal 🤝"
+                )
+            else:
+                respuesta = (
+                    "Ahora mismo no puedo atender llamadas, aguantame un ratito "
+                    "y te llamo desde mi línea personal 🤝"
+                )
             await guardar_mensaje(telefono, "user", texto)
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
