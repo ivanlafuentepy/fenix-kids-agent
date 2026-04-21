@@ -53,6 +53,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                     mensaje_id = msg.get("id", "")
 
                     media_id = None
+                    es_boton = False
                     if tipo == "text":
                         texto = msg.get("text", {}).get("body", "")
                     elif tipo == "image":
@@ -64,6 +65,16 @@ class ProveedorMeta(ProveedorWhatsApp):
                     elif tipo == "audio":
                         media_id = msg.get("audio", {}).get("id")
                         texto = "[audio]"
+                    elif tipo == "interactive":
+                        # Respuesta a botón interactivo
+                        _interactive = msg.get("interactive", {})
+                        _btn_reply = _interactive.get("button_reply", {})
+                        texto = _btn_reply.get("title", "") or _btn_reply.get("id", "")
+                        es_boton = True
+                    elif tipo == "button":
+                        # Quick reply de template
+                        texto = msg.get("button", {}).get("text", "")
+                        es_boton = True
                     else:
                         continue  # sticker, etc. — ignorar
 
@@ -74,8 +85,71 @@ class ProveedorMeta(ProveedorWhatsApp):
                             mensaje_id=mensaje_id,
                             es_propio=False,
                             media_id=media_id,
+                            es_boton=es_boton,
                         ))
         return mensajes
+
+    async def enviar_botones(
+        self,
+        telefono: str,
+        texto: str,
+        botones: list[dict],
+    ) -> bool:
+        """Envía mensaje interactivo con botones via Meta WhatsApp Cloud API.
+        botones: [{"id": "si", "title": "✅ Confirmar"}, {"id": "no", "title": "❌ Rechazar"}]
+        """
+        if not self.access_token or not self.phone_number_id:
+            logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": texto},
+                "action": {
+                    "buttons": [
+                        {"type": "reply", "reply": b}
+                        for b in botones
+                    ],
+                },
+            },
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.error(f"Error Meta botones: {r.status_code} — {r.text}")
+            return r.status_code == 200
+
+    async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:
+        """Reenvía una imagen por media_id ya subido a Meta."""
+        if not self.access_token or not self.phone_number_id:
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        image_obj = {"id": media_id}
+        if caption:
+            image_obj["caption"] = caption
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "image",
+            "image": image_obj,
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.error(f"Error Meta imagen: {r.status_code} — {r.text}")
+            return r.status_code == 200
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía mensaje via Meta WhatsApp Cloud API."""

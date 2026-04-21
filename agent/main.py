@@ -54,6 +54,13 @@ from agent.telegram_bridge import (
     obtener_telefono_por_topic,
     configurar_webhook, obtener_info_webhook,
     notificar_agenda_telegram, notificar_llamada_urgente,
+    notificar_pago_telegram,
+)
+from agent.pagos import (
+    es_posible_comprobante, detectar_tipo_pago,
+    registrar_pago_pendiente, tiene_pago_pendiente,
+    obtener_pago_pendiente, confirmar_pago, rechazar_pago,
+    formatear_monto, PRECIOS, CI_BANCARIO,
 )
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
@@ -541,6 +548,14 @@ async def _procesar_mensaje_webhook(msg):
                 await enviar_a_topic(topic_reset, f"⚙️ RESET completo — {resumen}", telefono=telefono)
             return
 
+        # ── Botones del admin (confirmar/rechazar pago) ────────────────────
+        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        if telefono == admin_phone and msg.es_boton:
+            btn_titulo = texto.lower().strip()
+            if "confirmar" in btn_titulo or "rechazar" in btn_titulo:
+                await _procesar_boton_pago(btn_titulo)
+                return
+
         # ── Cancelar timers pendientes ────────────────────────────────────
         cancelar_seguimiento(telefono)
 
@@ -563,9 +578,15 @@ async def _procesar_mensaje_webhook(msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono)
 
-        # ── Verificar si Ivan (admin) está respondiendo manualmente ───────
+        # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
         if not await dorita_esta_activa(telefono):
             logger.info(f"Agente silenciado para {telefono} — Ivan activo en Telegram")
+            return
+
+        # ── Detección de comprobante de pago ───────���─────────────────────
+        historial_pago = await obtener_historial(telefono)
+        if es_posible_comprobante(texto, historial_pago):
+            await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id)
             return
 
         # ── Pedido de llamada → respuesta fija + alerta urgente al admin ──
@@ -822,6 +843,181 @@ async def _procesar_confirmacion_reserva(
             await _programar_recordatorio_clase(telefono, fecha_iso)
         except Exception as _e_rec:
             logger.error(f"[RECORDATORIO] Error programando para {telefono}: {_e_rec}")
+
+
+
+# ── Flujo de pagos ───────────────────────────────────────────────────────────
+
+async def _procesar_comprobante(
+    telefono: str,
+    texto: str,
+    media_id: str | None,
+    historial: list[dict],
+    topic_id: int | None,
+):
+    """
+    Procesa un posible comprobante de pago:
+    1. Responde al lead "gracias, verificando"
+    2. Detecta tipo de pago (prueba vs inscripción)
+    3. Reenvía imagen al admin + botones confirmar/rechazar
+    4. Notifica en Telegram
+    """
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    nombre_padre = _extraer_nombre_del_historial(historial, texto) or "Lead"
+    nombre_hijo = _extraer_nombre_hijo_historial(historial)
+    tipo = detectar_tipo_pago(historial)
+
+    # Responder al lead
+    respuesta = "Recibido! Estamos verificando tu comprobante 😊"
+    await guardar_mensaje(telefono, "user", texto)
+    await guardar_mensaje(telefono, "assistant", respuesta)
+    await proveedor.enviar_mensaje(telefono, respuesta)
+
+    # Espejar en Telegram
+    if topic_id:
+        await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono)
+
+    # Registrar pago pendiente
+    registrar_pago_pendiente(
+        telefono=telefono,
+        tipo=tipo,
+        plan=tipo,
+        monto=PRECIOS.get("prueba", {}).get("total", 90_000) if tipo == "prueba" else 0,
+        media_id=media_id,
+    )
+
+    # Reenviar imagen al admin (si hay media_id)
+    if media_id:
+        try:
+            await proveedor.enviar_imagen(
+                admin_phone,
+                media_id,
+                caption=f"Comprobante de {nombre_padre} ({telefono})",
+            )
+        except Exception as e:
+            logger.error(f"[PAGOS] Error reenviando imagen al admin: {e}")
+
+    # Enviar botones al admin
+    tipo_label = "PRUEBA 90K" if tipo == "prueba" else "INSCRIPCIÓN"
+    msg_admin = (
+        f"🔔 Comprobante recibido\n\n"
+        f"👤 Padre: {nombre_padre}\n"
+        f"👦 Hijo/a: {nombre_hijo}\n"
+        f"📱 {telefono}\n"
+        f"💰 Tipo: {tipo_label}\n\n"
+        f"¿Confirmás el pago?"
+    )
+    botones = [
+        {"id": f"pago_ok_{telefono}", "title": "✅ Confirmar"},
+        {"id": f"pago_no_{telefono}", "title": "❌ Rechazar"},
+    ]
+    try:
+        await proveedor.enviar_botones(admin_phone, msg_admin, botones)
+    except Exception as e:
+        logger.error(f"[PAGOS] Error enviando botones al admin: {e}")
+        # Fallback: mensaje de texto normal
+        await proveedor.enviar_mensaje(admin_phone, msg_admin + "\n\n(Respondé 'confirmar' o 'rechazar')")
+
+    # Notificar en Telegram
+    try:
+        await notificar_pago_telegram(
+            telefono=telefono,
+            nombre=nombre_padre,
+            estado="comprobante_recibido",
+            tipo=tipo_label,
+        )
+    except Exception as e:
+        logger.error(f"[PAGOS] Error notificando Telegram: {e}")
+
+    logger.info(f"[PAGOS] Comprobante procesado para {telefono} tipo={tipo}")
+
+
+async def _procesar_boton_pago(btn_titulo: str):
+    """
+    Procesa la respuesta del admin (confirmar/rechazar) a un comprobante.
+    Busca el pago pendiente más reciente y actúa según el botón.
+    """
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+
+    tel_lead, datos = obtener_pago_pendiente()
+    if not tel_lead or not datos:
+        await proveedor.enviar_mensaje(admin_phone, "No hay pagos pendientes de confirmar.")
+        return
+
+    tipo = datos.get("tipo", "prueba")
+    tipo_label = "PRUEBA 90K" if tipo == "prueba" else "INSCRIPCIÓN"
+
+    if "confirmar" in btn_titulo:
+        # ── Confirmar pago ────────────────────────────────────────────────
+        confirmar_pago(tel_lead)
+
+        # Mensaje al admin
+        await proveedor.enviar_mensaje(admin_phone, f"✅ Pago de {tel_lead} confirmado.")
+
+        # Mensaje al lead
+        msg_lead = (
+            "Pago confirmado! 🎉 Ahora vamos a coordinar tu clase.\n\n"
+            "El sistema te va a seguir atendiendo para agendar el día y horario 🙌"
+        )
+        await proveedor.enviar_mensaje(tel_lead, msg_lead)
+        await guardar_mensaje(tel_lead, "assistant", msg_lead)
+
+        # Actualizar conversión en Airtable
+        try:
+            await actualizar_conversion_lead(tel_lead, "PAGO")
+        except Exception as e:
+            logger.error(f"[PAGOS] Error actualizando conversión: {e}")
+
+        # Notificar en Telegram
+        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}")
+        if topic_id:
+            await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=tel_lead)
+
+        try:
+            historial = await obtener_historial(tel_lead)
+            nombre = _extraer_nombre_del_historial(historial) or "Lead"
+            await notificar_pago_telegram(
+                telefono=tel_lead,
+                nombre=nombre,
+                estado="confirmado",
+                tipo=tipo_label,
+                monto=datos.get("monto", 0),
+            )
+        except Exception as e:
+            logger.error(f"[PAGOS] Error notificando Telegram confirmación: {e}")
+
+        logger.info(f"[PAGOS] Pago CONFIRMADO para {tel_lead}")
+
+    elif "rechazar" in btn_titulo:
+        # ── Rechazar pago ─────────────────────────────────────────────────
+        rechazar_pago(tel_lead)
+
+        # Mensaje al admin
+        await proveedor.enviar_mensaje(admin_phone, f"❌ Pago de {tel_lead} rechazado.")
+
+        # Mensaje al lead
+        msg_lead = "Hubo un problema con la transferencia. ¿Podrías verificar y reenviar el comprobante? 😊"
+        await proveedor.enviar_mensaje(tel_lead, msg_lead)
+        await guardar_mensaje(tel_lead, "assistant", msg_lead)
+
+        # Notificar en Telegram
+        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}")
+        if topic_id:
+            await enviar_a_topic(topic_id, f"❌ PAGO RECHAZADO — {tipo_label}", telefono=tel_lead)
+
+        try:
+            historial = await obtener_historial(tel_lead)
+            nombre = _extraer_nombre_del_historial(historial) or "Lead"
+            await notificar_pago_telegram(
+                telefono=tel_lead,
+                nombre=nombre,
+                estado="rechazado",
+                tipo=tipo_label,
+            )
+        except Exception as e:
+            logger.error(f"[PAGOS] Error notificando Telegram rechazo: {e}")
+
+        logger.info(f"[PAGOS] Pago RECHAZADO para {tel_lead}")
 
 
 # ── Telegram webhook (admin → WhatsApp) ──────────────────────────────────────

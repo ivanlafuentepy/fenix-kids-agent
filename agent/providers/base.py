@@ -18,7 +18,8 @@ class MensajeEntrante:
     texto: str               # Contenido del mensaje
     mensaje_id: str          # ID único del mensaje
     es_propio: bool          # True si lo envió el agente (se ignora)
-    media_id: str | None = None   # ID de media (solo mensajes de audio)
+    media_id: str | None = None   # ID de media (audio, imagen, documento)
+    es_boton: bool = False        # True si es respuesta a botón interactivo
 
 
 class ProveedorWhatsApp(ABC):
@@ -33,6 +34,14 @@ class ProveedorWhatsApp(ABC):
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía un mensaje de texto. Retorna True si fue exitoso."""
         ...
+
+    async def enviar_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:
+        """Envía mensaje interactivo con botones. Default: no soportado."""
+        return False
+
+    async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:
+        """Reenvía una imagen por media_id. Default: no soportado."""
+        return False
 
     async def validar_webhook(self, request: Request) -> dict | int | None:
         """Verificación GET del webhook (solo Meta la requiere). Retorna respuesta o None."""

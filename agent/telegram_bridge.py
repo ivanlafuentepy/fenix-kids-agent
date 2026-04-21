@@ -442,6 +442,65 @@ async def notificar_agenda_telegram(
         return False
 
 
+async def notificar_pago_telegram(
+    telefono: str,
+    nombre: str,
+    estado: str,
+    tipo: str = "",
+    monto: int = 0,
+) -> bool:
+    """
+    Envía notificación de pago al grupo de Telegram.
+    estado: "comprobante_recibido", "confirmado", "rechazado"
+    """
+    agenda_group_id = int(os.getenv("TELEGRAM_AGENDA_GROUP_ID", "0"))
+    token = _token()
+    if not token or not agenda_group_id:
+        logger.warning("[Telegram] TELEGRAM_AGENDA_GROUP_ID no configurado — notif pago omitida")
+        return False
+
+    monto_fmt = f"{monto:,}".replace(",", ".") if monto else ""
+
+    if estado == "comprobante_recibido":
+        emoji = "💳"
+        titulo = "COMPROBANTE RECIBIDO"
+        extra = f"\n💰 Tipo: {tipo}\n⏳ Esperando confirmación del admin"
+    elif estado == "confirmado":
+        emoji = "✅"
+        titulo = "PAGO CONFIRMADO"
+        extra = f"\n💰 {tipo} — {monto_fmt} Gs" if monto_fmt else f"\n💰 {tipo}"
+    elif estado == "rechazado":
+        emoji = "❌"
+        titulo = "PAGO RECHAZADO"
+        extra = f"\n💰 {tipo}"
+    else:
+        return False
+
+    wa_link = f"https://wa.me/{telefono}"
+    texto = (
+        f"{emoji} {titulo}\n\n"
+        f"👤 {nombre}\n"
+        f"📱 {telefono}"
+        f"{extra}\n\n"
+        f"📲 {wa_link}"
+    )
+
+    url = _api_url("sendMessage")
+    payload = {"chat_id": agenda_group_id, "text": texto}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+            data = r.json()
+            if data.get("ok"):
+                print(f"[TELEGRAM] notif_pago OK → {estado} {telefono}", flush=True)
+                return True
+            print(f"[TELEGRAM] notif_pago FALLÓ: {data}", flush=True)
+            return False
+    except Exception as e:
+        logger.error(f"[Telegram] Error notif pago: {e}")
+        return False
+
+
 async def notificar_llamada_urgente(telefono: str, nombre: str, wa_link: str) -> bool:
     """
     Envía alerta al grupo de Telegram cuando un lead pide hablar por teléfono.

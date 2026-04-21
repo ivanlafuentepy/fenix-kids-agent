@@ -24,21 +24,35 @@ agentes:
     tono: "amable, simple, eficiente, directa"
 
 precios:
-  clase_prueba: "90.000 Gs (descontable de la primera cuota si se inscriben)"
-  matricula_anual: "200.000 Gs (incluye camisilla Fenix Kids)"
+  clase_prueba: 90000
+  matricula:
+    con_mensual: 200000
+    con_trimestral: 150000
   plan_quincenal:
-    mensual: "250.000 Gs/mes"
-    promo_debito: "190.000 Gs/mes (débito automático Bancard)"
-    promo_trimestral: "540.000 Gs/trimestre"
+    mensual: 250000
+    trimestral: 450000
   plan_semanal:
-    mensual: "350.000 Gs/mes"
-    promo_debito: "290.000 Gs/mes (débito automático Bancard)"
-    promo_trimestral: "840.000 Gs/trimestre"
+    mensual: 350000
+    trimestral: 700000
+  # Totales con matrícula incluida (lo que paga el padre):
+  # Prueba: 90.000
+  # Quincenal mensual: 250.000 + 200.000 = 450.000
+  # Quincenal trimestral: 450.000 + 150.000 = 600.000
+  # Semanal mensual: 350.000 + 200.000 = 550.000
+  # Semanal trimestral: 700.000 + 150.000 = 850.000
+
+datos_bancarios:
+  nombre: "Ivan Lafuente"
+  banco: "Itaú"
+  cuenta: "Cta cte 1074574"
+  ci: "1604338"
+  celular: "0982790407"
 
 politicas:
-  debito_automatico: "Se puede cancelar en cualquier momento sin multas ni preguntas."
   faltas: "Si no asisten en el mes, no se recupera la clase ni el dinero."
   hermanos: "Casos especiales para familias — consultar directamente."
+  pago_prueba: "Solo transferencia bancaria."
+  pago_inscripcion: "Todos los medios de pago."
 
 airtable:
   base_id: "apph96UwbdbHoEdYr"
