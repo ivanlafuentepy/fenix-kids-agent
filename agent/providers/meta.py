@@ -151,6 +151,40 @@ class ProveedorMeta(ProveedorWhatsApp):
                 logger.error(f"Error Meta imagen: {r.status_code} — {r.text}")
             return r.status_code == 200
 
+    async def subir_media(self, image_bytes: bytes, mime_type: str = "image/png") -> str | None:
+        """Sube un archivo a Meta y retorna el media_id."""
+        if not self.access_token or not self.phone_number_id:
+            return None
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/media"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        ext = "png" if "png" in mime_type else "jpg"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(
+                    url,
+                    headers=headers,
+                    data={"messaging_product": "whatsapp", "type": mime_type},
+                    files={"file": (f"image.{ext}", image_bytes, mime_type)},
+                )
+                if r.status_code == 200:
+                    media_id = r.json().get("id")
+                    logger.info(f"Media subida OK: {media_id}")
+                    return media_id
+                logger.error(f"Error subiendo media: {r.status_code} — {r.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error subiendo media: {e}")
+            return None
+
+    async def enviar_imagen_bytes(
+        self, telefono: str, image_bytes: bytes, mime_type: str = "image/png", caption: str = ""
+    ) -> bool:
+        """Sube una imagen y la envía en un solo paso."""
+        media_id = await self.subir_media(image_bytes, mime_type)
+        if not media_id:
+            return False
+        return await self.enviar_imagen(telefono, media_id, caption)
+
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía mensaje via Meta WhatsApp Cloud API."""
         if not self.access_token or not self.phone_number_id:

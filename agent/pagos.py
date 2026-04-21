@@ -34,9 +34,9 @@ CI_BANCARIO = "1604338"
 PRECIOS = {
     "prueba": {"cuota": 90_000, "matricula": 0, "total": 90_000, "label": "PRUEBA 90K"},
     "quincenal_mensual": {"cuota": 250_000, "matricula": 200_000, "total": 450_000, "label": "QUINCENAL MENSUAL"},
-    "quincenal_trimestral": {"cuota": 450_000, "matricula": 150_000, "total": 600_000, "label": "QUINCENAL TRIMESTRAL"},
+    "quincenal_trimestral": {"cuota": 450_000, "matricula": 140_000, "total": 590_000, "label": "QUINCENAL TRIMESTRAL"},
     "semanal_mensual": {"cuota": 350_000, "matricula": 200_000, "total": 550_000, "label": "SEMANAL MENSUAL"},
-    "semanal_trimestral": {"cuota": 700_000, "matricula": 150_000, "total": 850_000, "label": "SEMANAL TRIMESTRAL"},
+    "semanal_trimestral": {"cuota": 690_000, "matricula": 140_000, "total": 830_000, "label": "SEMANAL TRIMESTRAL"},
 }
 
 # ── Detección de comprobante ─────────────────────────────────────────────────

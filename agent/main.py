@@ -731,6 +731,10 @@ async def _procesar_mensaje_webhook(msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
+        # ── Enviar afiche si Ivan dijo "te paso un afiche" ───────────────
+        if "te paso un afiche" in respuesta.lower():
+            await _enviar_afiche_y_followup(telefono, topic_id)
+
         # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
         if es_nuevo:
             programar_seguimiento_inicial(
@@ -844,6 +848,47 @@ async def _procesar_confirmacion_reserva(
         except Exception as _e_rec:
             logger.error(f"[RECORDATORIO] Error programando para {telefono}: {_e_rec}")
 
+
+
+# ── Afiche de precios ────────────────────────────────────────────────────────
+
+_AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
+
+_AFICHE_FOLLOWUP = (
+    "Con la opción trimestral como verás tenemos un gran descuento, "
+    "tb tenés la opción de venir a probar un sábado en cualquiera de los horarios por 90.000 Gs 🔥\n\n"
+    "¿Cuál opción te gustaría agendar?"
+)
+
+
+async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
+    """Envía el afiche de precios y después de 3s el mensaje de follow-up."""
+    try:
+        with open(_AFICHE_PATH, "rb") as f:
+            image_bytes = f.read()
+
+        ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
+        if ok:
+            logger.info(f"[AFICHE] Imagen enviada a {telefono}")
+        else:
+            logger.error(f"[AFICHE] Error enviando imagen a {telefono}")
+
+        # Delay de 3 segundos antes del follow-up
+        await asyncio.sleep(3)
+
+        # Follow-up
+        await proveedor.enviar_mensaje(telefono, _AFICHE_FOLLOWUP)
+        await guardar_mensaje(telefono, "assistant", _AFICHE_FOLLOWUP)
+
+        if topic_id:
+            await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono)
+
+        logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
+
+    except FileNotFoundError:
+        logger.error(f"[AFICHE] Archivo no encontrado: {_AFICHE_PATH}")
+    except Exception as e:
+        logger.error(f"[AFICHE] Error: {e}")
 
 
 # ── Flujo de pagos ───────────────────────────────────────────────────────────

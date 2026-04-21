@@ -27,19 +27,19 @@ precios:
   clase_prueba: 90000
   matricula:
     con_mensual: 200000
-    con_trimestral: 150000
+    con_trimestral: 140000
   plan_quincenal:
     mensual: 250000
     trimestral: 450000
   plan_semanal:
     mensual: 350000
-    trimestral: 700000
+    trimestral: 690000
   # Totales con matrícula incluida (lo que paga el padre):
   # Prueba: 90.000
   # Quincenal mensual: 250.000 + 200.000 = 450.000
-  # Quincenal trimestral: 450.000 + 150.000 = 600.000
+  # Quincenal trimestral: 450.000 + 140.000 = 590.000
   # Semanal mensual: 350.000 + 200.000 = 550.000
-  # Semanal trimestral: 700.000 + 150.000 = 850.000
+  # Semanal trimestral: 690.000 + 140.000 = 830.000
 
 datos_bancarios:
   nombre: "Ivan Lafuente"

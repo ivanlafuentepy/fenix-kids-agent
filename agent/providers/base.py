@@ -43,6 +43,12 @@ class ProveedorWhatsApp(ABC):
         """Reenvía una imagen por media_id. Default: no soportado."""
         return False
 
+    async def enviar_imagen_bytes(
+        self, telefono: str, image_bytes: bytes, mime_type: str = "image/png", caption: str = ""
+    ) -> bool:
+        """Sube y envía una imagen desde bytes. Default: no soportado."""
+        return False
+
     async def validar_webhook(self, request: Request) -> dict | int | None:
         """Verificación GET del webhook (solo Meta la requiere). Retorna respuesta o None."""
         return None
