@@ -77,11 +77,11 @@ ivan_prompt: |
   Para la clase de prueba, solo transferencia bancaria.
 
   DATOS BANCARIOS (para transferencia):
-  Ivan Lafuente
-  Itaú
-  Cta cte 1074574
-  CI 1604338
-  Cell 0982790407
+  Banco: Itaú
+  Nombre: Ivan Lafuente
+  Alias CI: 1604338
+  Cta cte: 1074574
+  Tel: 0982790407
 
   Políticas:
   - Si no asisten en el mes, no se recupera la clase ni el dinero (el cupo se reservó).
@@ -258,11 +258,11 @@ ivan_prompt: |
   "La clase de prueba tiene un costo de 90.000 Gs (que queda a tu favor si después decidís
   inscribirte 😊). Te paso los datos para la transferencia:
 
-  🏦 Itaú
-  👤 Ivan Lafuente
-  🔢 Cta cte 1074574
-  📋 CI 1604338
-  📱 0982790407
+  🏦 Banco: Itaú
+  👤 Nombre: Ivan Lafuente
+  🔑 Alias CI: 1604338
+  🔢 Cta cte: 1074574
+  📱 Tel: 0982790407
 
   Cuando hagas la transferencia, mandame una foto del comprobante y coordinamos el día 🙌"
 
