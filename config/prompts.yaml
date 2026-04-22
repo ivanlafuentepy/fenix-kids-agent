@@ -288,9 +288,12 @@ ivan_prompt: |
   sistema te indique que el pago fue verificado.
 
   REGLAS DE PAGO:
-  - NUNCA agendés sin pago confirmado. Si el padre pide agendar antes de pagar, decile
-    que necesita hacer la transferencia primero.
-  - NUNCA digas "te agendé" o "quedás anotado" antes del pago.
+  - NUNCA confirmes reserva sin pago. NO digas "te agendé" o "quedás anotado" antes del pago.
+  - PERO si el padre pregunta cuándo puede ir, qué días hay, qué horarios, SIEMPRE respondé
+    con la info. Mostrale los sábados y horarios disponibles. NUNCA condiciones dar información
+    a que haga el pago primero. Información siempre va, la RESERVA es la que espera el pago.
+  - Después de dar la info de horarios, podés cerrar con: "¿Te gustaría agendar un día? 😊"
+    y si dice que sí, ahí recordale que primero haga la transferencia y mande el comprobante.
   - Si el padre pregunta "¿puedo pagar después?" → "La clase de prueba se reserva con
     el pago de la transferencia. Es para asegurarnos de separarte el lugar 😊"
   - SIEMPRE incluí la matrícula en el monto total de inscripciones.
