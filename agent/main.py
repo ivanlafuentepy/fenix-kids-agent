@@ -297,6 +297,37 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
+@app.get("/conversacion/{telefono}")
+async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)):
+    """Historial completo de una conversación con timestamps — para análisis de flujo."""
+    from agent.memory import async_session, Mensaje
+    from sqlalchemy import select as sa_select
+    async with async_session() as session:
+        query = (
+            sa_select(Mensaje)
+            .where(Mensaje.telefono == telefono)
+            .order_by(Mensaje.timestamp.asc())
+        )
+        result = await session.execute(query)
+        mensajes = result.scalars().all()
+
+    agent, modo = await obtener_agent_actual(telefono)
+    return {
+        "telefono": telefono,
+        "agent_actual": agent,
+        "modo_nixie": modo,
+        "total_mensajes": len(mensajes),
+        "conversacion": [
+            {
+                "rol": msg.role,
+                "texto": msg.content,
+                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+            }
+            for msg in mensajes
+        ],
+    }
+
+
 # ── Detección de activación / handoff / confirmación ────────────────────────
 
 _CLAVES_NIXIE = [
