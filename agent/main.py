@@ -461,12 +461,49 @@ _REGEX_NOMBRE_HIJO = re.compile(
 
 def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
     """Busca nombre del hijo en mensajes del padre y respuestas del agente."""
-    # Buscar en mensajes del padre primero
+    # Buscar en mensajes del padre primero (regex explícito)
     for m in reversed(historial):
         if m.get("role") == "user":
             match = _REGEX_NOMBRE_HIJO.search(m.get("content", ""))
             if match:
                 return match.group(1).strip().title()
+
+    # Buscar cuando Ivan preguntó "cómo se llama tu hijo" y el padre respondió
+    for i, m in enumerate(historial):
+        if m.get("role") == "assistant" and re.search(
+            r"c[oó]mo\s+se\s+llama\s+tu\s+hij[oa]", m.get("content", ""), re.IGNORECASE
+        ):
+            # El siguiente mensaje del usuario es la respuesta
+            for j in range(i + 1, len(historial)):
+                if historial[j].get("role") == "user":
+                    resp = historial[j]["content"].strip()
+                    # Puede ser "Maria", "se llama Maria", "Ivan, Maria", etc.
+                    # Si tiene coma, el nombre del hijo suele ser la segunda parte
+                    if "," in resp:
+                        partes = [p.strip() for p in resp.split(",")]
+                        # Tomar la última parte que parece nombre
+                        for p in reversed(partes):
+                            if p and p[0].isupper() and not any(c.isdigit() for c in p):
+                                return p.split()[0].title()
+                    # Si es un nombre solo o "se llama X"
+                    m_nombre = re.search(r"(?:se\s+llama\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", resp, re.IGNORECASE)
+                    if m_nombre:
+                        return m_nombre.group(1).strip().title()
+                    break
+
+    # Buscar cuando Ivan usó el nombre del hijo en su respuesta ("cuántos años tiene Maria")
+    for m in reversed(historial):
+        if m.get("role") == "assistant":
+            match_edad = re.search(
+                r"cu[aá]ntos\s+a[ñn]os\s+tiene\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)",
+                m.get("content", ""), re.IGNORECASE,
+            )
+            if match_edad:
+                nombre = match_edad.group(1).strip().title()
+                # Excluir palabras genéricas
+                if nombre.lower() not in ("tu", "el", "la", "su"):
+                    return nombre
+
     # Buscar en respuestas del agente (ej: "Reserva confirmada ✅ Mateo...")
     for m in reversed(historial):
         if m.get("role") == "assistant":
