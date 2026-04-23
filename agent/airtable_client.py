@@ -35,12 +35,12 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "apph96UwbdbHoEdYr")
 
 _BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}"
 
-# Nombres de tablas
-_LEADS     = "LEADS"
-_FAMILIAS  = "FAMILIAS"
-_NINOS     = "NIÑOS"
-_HORARIOS  = "HORARIOS"
-_RESERVAS  = "RESERVAS"
+# Nombres de tablas (en base Salsa Soul)
+_LEADS     = "LEADS FENIX"
+_FAMILIAS  = "FAMILIAS FENIX"
+_NINOS     = "NIÑOS FENIX"
+_HORARIOS  = "HORARIOS FENIX"
+_RESERVAS  = "RESERVAS FENIX"
 
 
 # ── Helpers de bajo nivel ──────────────────────────────────────────────────────
