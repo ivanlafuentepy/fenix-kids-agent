@@ -803,6 +803,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Cancelar timers pendientes (NO el diagnóstico — ese se envía siempre)
         cancelar_seguimiento(telefono)
 
+        # ── Si hay diagnóstico pendiente y el padre solo dice "ok/dale/gracias" → no responder
+        if telefono in _diagnostico_pendiente:
+            _t = texto.strip().lower().rstrip("!.,")
+            _ACK_WORDS = {"ok", "dale", "genial", "perfecto", "gracias", "bueno", "listo",
+                          "si", "sí", "bien", "claro", "de una", "joya", "ta", "va",
+                          "esperare", "espero", "aguardo", "okey", "oka", "okis"}
+            if _t in _ACK_WORDS:
+                await guardar_mensaje(telefono, "user", texto)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"👤 {texto} (esperando diagnóstico)", telefono=telefono)
+                logger.info(f"[DIAG] Padre dijo '{texto}' — ignorando, diagnóstico pendiente")
+                return
+
         # ── Transcribir audio ANTES de todo (para que detectores usen texto real)
         if hasattr(msg, "media_id") and msg.media_id:
             try:
