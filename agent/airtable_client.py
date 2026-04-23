@@ -144,6 +144,23 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     return None
 
 
+async def actualizar_datos_lead(telefono: str, nombre_responsable: str = "", nombre_nino: str = "", edad: str = "") -> bool:
+    """Actualiza NOMBRE RESPONSABLE, NOMBRE NIÑO y EDAD en LEADS FENIX."""
+    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    if not records:
+        return False
+    campos = {}
+    if nombre_responsable:
+        campos["NOMBRE RESPONSABLE"] = nombre_responsable
+    if nombre_nino:
+        campos["NOMBRE NIÑO"] = nombre_nino
+    if edad:
+        campos["EDAD"] = edad
+    if not campos:
+        return False
+    return await _patch(_LEADS, records[0]["id"], campos)
+
+
 async def obtener_lead_record_id(telefono: str) -> str | None:
     """Retorna el record_id del LEAD para este teléfono, o None."""
     records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)

@@ -72,6 +72,7 @@ from agent.airtable_client import (
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
+    actualizar_datos_lead,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -803,6 +804,30 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         cancelar_recordatorios(telefono)
             except Exception as e:
                 logger.error(f"[FORMULARIO] Error extrayendo datos para {telefono}: {e}")
+
+        # ── Actualizar datos del lead en Airtable (nombre, hijo, edad) ────
+        if agent_actual == "ivan":
+            try:
+                _nombre_resp = _extraer_nombre_del_historial(historial, texto)
+                _nombre_hijo = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
+                # Extraer edad: buscar número tras "tiene X años" o respuesta a "cuántos años"
+                _edad = ""
+                import re as _re
+                for _m in reversed(historial + [{"role": "user", "content": texto}]):
+                    if _m.get("role") == "user":
+                        _match_edad = _re.search(r'\b(\d{1,2})\s*(?:años|ano|a[ñn]os)?\b', _m["content"])
+                        if _match_edad and 2 <= int(_match_edad.group(1)) <= 15:
+                            _edad = _match_edad.group(1)
+                            break
+                if _nombre_resp or (_nombre_hijo and _nombre_hijo != "no mencionó") or _edad:
+                    await actualizar_datos_lead(
+                        telefono,
+                        nombre_responsable=_nombre_resp or "",
+                        nombre_nino=_nombre_hijo if _nombre_hijo != "no mencionó" else "",
+                        edad=_edad,
+                    )
+            except Exception as e:
+                logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmacion = _detectar_confirmacion_aurora(respuesta)
