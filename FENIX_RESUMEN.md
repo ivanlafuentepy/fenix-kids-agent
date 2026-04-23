@@ -35,7 +35,7 @@ Opera con **dos agentes IA** en el mismo número de WhatsApp:
 |---|---|
 | **Meta WhatsApp Cloud API** | Envío y recepción de mensajes de WhatsApp |
 | **Anthropic API** | Generación de respuestas (Ivan/Nixie) y extracción de datos (Haiku) |
-| **Airtable** | CRM: LEADS, FAMILIAS, NIÑOS, HORARIOS, RESERVAS |
+| **Airtable** | CRM en base Salsa Soul: LEADS FENIX, PRUEBA FENIX, FAMILIAS FENIX, NIÑOS FENIX, HORARIOS FENIX, RESERVAS FENIX, DIAGNOSTICO FENIX |
 | **Google Calendar API** | Creación automática de eventos al confirmar clase de prueba o reserva |
 | **Telegram Bot API** | Espejo de conversaciones en grupo de Telegram por topics |
 | **Groq Whisper** | Transcripción de mensajes de audio de WhatsApp |
@@ -50,18 +50,18 @@ Opera con **dos agentes IA** en el mismo número de WhatsApp:
 ```
 agent/
   main.py           — Servidor FastAPI, webhook WhatsApp, orquestación principal
-  brain.py          — Llama a Claude API, carga ivan_prompt o nixie_prompt según estado
-  memory.py         — Historial de conversaciones + estado (agent_actual, modo_nixie)
+  brain.py          — Llama a Claude API, carga ivan_prompt o aurora_prompt según estado
+  memory.py         — Historial de conversaciones + estado + pagos persistentes + dedup
   ab_test.py        — Estado por conversación: agente, modo, familia_id, Calendar
-  pagos.py          — Flujo de pagos: comprobante, confirmación admin, precios, estado en memoria
-  airtable_client.py — Toda la integración con Airtable (LEADS, FAMILIAS, NIÑOS, etc.)
+  pagos.py          — Flujo de pagos: comprobante, confirmación admin, precios (PostgreSQL persistente)
+  airtable_client.py — Integración con Airtable base Salsa Soul (LEADS/PRUEBA/FAMILIAS/NIÑOS FENIX, etc.)
   calendar_google.py — Integración con Google Calendar
   telegram_bridge.py — Integración con Telegram
   reminders.py      — Recordatorios automáticos de seguimiento y formulario
   transcriber.py    — Transcripción de audios con Groq Whisper
   providers/        — Adaptador Meta WhatsApp Cloud API (botones interactivos, envío imagen)
 config/
-  prompts.yaml      — System prompts de Ivan y Nixie
+  prompts.yaml      — System prompts de Ivan y Aurora
   business.yaml     — Datos del negocio
 ```
 
@@ -75,17 +75,10 @@ config/
 - **Flujo:** rompehielos diagnóstico (15 opciones) → análisis conversacional (con delay según cantidad de números) → cierre emocional (por qué FENIX + edad) → pregunta si quiere probar → horarios/precios solo cuando corresponde
 - **Transferencia a Nixie:** cuando dice exactamente *"Perfecto 🙌 En breve te contacta NIXIE, ella se va a encargar de pedirte los datos y hacerte la reserva."*
 
-### Nixie
-- **Rol:** operaciones, formularios, reservas
-- **Activación directa:** si el padre escribe "nixi", "hola nixie", "quiero reservar con nixie", etc.
-- **Activación por handoff:** cuando Ivan detecta intención de agendar y transfiere
-
-**Nixie tiene dos modos:**
-
-| Modo | Cuándo | Qué hace |
-|---|---|---|
-| `lead_nuevo` | Viene derivada por Ivan (primer agendamiento) | Muestra sábados del mes → padre elige día → pide nombre/apellido hijo, fecha nacimiento, nombre/apellido padre/madre → confirma reserva |
-| `cliente_inscripto` | Padre ya inscripto escribe directo | Pide solo nombre y apellido, busca en Airtable FAMILIAS, muestra hijos, agenda |
+### Aurora (antes Nixie)
+- **Rol:** operaciones, reservas para familias inscriptas
+- **Activación:** solo cuando el teléfono del padre ya está en FAMILIAS FENIX (router automático)
+- **Modo único:** `cliente_inscripto` — pide nombre, busca en FAMILIAS, muestra hijos, agenda reserva
 
 ---
 
@@ -134,19 +127,55 @@ config/
 
 ## 6. Estructura de Airtable
 
-### Tabla LEADS (leads en proceso)
+**Base:** Salsa Soul Studio (`appWwCQxALdMMV4MA`) — compartida con Dorita, tablas separadas con sufijo FENIX.
+
+### Tabla LEADS FENIX (leads en proceso)
 | Campo | Tipo | Qué guarda |
 |---|---|---|
 | TELEFONO | Texto | Número WhatsApp del padre/madre |
-| ROMPEHIELOS | Select | Variante asignada: A, B o C |
-| CONVERSION | Select | Estado: CONSULTA → AGENDA → INSCRIPTO |
-| AGENT_ACTUAL | Select | IVAN o NIXIE |
-| MODO_NIXIE | Select | lead_nuevo o cliente_inscripto |
+| ROMPEHIELOS | Texto | Variante asignada |
+| CONVERSION | Select | CONSULTA → AGENDA → PAGO → INSCRIPTO |
+| AGENT_ACTUAL | Select | IVAN o AURORA |
+| MODO_AURORA | Select | lead_nuevo o cliente_inscripto |
 | FORMULARIO | Checkbox | True cuando todos los datos están completos |
-| FECHA PRIMER CONTACTO | Fecha | Cuándo escribió por primera vez |
-| FAMILIA | Link record | ID del registro en FAMILIAS (una vez creado) |
+| NOMBRE RESPONSABLE | Texto | Nombre del padre/madre que escribe |
+| NOMBRE NIÑO | Texto | Nombre del hijo |
+| EDAD | Texto | Edad del hijo |
+| FECHA RESERVA | Texto | Fecha de la clase reservada |
+| HORA RESERVA | Texto | Hora de la clase reservada |
+| FECHA CREACION | DateTime | Cuándo se creó el lead |
+| FECHA NACIMIENTO | Texto | Fecha nacimiento del hijo |
+| DIAGNOSTICO | Link records | Condiciones elegidas del rompehielos (→ DIAGNOSTICO FENIX) |
+| FAMILIA | Link record | Vínculo a FAMILIAS FENIX |
 
-### Tabla FAMILIAS (familias inscriptas)
+### Tabla PRUEBA FENIX (leads que agendan/pagan — 1 registro por hijo)
+| Campo | Tipo | Qué guarda |
+|---|---|---|
+| TELEFONO | Texto | Número WhatsApp |
+| NOMBRE RESPONSABLE / APELLIDO RESPONSABLE | Texto | Padre/madre |
+| NOMBRE HIJO / APELLIDO HIJO | Texto | Datos del niño |
+| EDAD HIJO | Texto | Edad |
+| FECHA NACIMIENTO | Texto | Fecha nac. del niño |
+| FECHA RESERVA / HORA | Texto | Cuándo viene |
+| CONVERSION | Select | AGENDA / PAGO / INSCRIPTO |
+| ESTADO | Select | PRUEBA 90MIL / GRATIS / PLAN 250/MES / etc. / MATRICULA |
+| MONTO | Número | Monto pagado (solo en primer hijo, resto 0) |
+| INSCRIPCION | Checkbox | Check = crear en FAMILIAS |
+| PRUEBA ID | Formula | "FENIX-" & RECORD_ID() |
+| DIAGNOSTICO | Link records | Condiciones del rompehielos |
+| LEAD | Link record | Vínculo a LEADS FENIX |
+| FAMILIA | Link record | Vínculo a FAMILIAS FENIX |
+| PAGOS | Link record | Vínculo a tabla PAGOS |
+| FECHA CREACION | DateTime | Cuándo se creó |
+
+### Tabla DIAGNOSTICO FENIX (15 condiciones del rompehielos)
+| Campo | Tipo | Qué guarda |
+|---|---|---|
+| CONDICION | Texto | Descripción (ej: "Timidez / le cuesta animarse") |
+| NUMERO | Número | 1-15 |
+| CATEGORIA | Select | EMOCIONAL / FISICO / SOCIAL / CONDUCTUAL / CLINICO |
+
+### Tabla FAMILIAS FENIX (familias inscriptas — solo se crea al inscribirse, no en prueba)
 | Campo | Tipo | Qué guarda |
 |---|---|---|
 | FAMILIA | Formula | "FAMILIA [primer apellido padre] [primer apellido madre]" |
@@ -200,8 +229,9 @@ config/
 | Estado | Significado | Cuándo |
 |---|---|---|
 | `CONSULTA` | Lead nuevo | Al primer mensaje |
-| `AGENDA` | Confirmó una reserva | Cuando Nixie confirma horario |
-| `INSCRIPTO` | Pago confirmado | Al detectar comprobante de pago |
+| `AGENDA` | Confirmó una reserva | Cuando Ivan/Aurora confirma horario |
+| `PAGO` | Pago de prueba confirmado | Al confirmar comprobante |
+| `INSCRIPTO` | Inscripción confirmada | Al pagar plan mensual/trimestral |
 
 ### En PostgreSQL local (tabla ConversacionAB)
 | Campo | Significado |
@@ -265,9 +295,10 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | `ANTHROPIC_API_KEY` | ✅ Configurada | API de Claude |
 | `AIRTABLE_API_KEY` | ✅ Configurada | Token de Airtable |
 | `AIRTABLE_BASE_ID` | ✅ Configurada | `apph96UwbdbHoEdYr` |
-| `META_ACCESS_TOKEN` | ✅ Configurada | Token de Meta WhatsApp para Fenix |
-| `META_PHONE_NUMBER_ID` | ✅ Configurada | `1096172613571013` |
+| `META_ACCESS_TOKEN` | ✅ Configurada | Token permanente (System User Admin bajo Salsa Soul) |
+| `META_PHONE_NUMBER_ID` | ✅ Configurada | `1005063086033214` (número nuevo bajo app Salsa Soul) |
 | `META_VERIFY_TOKEN` | ✅ Configurada | `fenix-kids-2026` |
+| `AIRTABLE_BASE_ID` | ✅ Configurada | `appWwCQxALdMMV4MA` (base Salsa Soul, antes era Fenix propia) |
 | `TELEGRAM_BOT_TOKEN` | ✅ Configurada | Bot de Telegram de Fenix |
 | `TELEGRAM_GROUP_ID` | ✅ Configurada | `-1003965489354` |
 | `GOOGLE_CALENDAR_ID` | ✅ Configurada | Calendar de Fenix Kids |
@@ -306,7 +337,17 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 20 | Validar en producción: P0 (RESERVA se alimenta, nombre real en Calendar), P1 (webhook <200ms), router Ivan/Nixie, alerta llamada urgente | ⏳ Operacional |
 | 21 | Afiche de precios: envío automático cuando padre se presenta + follow-up con opción trimestral y prueba | ✅ Hecho |
 | 22 | Precios actualizados al afiche: quincenal trim 450+140=590, semanal trim 690+140=830, matrícula trim 140k | ✅ Hecho |
-| 23 | Validar flujo de pagos en producción: comprobante → botones admin → confirmación → agenda post-pago | ⏳ Operacional |
+| 23 | Validar flujo de pagos en producción: comprobante → botones admin → confirmación → agenda post-pago | ✅ Hecho (validado, monto multi-hijo funciona) |
+| 24 | Migración Airtable a base Salsa Soul — tablas FENIX separadas | ✅ Hecho |
+| 25 | Nixie → Aurora — renombre completo del agente asistente | ✅ Hecho |
+| 26 | Hardening producción: lock por teléfono, dedup PostgreSQL, rate limit, pagos persistentes, Calendar null check | ✅ Hecho |
+| 27 | Endpoint /conversacion/{telefono} para análisis de flujo | ✅ Hecho |
+| 28 | Tabla DIAGNOSTICO FENIX (15 condiciones categorizadas) + tracking automático | ✅ Hecho |
+| 29 | PRUEBA FENIX: registra leads que agendan con todos los datos (Haiku extrae del historial) | ✅ Hecho |
+| 30 | Número nuevo de WhatsApp bajo app Salsa Soul (verificada) — phone_number_id 1005063086033214 | ✅ Hecho |
+| 31 | Automatización Airtable: check INSCRIPCION en PRUEBA FENIX → crear FAMILIA + NIÑOS | ⏳ Pendiente (Ivan) |
+| 32 | Validar que PRUEBA FENIX cargue correctamente nombre padre, hijos, fechas, diagnóstico | ⏳ Operacional |
+| 33 | Flujo inscripción directa por WhatsApp (sin pasar por prueba) | ⏳ Pendiente |
 
 ---
 
@@ -327,3 +368,4 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 2026-04-17 | **Sesión de fixes y mejoras de robustez (5 commits).** (1) Bypass modo nocturno para admin: `_PHONES_SIN_DELAY` (número admin) ya no se bloquea por horario nocturno, permite testear a cualquier hora. (2) Transcripción de audio movida ANTES de todos los detectores (llamada, prompt injection, nocturno): antes un audio "te puedo llamar" no se detectaba y Claude respondía cualquier cosa. (3) Comando `/fenix` en Telegram: reactiva el agente silenciado (igual que `/reactivar`), mensaje "Agente Fénix activado" solo visible en el topic. (4) Reset: eliminado `holayosoylasalsa` (era de Dorita), solo queda `holayosoyfenix`. (5) Alerta de llamada mejorada: mensaje al padre personalizado con nombre ("aguantame un ratito Carolina y te llamo 🤝"), alerta al admin simplificada con nombre padre + nombre hijo + teléfono + link wa.me (sin resumen Haiku, el contexto se lee desde Telegram). (6) Función `resumir_conversacion_para_alerta` agregada en brain.py (no se usa actualmente, disponible para futuro). |
 | 2026-04-21 | **Flujo de pagos completo + afiche de precios (2 commits).** (1) Nuevo módulo `agent/pagos.py`: precios, datos bancarios Itaú, detección de comprobante (imagen/documento + CI 1604338 en historial), estado pagos pendientes en memoria (in-memory dicts). (2) Provider Meta ampliado: parseo de mensajes `interactive`/`button`, `enviar_botones` (botones interactivos WhatsApp), `enviar_imagen` (reenvío por media_id), `subir_media` + `enviar_imagen_bytes` (subir archivo y enviar). `es_boton` agregado a `MensajeEntrante`. (3) Flujo en main.py: detección de comprobante → respuesta automática al lead → reenvío imagen + botones ✅❌ al admin → admin confirma/rechaza → mensaje al lead + actualización LEADS a PAGO + notificación Telegram. Handler de botones del admin interceptado antes del flujo normal. (4) Prompt Ivan reescrito: FASE 3 = pago obligatorio con datos bancarios, FASE 4 = agendamiento solo post-pago, reglas anti-agenda-sin-pago. Clase prueba solo transferencia, inscripción todos los medios. (5) Precios actualizados al afiche: quincenal trim 450+140=590, semanal/full pass trim 690+140=830, matrícula trimestral 140k. (6) Afiche `static/afiche_fenix.png`: cuando Ivan dice "te paso un afiche", sistema envía imagen automáticamente + delay 3s + follow-up con opción trimestral y prueba 90k. (7) `notificar_pago_telegram` en telegram_bridge.py: comprobante_recibido/confirmado/rechazado al grupo de agenda. Plan hermanos en el afiche: 2do 30%, 3ro 70%, 4to FREE. |
 | 2026-04-15 | **Sesión de ajuste de flujo conversacional completa.** Fix transcripción audios (bug tupla bytes/mime). TELEGRAM_IGNORE_PHONES para no espejar número admin. Ivan FASE 2: respuesta conversacional (no bloques numerados), delay por cantidad de números (1→30s, 2→60s, 3→120s, 4→180s, 5+→240s, sin delay para admin), cierre emocional con esencia FENIX (naturaleza, sol, árboles, desafíos reales) + pregunta de edad contextualizada, flujo paso a paso (no tirar toda la info junta), padre que se salta diagnóstico respetado. Nixie: se presenta automáticamente tras handoff, nuevo flujo clase de prueba (muestra sábados del mes → padre elige → datos mínimos uno por uno: nombre/apellido hijo, fecha nacimiento, nombre/apellido padre/madre). Precios actualizados: sin débito auto, trimestral 20% desc (quincenal 590k, semanal 890k). Horarios: 9:30, 11:00, 15:30. Pendiente: flujo Nixie inscripción directa, agregar TELEGRAM_IGNORE_PHONES en Railway. |
+| 2026-04-22/23 | **Sesión masiva — 27 commits. Hardening + migración Airtable + nuevo número WhatsApp.** (1) **Análisis de flujo conversacional**: endpoint `/conversacion/{telefono}`, comando `endpoint` en Claude Code para análisis rápido. Fixes: anti-loop "Agendar", precios siempre por afiche, Alias CI en datos bancarios, no condicionar info a pago, follow-up afiche "¿Te gustaría ser parte de Fenix Kids Academy?". (2) **Hardening producción**: lock por teléfono (asyncio.Lock), dedup persistente PostgreSQL, rate limit 10 msgs/60s, pagos persistentes en PostgreSQL (tabla pagos_pendientes), Calendar null check, alerta Telegram si Claude API falla 3x, reset solo admin, historial 40 msgs. (3) **Nuevo número WhatsApp**: app Fenix Kids Academy creada bajo Business Manager de Salsa Soul Studio (verificado). Número +595 971 938655, phone_number_id 1005063086033214. Token permanente de System User Admin. (4) **Migración Airtable**: todas las tablas migradas de base Fenix a base Salsa Soul (appWwCQxALdMMV4MA). Tablas renombradas con sufijo FENIX: LEADS FENIX, PRUEBA FENIX, FAMILIAS FENIX, NIÑOS FENIX, HORARIOS FENIX, RESERVAS FENIX. Nueva tabla DIAGNOSTICO FENIX (15 condiciones categorizadas: EMOCIONAL/FISICO/SOCIAL/CONDUCTUAL/CLINICO). Datos migrados: 27 familias, 32 niños, 8 horarios, 22 reservas. Campo FAMILIA FENIX creado en tabla PAGOS. (5) **Nixie → Aurora**: renombre completo del agente asistente en código y prompts. (6) **PRUEBA FENIX**: nueva tabla para leads que agendan. 1 registro por hijo, monto solo en el primero. Haiku extrae datos del historial. Vinculada a LEADS, DIAGNOSTICO, FAMILIA, PAGOS. Precio multi-hijo: 90k/1, 120k/2, 150k/3. (7) **FAMILIAS solo en inscripción**: ya no se crea FAMILIA al agendar prueba. PRUEBA FENIX tiene campo INSCRIPCION (checkbox) para migrar a FAMILIAS manual o por automatización Airtable. (8) **Formulario multi-hijo**: pregunta hermanitos uno por uno, nombre + apellido + fecha nac, siempre pide nombre completo del responsable. |
