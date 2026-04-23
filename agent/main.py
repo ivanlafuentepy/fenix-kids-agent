@@ -521,12 +521,31 @@ _REGEX_EDAD = re.compile(
 
 
 def _extraer_edad_historial(historial: list[dict]) -> str:
-    """Busca la edad del hijo en los mensajes del padre."""
+    """Busca la edad del hijo en los mensajes del padre y respuestas de Ivan."""
+    # 1. Buscar en mensajes del padre ("tiene 7 años", "7 añitos")
     for m in reversed(historial):
         if m.get("role") == "user":
             match = _REGEX_EDAD.search(m.get("content", ""))
             if match:
                 return f"{match.group(1)} años"
+
+    # 2. Buscar cuando Ivan preguntó edad y padre respondió solo un número
+    for i, m in enumerate(historial):
+        if m.get("role") == "assistant" and re.search(r'cu[aá]ntos\s+a[ñn]os', m.get("content", ""), re.IGNORECASE):
+            for j in range(i + 1, len(historial)):
+                if historial[j].get("role") == "user":
+                    num_match = re.fullmatch(r'\d{1,2}', historial[j]["content"].strip())
+                    if num_match and 2 <= int(num_match.group()) <= 15:
+                        return f"{num_match.group()} años"
+                    break
+
+    # 3. Buscar en respuestas de Ivan ("a los 7 años", "Maria a los 5 años")
+    for m in reversed(historial):
+        if m.get("role") == "assistant":
+            match = re.search(r'a los\s+(\d{1,2})\s+a[ñn]os', m.get("content", ""), re.IGNORECASE)
+            if match and 2 <= int(match.group(1)) <= 15:
+                return f"{match.group(1)} años"
+
     return "no mencionó"
 
 
@@ -534,17 +553,38 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
     """
     Manda alerta al admin cuando un lead pide hablar por teléfono.
     Doble canal: WhatsApp (ADMIN_PHONE) + Telegram (grupo agenda).
+    Busca datos en Airtable (fuente de verdad), con fallback a regex del historial.
     """
     from urllib.parse import quote
+    from agent.airtable_client import _get_records, _LEADS
 
-    nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "no se presentó"
+    # Buscar datos en Airtable primero (fuente de verdad)
+    nombre_padre = "no se presentó"
+    nombre_hijo = "no mencionó"
+    edad_hijo = "no mencionó"
+    try:
+        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if lead_records:
+            fields = lead_records[0].get("fields", {})
+            nombre_padre = fields.get("NOMBRE RESPONSABLE", "") or nombre_padre
+            nombre_hijo = fields.get("NOMBRE NIÑO", "") or nombre_hijo
+            edad_hijo = fields.get("EDAD", "") or edad_hijo
+            if edad_hijo and edad_hijo != "no mencionó" and "año" not in edad_hijo:
+                edad_hijo = f"{edad_hijo} años"
+    except Exception as e:
+        logger.error(f"[LLAMADA] Error consultando Airtable: {e}")
+
+    # Fallback a regex si Airtable no tiene datos
+    if nombre_padre == "no se presentó":
+        nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "no se presentó"
+    if nombre_hijo == "no mencionó":
+        nombre_hijo = _extraer_nombre_hijo_historial(historial)
+    if edad_hijo == "no mencionó":
+        edad_hijo = _extraer_edad_historial(historial)
+
     primer_nombre = nombre_padre.split()[0] if nombre_padre != "no se presentó" else ""
     mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan desde mi personal, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
-
-    # Extraer nombre del hijo y edad del historial
-    nombre_hijo = _extraer_nombre_hijo_historial(historial)
-    edad_hijo = _extraer_edad_historial(historial)
 
     alerta = (
         f"🚨 Urgente: Llamar a {nombre_padre}\n\n"
@@ -735,12 +775,47 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id)
             return
 
-        # ── Pedido de llamada → respuesta fija + alerta urgente al admin ──
+        # ── Pedido de llamada → dos escenarios ─────────────────────────────
+        #  1) Ivan ofreció llamar ("te puedo llamar") y padre acepta → "Super, te llamo"
+        #  2) Padre pide llamar por su cuenta → "Aguantame un ratito, te llamo"
         if _detectar_pedido_llamada(texto):
             historial_previo = await obtener_historial(telefono)
-            nombre_padre = _extraer_nombre_del_historial(historial_previo, texto)
-            primer_nombre = nombre_padre.split()[0] if nombre_padre else ""
-            if primer_nombre:
+
+            # Buscar nombre del padre en Airtable (fuente de verdad)
+            primer_nombre = ""
+            try:
+                from agent.airtable_client import _get_records, _LEADS
+                _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr:
+                    _f = _lr[0].get("fields", {})
+                    _nombre_at = _f.get("NOMBRE RESPONSABLE", "")
+                    if _nombre_at:
+                        primer_nombre = _nombre_at.split()[0]
+            except Exception:
+                pass
+            # Fallback a regex
+            if not primer_nombre:
+                _nombre_regex = _extraer_nombre_del_historial(historial_previo, texto)
+                primer_nombre = _nombre_regex.split()[0] if _nombre_regex else ""
+
+            # Detectar si Ivan ofreció llamar en el mensaje anterior
+            _ivan_ofrecio_llamar = False
+            for _m in reversed(historial_previo):
+                if _m.get("role") == "assistant":
+                    _contenido_ivan = _m.get("content", "").lower()
+                    if "te puedo llamar" in _contenido_ivan or "te explico mejor todo" in _contenido_ivan:
+                        _ivan_ofrecio_llamar = True
+                    break
+
+            if _ivan_ofrecio_llamar:
+                # Caso 1: Ivan ofreció, padre acepta
+                respuesta = (
+                    f"Super, te llamo ahora desde mi número personal {primer_nombre} 🤝"
+                    if primer_nombre else
+                    "Super, te llamo ahora desde mi número personal 🤝"
+                )
+            elif primer_nombre:
+                # Caso 2: Padre pide por su cuenta
                 respuesta = (
                     f"Ahora mismo no puedo atender llamadas, aguantame un ratito "
                     f"{primer_nombre} y te llamo desde mi línea personal 🤝"
@@ -754,20 +829,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
-            # Alerta al admin (WhatsApp + Telegram)
+            # Alerta al admin (WhatsApp + Telegram) — busca datos en Airtable
             await _alertar_pedido_llamada(telefono, historial_previo, texto)
-            # Espejar en Telegram del lead
-            nombre_hijo_alerta = _extraer_nombre_hijo_historial(historial_previo)
-            edad_hijo_alerta = _extraer_edad_historial(historial_previo)
+            # Espejar en Telegram del lead (datos ya están en la alerta)
             if topic_id:
                 await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono)
-                alerta_topic = (
-                    f"🚨 Alerta de llamada enviada al admin\n"
-                    f"👤 Padre: {primer_nombre or 'no se presentó'}\n"
-                    f"👦 Hijo/a: {nombre_hijo_alerta}\n"
-                    f"🎂 Edad: {edad_hijo_alerta}"
-                )
-                await enviar_a_topic(topic_id, alerta_topic, telefono=telefono)
             logger.info(f"[LLAMADA] Pedido de llamada detectado de {telefono}")
             return
 
