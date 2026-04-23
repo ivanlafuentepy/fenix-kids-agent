@@ -33,11 +33,32 @@ CI_BANCARIO = "1604338"
 
 PRECIOS = {
     "prueba": {"cuota": 90_000, "matricula": 0, "total": 90_000, "label": "PRUEBA 90K"},
+    "prueba_2": {"cuota": 120_000, "matricula": 0, "total": 120_000, "label": "PRUEBA 120K (2 hijos)"},
+    "prueba_3": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (3 hijos)"},
     "quincenal_mensual": {"cuota": 250_000, "matricula": 200_000, "total": 450_000, "label": "QUINCENAL MENSUAL"},
     "quincenal_trimestral": {"cuota": 450_000, "matricula": 140_000, "total": 590_000, "label": "QUINCENAL TRIMESTRAL"},
     "semanal_mensual": {"cuota": 350_000, "matricula": 200_000, "total": 550_000, "label": "SEMANAL MENSUAL"},
     "semanal_trimestral": {"cuota": 690_000, "matricula": 140_000, "total": 830_000, "label": "SEMANAL TRIMESTRAL"},
 }
+
+
+def monto_prueba_por_hijos(historial: list[dict]) -> int:
+    """Detecta cuántos hijos vienen según el historial y retorna el monto correcto."""
+    import re
+    texto_completo = " ".join(m.get("content", "").lower() for m in historial)
+    # Buscar menciones de cantidad de hijos
+    if re.search(r"(tres|3)\s*(hijos|hermanos|chicos|nenes)", texto_completo):
+        return 150_000
+    if re.search(r"(dos|2)\s*(hijos|hermanos|chicos|nenes)", texto_completo):
+        return 120_000
+    # Buscar "150.000" o "120.000" en mensajes del agente (ya dijo el precio)
+    for m in reversed(historial):
+        if m.get("role") == "assistant":
+            if "150.000" in m["content"] or "150000" in m["content"]:
+                return 150_000
+            if "120.000" in m["content"] or "120000" in m["content"]:
+                return 120_000
+    return 90_000
 
 # ── Detección de comprobante ─────────────────────────────────────────────────
 

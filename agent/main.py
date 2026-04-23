@@ -62,7 +62,7 @@ from agent.pagos import (
     es_posible_comprobante, detectar_tipo_pago,
     registrar_pago_pendiente, tiene_pago_pendiente,
     obtener_pago_pendiente, confirmar_pago, rechazar_pago,
-    formatear_monto, PRECIOS, CI_BANCARIO,
+    formatear_monto, PRECIOS, CI_BANCARIO, monto_prueba_por_hijos,
 )
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
@@ -947,6 +947,9 @@ async def _procesar_confirmacion_reserva(
         apellido_resp = padre_data.get("apellido", "") or ""
         ninos_form = datos_form.get("ninos", [])
 
+        # Calcular monto correcto según cantidad de hijos
+        _monto_prueba = monto_prueba_por_hijos(historial_completo)
+
         # Crear un registro PRUEBA FENIX por cada niño
         if ninos_form:
             for n in ninos_form:
@@ -960,6 +963,7 @@ async def _procesar_confirmacion_reserva(
                     fecha_reserva=fecha_str,
                     hora=hora_str,
                     fecha_nacimiento=n.get("fecha_nacimiento", ""),
+                    monto=_monto_prueba,
                     diagnostico_ids=diagnostico_ids,
                     lead_record_id=lead_record_id,
                 )
@@ -981,6 +985,7 @@ async def _procesar_confirmacion_reserva(
                 edad_hijo="",
                 fecha_reserva=fecha_str,
                 hora=hora_str,
+                monto=_monto_prueba,
                 diagnostico_ids=diagnostico_ids,
                 lead_record_id=lead_record_id,
             )
@@ -1104,12 +1109,18 @@ async def _procesar_comprobante(
     if topic_id:
         await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono)
 
+    # Calcular monto correcto (multi-hijo)
+    if tipo == "prueba":
+        monto = monto_prueba_por_hijos(historial)
+    else:
+        monto = 0
+
     # Registrar pago pendiente
     await registrar_pago_pendiente(
         telefono=telefono,
         tipo=tipo,
         plan=tipo,
-        monto=PRECIOS.get("prueba", {}).get("total", 90_000) if tipo == "prueba" else 0,
+        monto=monto,
         media_id=media_id,
     )
 
@@ -1125,7 +1136,8 @@ async def _procesar_comprobante(
             logger.error(f"[PAGOS] Error reenviando imagen al admin: {e}")
 
     # Enviar botones al admin
-    tipo_label = "PRUEBA 90K" if tipo == "prueba" else "INSCRIPCIÓN"
+    monto_fmt = formatear_monto(monto) if monto else ""
+    tipo_label = f"PRUEBA {monto_fmt}" if tipo == "prueba" and monto else "PRUEBA" if tipo == "prueba" else "INSCRIPCIÓN"
     msg_admin = (
         f"🔔 Comprobante recibido\n\n"
         f"👤 Padre: {nombre_padre}\n"
