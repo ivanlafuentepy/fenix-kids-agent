@@ -795,24 +795,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             contexto_extra=contexto_extra,
         )
 
-        # ── Si Ivan está manejando un lead nuevo (no inscripto):
-        #    intentar extraer formulario para crear FAMILIA+NIÑOS ──────────
-        if agent_actual == "ivan":
-            historial_completo = historial + [
-                {"role": "user", "content": texto},
-                {"role": "assistant", "content": respuesta},
-            ]
-            try:
-                datos = await extraer_datos_formulario(historial_completo)
-                if datos.get("completo") and not await esta_convertido(telefono):
-                    familia_id, nino_ids = await crear_familia_completa(telefono, datos)
-                    if familia_id:
-                        await marcar_conversion(telefono)
-                        await actualizar_conversion_lead(telefono, "AGENDA")
-                        logger.info(f"Formulario completo para {telefono}: familia={familia_id}")
-                        cancelar_recordatorios(telefono)
-            except Exception as e:
-                logger.error(f"[FORMULARIO] Error extrayendo datos para {telefono}: {e}")
+        # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
+        #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
 
         # ── Actualizar datos del lead en Airtable (nombre, hijo, edad) ────
         if agent_actual == "ivan":
