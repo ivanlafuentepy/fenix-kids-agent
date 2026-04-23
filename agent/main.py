@@ -1097,10 +1097,7 @@ async def _procesar_boton_pago(btn_titulo: str):
         await proveedor.enviar_mensaje(admin_phone, f"✅ Pago de {tel_lead} confirmado.")
 
         # Mensaje al lead
-        msg_lead = (
-            "Pago confirmado! 🎉 Ahora vamos a coordinar tu clase.\n\n"
-            "El sistema te va a seguir atendiendo para agendar el día y horario 🙌"
-        )
+        msg_lead = "Pago confirmado! 🎉"
         await proveedor.enviar_mensaje(tel_lead, msg_lead)
         await guardar_mensaje(tel_lead, "assistant", msg_lead)
 
