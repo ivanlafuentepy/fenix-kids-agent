@@ -44,6 +44,12 @@ class ProveedorMeta(ProveedorWhatsApp):
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
+                # Filtrar por phone_number_id — ignorar mensajes de otros números
+                # (ej: Dorita comparte la misma app de Meta)
+                webhook_phone_id = value.get("metadata", {}).get("phone_number_id", "")
+                if self.phone_number_id and webhook_phone_id != self.phone_number_id:
+                    logger.info(f"[META] Ignorando mensaje para phone_number_id={webhook_phone_id} (no es {self.phone_number_id})")
+                    continue
                 # Ignorar notificaciones de estado (delivered, read, etc.) — no son mensajes
                 if value.get("statuses") and not value.get("messages"):
                     continue
