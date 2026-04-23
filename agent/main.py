@@ -477,6 +477,22 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
     return "no mencionó"
 
 
+_REGEX_EDAD = re.compile(
+    r"(?:tiene|de|son)\s+(\d{1,2})\s*(?:años|añitos|a[ñn]os)",
+    re.IGNORECASE,
+)
+
+
+def _extraer_edad_historial(historial: list[dict]) -> str:
+    """Busca la edad del hijo en los mensajes del padre."""
+    for m in reversed(historial):
+        if m.get("role") == "user":
+            match = _REGEX_EDAD.search(m.get("content", ""))
+            if match:
+                return f"{match.group(1)} años"
+    return "no mencionó"
+
+
 async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nuevo: str):
     """
     Manda alerta al admin cuando un lead pide hablar por teléfono.
@@ -486,17 +502,17 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
 
     nombre_padre = _extraer_nombre_del_historial(historial, texto_nuevo) or "no se presentó"
     primer_nombre = nombre_padre.split()[0] if nombre_padre != "no se presentó" else ""
-    mensaje_pre = f"Hola {primer_nombre}, soy el profe Ivan otra vez, te puedo llamar ahora?" if primer_nombre else "Hola, soy el profe Ivan otra vez, te puedo llamar ahora?"
+    mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan desde mi personal, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
-    # Extraer nombre del hijo del historial (busca "mi hijo X", "se llama X", etc.)
+    # Extraer nombre del hijo y edad del historial
     nombre_hijo = _extraer_nombre_hijo_historial(historial)
+    edad_hijo = _extraer_edad_historial(historial)
 
     alerta = (
-        f"🚨 URGENTE, UN PADRE FENIX QUIERE HABLAR CONTIGO\n\n"
-        f"👤 Padre: {nombre_padre}\n"
+        f"🚨 Urgente: Llamar a {nombre_padre}\n\n"
         f"👦 Hijo/a: {nombre_hijo}\n"
-        f"📱 {telefono}\n\n"
+        f"🎂 Edad: {edad_hijo}\n\n"
         f"📲 {wa_link}"
     )
 
@@ -704,9 +720,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Alerta al admin (WhatsApp + Telegram)
             await _alertar_pedido_llamada(telefono, historial_previo, texto)
             # Espejar en Telegram del lead
+            nombre_hijo_alerta = _extraer_nombre_hijo_historial(historial_previo)
+            edad_hijo_alerta = _extraer_edad_historial(historial_previo)
             if topic_id:
                 await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono)
-                await enviar_a_topic(topic_id, f"🚨 Alerta de llamada enviada al admin", telefono=telefono)
+                alerta_topic = (
+                    f"🚨 Alerta de llamada enviada al admin\n"
+                    f"👤 Padre: {primer_nombre or 'no se presentó'}\n"
+                    f"👦 Hijo/a: {nombre_hijo_alerta}\n"
+                    f"🎂 Edad: {edad_hijo_alerta}"
+                )
+                await enviar_a_topic(topic_id, alerta_topic, telefono=telefono)
             logger.info(f"[LLAMADA] Pedido de llamada detectado de {telefono}")
             return
 
