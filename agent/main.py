@@ -950,9 +950,9 @@ async def _procesar_confirmacion_reserva(
         # Calcular monto correcto según cantidad de hijos
         _monto_prueba = monto_prueba_por_hijos(historial_completo)
 
-        # Crear un registro PRUEBA FENIX por cada niño
+        # Crear un registro PRUEBA FENIX por cada niño (monto solo en el primero)
         if ninos_form:
-            for n in ninos_form:
+            for i, n in enumerate(ninos_form):
                 await crear_prueba_fenix(
                     telefono=telefono,
                     nombre_responsable=nombre_resp,
@@ -963,7 +963,7 @@ async def _procesar_confirmacion_reserva(
                     fecha_reserva=fecha_str,
                     hora=hora_str,
                     fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                    monto=_monto_prueba,
+                    monto=_monto_prueba if i == 0 else 0,
                     diagnostico_ids=diagnostico_ids,
                     lead_record_id=lead_record_id,
                 )
