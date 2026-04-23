@@ -155,14 +155,17 @@ _DIAGNOSTICO_MAP = {
 
 
 async def actualizar_diagnostico_lead(telefono: str, numeros: list[int]) -> bool:
-    """Linkea los números del rompehielos al lead en DIAGNOSTICO FENIX."""
+    """Linkea los números del rompehielos al lead en DIAGNOSTICO FENIX. Acumula, no sobreescribe."""
     records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
     if not records:
         return False
-    diag_ids = [_DIAGNOSTICO_MAP[n] for n in numeros if n in _DIAGNOSTICO_MAP]
-    if not diag_ids:
+    nuevos_ids = [_DIAGNOSTICO_MAP[n] for n in numeros if n in _DIAGNOSTICO_MAP]
+    if not nuevos_ids:
         return False
-    return await _patch(_LEADS, records[0]["id"], {"DIAGNOSTICO": diag_ids})
+    # Leer los existentes y acumular
+    existentes = records[0].get("fields", {}).get("DIAGNOSTICO", [])
+    todos = list(set(existentes + nuevos_ids))
+    return await _patch(_LEADS, records[0]["id"], {"DIAGNOSTICO": todos})
 
 
 async def actualizar_datos_lead(telefono: str, nombre_responsable: str = "", nombre_nino: str = "", edad: str = "") -> bool:
