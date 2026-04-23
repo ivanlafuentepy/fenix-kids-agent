@@ -282,6 +282,13 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
         if await _delete(_FAMILIAS, familia_id):
             contador["familia"] += 1
 
+    # Borrar registros de PRUEBA FENIX
+    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+    contador["pruebas"] = 0
+    for p in pruebas:
+        if await _delete(_PRUEBAS, p["id"]):
+            contador["pruebas"] += 1
+
     # Borrar lead
     lead_id = await obtener_lead_record_id(telefono)
     if lead_id and await _delete(_LEADS, lead_id):

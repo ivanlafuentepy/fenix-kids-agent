@@ -632,8 +632,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await limpiar_estado_completo(telefono)
             resumen = (
                 f"Reset completo ✅\n"
-                f"Borrados: lead={contador['lead']}, familia={contador['familia']}, "
-                f"niños={contador['ninos']}, reservas={contador['reservas']}"
+                f"Borrados: lead={contador['lead']}, pruebas={contador.get('pruebas', 0)}, "
+                f"familia={contador['familia']}, niños={contador['ninos']}, reservas={contador['reservas']}"
             )
             await proveedor.enviar_mensaje(telefono, resumen)
             topic_reset = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
