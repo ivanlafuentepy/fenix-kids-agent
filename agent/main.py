@@ -415,6 +415,16 @@ _PATRONES_LLAMADA = [
     r"\bquiero\s+(?:hablar|llamar)",
     r"\bhablar\s+personalmente",
     r"\bllamada\s+telef[oó]nica",
+    # Padre acepta oferta de llamada de Ivan
+    r"\bpuedo\s+hablar",
+    r"\bprefiero\s+(?:hablar|llamar|que me llam)",
+    r"\bllamame",
+    r"\bllam[aá]me",
+    r"\bla\s+segunda",
+    r"\bla\s+2da",
+    r"\bsi\s*,?\s*llamame",
+    r"\bdale\s+llamame",
+    r"\bsi\s*,?\s*(?:podemos|podes)\s+hablar",
 ]
 
 _REGEX_NOMBRE_PRESENTACION = re.compile(
@@ -1185,10 +1195,17 @@ async def _procesar_confirmacion_reserva(
 
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
 
-def _armar_followup_afiche(historial: list[dict]) -> str:
-    """Arma el follow-up del afiche con nombre del hijo si está disponible."""
-    nombre_hijo = _extraer_nombre_hijo_historial(historial)
-    if nombre_hijo and nombre_hijo != "no mencionó":
+async def _armar_followup_afiche(telefono: str) -> str:
+    """Arma el follow-up del afiche con nombre del hijo desde Airtable."""
+    nombre_hijo = ""
+    try:
+        from agent.airtable_client import _get_records, _LEADS
+        records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if records:
+            nombre_hijo = records[0].get("fields", {}).get("NOMBRE NIÑO", "") or ""
+    except Exception:
+        pass
+    if nombre_hijo:
         parte_nombre = f"¿Te gustaría que {nombre_hijo} sea parte de Fenix Kids?"
     else:
         parte_nombre = "¿Te gustaría que tu hijo sea parte de Fenix Kids?"
@@ -1214,9 +1231,8 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         # Delay de 3 segundos antes del follow-up
         await asyncio.sleep(3)
 
-        # Follow-up dinámico con nombre del hijo
-        historial = await obtener_historial(telefono, limite=20)
-        followup = _armar_followup_afiche(historial)
+        # Follow-up dinámico con nombre del hijo (desde Airtable)
+        followup = await _armar_followup_afiche(telefono)
         await proveedor.enviar_mensaje(telefono, followup)
         await guardar_mensaje(telefono, "assistant", followup)
 
