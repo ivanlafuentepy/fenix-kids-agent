@@ -72,7 +72,7 @@ from agent.airtable_client import (
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
-    actualizar_datos_lead,
+    actualizar_datos_lead, actualizar_diagnostico_lead,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -772,11 +772,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Delay de análisis (respuesta a números del rompehielos) ────────
         cant_numeros = _contar_numeros_rompehielos(texto)
-        if (agent_actual == "ivan" and not es_nuevo and cant_numeros > 0
-                and telefono not in _PHONES_SIN_DELAY):
-            delay_s = _delay_por_numeros(cant_numeros)
-            logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
-            await asyncio.sleep(delay_s)
+        if agent_actual == "ivan" and cant_numeros > 0:
+            # Guardar diagnóstico en Airtable
+            numeros_elegidos = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', texto)]
+            if numeros_elegidos:
+                try:
+                    await actualizar_diagnostico_lead(telefono, list(set(numeros_elegidos)))
+                except Exception as e:
+                    logger.error(f"[DIAGNOSTICO] Error guardando para {telefono}: {e}")
+            # Delay solo para leads reales (no admin)
+            if not es_nuevo and telefono not in _PHONES_SIN_DELAY:
+                delay_s = _delay_por_numeros(cant_numeros)
+                logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
+                await asyncio.sleep(delay_s)
 
         # ── Generar respuesta ─────────────────────────────────────────────
         respuesta = await generar_respuesta(

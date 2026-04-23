@@ -144,6 +144,27 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     return None
 
 
+# Mapeo número rompehielos → record ID en DIAGNOSTICO FENIX
+_DIAGNOSTICO_MAP = {
+    1: "recbslONudH8ue7GJ", 2: "rec2rZhYc66lruB24", 3: "recujDup74w7jfHHa",
+    4: "reccI23SAUX3RLgBq", 5: "recpuZN4JHJw9ay7U", 6: "recCkqI2EMwB5iEkj",
+    7: "recEENwOs4WdkaOnH", 8: "recO9DRxqktfPqczU", 9: "rec22T28IFfVNoFNw",
+    10: "rec8BZJFathVxaads", 11: "recJuhT5tHqOlFVvI", 12: "recaV3I8LoKq9KJKE",
+    13: "recQ7sD9xYtMfLnJv", 14: "recJzk1SfWuZominQ", 15: "reclb2atSeA3kMq6n",
+}
+
+
+async def actualizar_diagnostico_lead(telefono: str, numeros: list[int]) -> bool:
+    """Linkea los números del rompehielos al lead en DIAGNOSTICO FENIX."""
+    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    if not records:
+        return False
+    diag_ids = [_DIAGNOSTICO_MAP[n] for n in numeros if n in _DIAGNOSTICO_MAP]
+    if not diag_ids:
+        return False
+    return await _patch(_LEADS, records[0]["id"], {"DIAGNOSTICO": diag_ids})
+
+
 async def actualizar_datos_lead(telefono: str, nombre_responsable: str = "", nombre_nino: str = "", edad: str = "") -> bool:
     """Actualiza NOMBRE RESPONSABLE, NOMBRE NIÑO y EDAD en LEADS FENIX."""
     records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
