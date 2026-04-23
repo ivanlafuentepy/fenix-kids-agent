@@ -395,6 +395,53 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
     return "en breve te contacta aurora" in t or "te contacta aurora" in t
 
 
+# ── Diagnóstico diferido (delay 3 min después de recibir edad) ────────────────
+
+_diagnostico_pendiente: dict[str, asyncio.Task] = {}
+_DELAY_DIAGNOSTICO = 180  # 3 minutos
+
+
+def _cancelar_diagnostico_pendiente(telefono: str):
+    """Cancela el diagnóstico pendiente si existe."""
+    task = _diagnostico_pendiente.pop(telefono, None)
+    if task and not task.done():
+        task.cancel()
+        logger.info(f"[DIAG] Diagnóstico pendiente cancelado para {telefono}")
+
+
+def _detectar_respuesta_edad(texto: str, historial: list[dict]) -> bool:
+    """Detecta si el padre está respondiendo a la pregunta de edad de Ivan."""
+    if not historial:
+        return False
+    ultimo = historial[-1]
+    if ultimo.get("role") != "assistant":
+        return False
+    contenido = ultimo.get("content", "").lower()
+    if not re.search(r'cu[aá]ntos\s+a[ñn]os', contenido):
+        return False
+    # El padre respondió con número o "X años"
+    t = texto.strip()
+    if re.fullmatch(r'\d{1,2}', t) and 2 <= int(t) <= 15:
+        return True
+    if re.search(r'\b\d{1,2}\s*(?:años|añitos|a[ñn]os)', t, re.IGNORECASE):
+        return True
+    return False
+
+
+def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
+    """Busca en el historial los números del rompehielos que eligió el padre."""
+    for m in historial:
+        if m.get("role") == "user":
+            nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', m.get("content", ""))]
+            if nums and len(nums) >= 1:
+                # Verificar que sea respuesta al rompehielos (no cualquier número suelto)
+                contenido = m.get("content", "").strip()
+                # Si tiene 2+ números o el texto es mayormente números, es rompehielos
+                if len(nums) >= 2 or re.fullmatch(r'[\d,.\s y]+', contenido):
+                    return len(nums), nums
+    return 0, []
+
+
 # ── Detección de pedido de llamada ───────────────────────────────────────────
 
 _PATRONES_LLAMADA = [
@@ -725,6 +772,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if texto.lower() == "holayosoyfenix" and telefono == admin_phone:
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
+            _cancelar_diagnostico_pendiente(telefono)
             event_id_prev = await obtener_calendar_event_id(telefono)
             if event_id_prev:
                 try:
@@ -752,7 +800,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await _procesar_boton_pago(btn_titulo)
                 return
 
-        # ── Cancelar timers pendientes ────────────────────────────────────
+        # ── Cancelar timers pendientes (NO el diagnóstico — ese se envía siempre)
         cancelar_seguimiento(telefono)
 
         # ── Transcribir audio ANTES de todo (para que detectores usen texto real)
@@ -923,6 +971,70 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 delay_s = _delay_por_numeros(cant_numeros)
                 logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
                 await asyncio.sleep(delay_s)
+
+        # ── Diagnóstico diferido: si el padre responde la edad y eligió 2+ números,
+        #    enviar "dame unos minutitos" y programar el diagnóstico con delay ──────
+        if agent_actual == "ivan" and _detectar_respuesta_edad(texto, historial):
+            cant_romp, nums_romp = _contar_numeros_rompehielos_historial(historial)
+            if cant_romp >= 2:
+                # Buscar nombre del hijo en Airtable
+                _nombre_hijo_diag = ""
+                try:
+                    from agent.airtable_client import _get_records, _LEADS
+                    _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                    if _lr:
+                        _nombre_hijo_diag = _lr[0].get("fields", {}).get("NOMBRE NIÑO", "") or ""
+                except Exception:
+                    pass
+                if not _nombre_hijo_diag:
+                    _nombre_hijo_diag = _extraer_nombre_hijo_historial(historial)
+                    if _nombre_hijo_diag == "no mencionó":
+                        _nombre_hijo_diag = ""
+
+                nums_str = ", ".join(str(n) for n in sorted(set(nums_romp)))
+                sobre = f" sobre {_nombre_hijo_diag}" if _nombre_hijo_diag else ""
+                msg_espera = f"Genial, dame unos minutitos y te respondo bien sobre los temas {nums_str} que me comentaste{sobre} 🙌"
+
+                await guardar_mensaje(telefono, "user", texto)
+                await guardar_mensaje(telefono, "assistant", msg_espera)
+                await _delay_humano(msg_espera)
+                await proveedor.enviar_mensaje(telefono, msg_espera)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_espera}", telefono=telefono)
+
+                # Programar diagnóstico diferido
+                async def _enviar_diagnostico_diferido(tel, hist, ctx_extra, tid):
+                    delay = _DELAY_DIAGNOSTICO if tel not in _PHONES_SIN_DELAY else 5
+                    logger.info(f"[DIAG] Diagnóstico diferido para {tel} en {delay}s")
+                    await asyncio.sleep(delay)
+                    # Re-obtener historial (puede haber nuevos msgs intermedios)
+                    hist_actual = await obtener_historial(tel, limite=40)
+                    respuesta_diag = await generar_respuesta(
+                        mensaje="(continuar con el diagnóstico completo que prometí)",
+                        historial=hist_actual,
+                        agent_actual="ivan",
+                        contexto_extra=ctx_extra,
+                    )
+                    await guardar_mensaje(tel, "assistant", respuesta_diag)
+                    await _delay_humano(respuesta_diag)
+                    await proveedor.enviar_mensaje(tel, respuesta_diag)
+                    if tid:
+                        await enviar_a_topic(tid, f"👨‍🏫 IVAN: {respuesta_diag}", telefono=tel)
+                    logger.info(f"[DIAG] Diagnóstico enviado a {tel}")
+                    _diagnostico_pendiente.pop(tel, None)
+
+                _cancelar_diagnostico_pendiente(telefono)
+                task = _fire_and_forget(_enviar_diagnostico_diferido(telefono, historial, contexto_extra, topic_id))
+                _diagnostico_pendiente[telefono] = task
+
+                # Actualizar datos del lead (edad)
+                try:
+                    await actualizar_datos_lead(telefono, edad=texto.strip())
+                except Exception:
+                    pass
+
+                logger.info(f"[DIAG] Esperando {_DELAY_DIAGNOSTICO}s para diagnóstico de {telefono} ({cant_romp} números)")
+                return
 
         # ── Generar respuesta ─────────────────────────────────────────────
         respuesta = await generar_respuesta(
