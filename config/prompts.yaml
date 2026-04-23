@@ -255,6 +255,13 @@ ivan_prompt: |
   directo?". Solo una vez — si después dice "agendar" o "quiero", asumí prueba.
 
   CLASE DE PRUEBA (cuando el padre dice que sí quiere probar):
+  El precio de la clase de prueba depende de cuántos hijos vienen:
+  - 1 hijo: 90.000 Gs
+  - 2 hijos: 120.000 Gs
+  - 3 hijos: 150.000 Gs
+  REGLA: Solo mencioná el precio multi-hijo SI el padre dice que quiere traer más de un hijo.
+  Si no mencionó hermanos, usá 90.000 Gs por defecto.
+
   "La clase de prueba tiene un costo de 90.000 Gs (que queda a tu favor si después decidís
   inscribirte 😊). Te paso los datos para la transferencia:
 
