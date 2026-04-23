@@ -41,6 +41,7 @@ _FAMILIAS  = "FAMILIAS FENIX"
 _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
+_PRUEBAS   = "PRUEBA FENIX"
 
 
 # ── Helpers de bajo nivel ──────────────────────────────────────────────────────
@@ -521,3 +522,40 @@ async def crear_familia_completa(
 
     logger.info(f"Familia completa creada para {telefono}: familia={familia_id}, niños={nino_ids}")
     return familia_id, nino_ids
+
+
+# ── PRUEBA FENIX (leads que agendan/pagan clase de prueba) ────────────────────
+
+async def crear_prueba_fenix(
+    telefono: str,
+    nombre_responsable: str,
+    apellido_responsable: str,
+    nombre_hijo: str,
+    apellido_hijo: str,
+    edad_hijo: str,
+    fecha_reserva: str,
+    hora: str,
+    conversion: str = "AGENDA",
+    monto: int = 90_000,
+) -> str | None:
+    """Crea un registro en PRUEBA FENIX. Retorna record_id o None."""
+    campos = {
+        "TELEFONO": telefono,
+        "NOMBRE RESPONSABLE": nombre_responsable,
+        "APELLIDO RESPONSABLE": apellido_responsable,
+        "NOMBRE HIJO": nombre_hijo,
+        "APELLIDO HIJO": apellido_hijo,
+        "EDAD HIJO": edad_hijo,
+        "FECHA RESERVA": fecha_reserva,
+        "HORA": hora,
+        "CONVERSION": conversion,
+        "MONTO": monto,
+    }
+    # Limpiar campos vacíos
+    campos = {k: v for k, v in campos.items() if v}
+    record = await _post(_PRUEBAS, campos)
+    if record:
+        rid = record.get("id")
+        logger.info(f"[PRUEBA FENIX] Creado: {nombre_hijo} {apellido_hijo} ({telefono}) → {rid}")
+        return rid
+    return None

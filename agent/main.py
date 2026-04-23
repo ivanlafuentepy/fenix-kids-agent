@@ -71,7 +71,7 @@ from agent.airtable_client import (
     obtener_ninos_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
-    obtener_o_crear_horario,
+    obtener_o_crear_horario, crear_prueba_fenix,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -901,6 +901,42 @@ async def _procesar_confirmacion_reserva(
                 logger.warning(f"No se pudo obtener/crear HORARIO {fecha_airtable} {hora_str}")
         except Exception as e:
             logger.error(f"Error creando RESERVA para {telefono}: {e}")
+
+    # ── Crear registro en PRUEBA FENIX ──────────────────────────────────────────
+    try:
+        historial_completo = await obtener_historial(telefono, limite=40)
+        nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
+        apellido_responsable = ""
+        if nombre_responsable and " " in nombre_responsable:
+            partes = nombre_responsable.split(" ", 1)
+            nombre_responsable = partes[0]
+            apellido_responsable = partes[1]
+
+        nombre_hijo = ""
+        apellido_hijo = ""
+        edad_hijo = ""
+        if ninos:
+            n = ninos[0]
+            nombre_hijo = n.get("nombre", "")
+            apellido_hijo = n.get("apellido", "")
+        else:
+            # Extraer del historial
+            nh = _extraer_nombre_hijo_historial(historial_completo)
+            if nh and nh != "no mencionó":
+                nombre_hijo = nh
+
+        await crear_prueba_fenix(
+            telefono=telefono,
+            nombre_responsable=nombre_responsable,
+            apellido_responsable=apellido_responsable,
+            nombre_hijo=nombre_hijo,
+            apellido_hijo=apellido_hijo,
+            edad_hijo=edad_hijo,
+            fecha_reserva=fecha_str,
+            hora=hora_str,
+        )
+    except Exception as e:
+        logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
 
     # ── Crear o actualizar evento en Google Calendar ───────────────────────────
     if fecha_iso:
