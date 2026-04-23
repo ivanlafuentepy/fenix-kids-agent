@@ -947,6 +947,12 @@ async def _procesar_confirmacion_reserva(
             nombre_responsable = partes[0]
             apellido_responsable = partes[1]
 
+        # Obtener diagnóstico del lead (IDs ya linkeados en LEADS FENIX)
+        from agent.airtable_client import _get_records, _LEADS
+        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        lead_record_id = lead_records[0]["id"] if lead_records else None
+        diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
+
         # Crear un registro PRUEBA FENIX por cada niño
         if ninos:
             for n in ninos:
@@ -959,9 +965,11 @@ async def _procesar_confirmacion_reserva(
                     edad_hijo="",
                     fecha_reserva=fecha_str,
                     hora=hora_str,
+                    fecha_nacimiento=n.get("fecha_nacimiento", ""),
+                    diagnostico_ids=diagnostico_ids,
+                    lead_record_id=lead_record_id,
                 )
         else:
-            # Sin familia creada — extraer del historial
             nh = _extraer_nombre_hijo_historial(historial_completo)
             await crear_prueba_fenix(
                 telefono=telefono,
@@ -972,6 +980,8 @@ async def _procesar_confirmacion_reserva(
                 edad_hijo="",
                 fecha_reserva=fecha_str,
                 hora=hora_str,
+                diagnostico_ids=diagnostico_ids,
+                lead_record_id=lead_record_id,
             )
     except Exception as e:
         logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")

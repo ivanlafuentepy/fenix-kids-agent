@@ -589,8 +589,11 @@ async def crear_prueba_fenix(
     edad_hijo: str,
     fecha_reserva: str,
     hora: str,
+    fecha_nacimiento: str = "",
     conversion: str = "AGENDA",
     monto: int = 90_000,
+    diagnostico_ids: list[str] | None = None,
+    lead_record_id: str | None = None,
 ) -> str | None:
     """Crea un registro en PRUEBA FENIX. Retorna record_id o None."""
     from datetime import datetime, timezone
@@ -603,11 +606,16 @@ async def crear_prueba_fenix(
         "EDAD HIJO": edad_hijo,
         "FECHA RESERVA": fecha_reserva,
         "HORA": hora,
+        "FECHA NACIMIENTO": fecha_nacimiento,
         "CONVERSION": conversion,
         "MONTO": monto,
         "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
     }
-    # Limpiar campos vacíos
+    if diagnostico_ids:
+        campos["DIAGNOSTICO"] = diagnostico_ids
+    if lead_record_id:
+        campos["LEAD"] = [lead_record_id]
+    # Limpiar campos vacíos (excepto links)
     campos = {k: v for k, v in campos.items() if v}
     record = await _post(_PRUEBAS, campos)
     if record:
