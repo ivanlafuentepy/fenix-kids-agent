@@ -3,7 +3,7 @@
 
 """
 Genera respuestas usando la API de Anthropic Claude.
-Soporta dos agentes distintos: ivan y nixie.
+Soporta dos agentes distintos: ivan y aurora.
 Lee los prompts desde config/prompts.yaml y los selecciona según el agente activo.
 """
 
@@ -107,7 +107,7 @@ def _contexto_fechas() -> str:
 def cargar_prompt_agente(agent_actual: str) -> str:
     """Carga el system prompt del agente indicado e inyecta contexto de fechas."""
     config = cargar_config_prompts()
-    clave = "nixie_prompt" if agent_actual == "nixie" else "ivan_prompt"
+    clave = "aurora_prompt" if agent_actual == "aurora" else "ivan_prompt"
     prompt = config.get(clave, f"Sos {agent_actual} de FENIX KIDS ACADEMY. Respondé en español.")
     return f"{_contexto_fechas()}\n\n{prompt}"
 
@@ -134,7 +134,7 @@ async def generar_respuesta(
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
-        agent_actual: "ivan" o "nixie" — determina qué prompt se usa
+        agent_actual: "ivan" o "aurora" — determina qué prompt se usa
         contexto_extra: Texto adicional inyectado al final del system prompt
 
     Returns:
@@ -225,7 +225,7 @@ async def extraer_datos_formulario(historial: list[dict]) -> dict:
     import json as _json
 
     historial_texto = "\n".join(
-        f"{'PADRE' if m['role'] == 'user' else 'NIXIE'}: {m['content']}"
+        f"{'PADRE' if m['role'] == 'user' else 'AURORA'}: {m['content']}"
         for m in historial[-30:]
     )
 

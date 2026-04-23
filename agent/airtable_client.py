@@ -6,13 +6,13 @@ Gestiona las tablas de Airtable para FENIX KIDS ACADEMY.
 
 Flujo LEAD_NUEVO:
   1. Primer mensaje → crear registro en LEADS (TELEFONO + CONVERSION=CONSULTA + AGENT_ACTUAL=IVAN)
-  2. Ivan cierra → AGENT_ACTUAL=NIXIE, MODO_NIXIE=lead_nuevo
-  3. Nixie recolecta datos → crear FAMILIA + NIÑOS
-  4. Nixie confirma horario → CONVERSION=AGENDA + crear RESERVA
+  2. Ivan cierra → AGENT_ACTUAL=AURORA, MODO_AURORA=lead_nuevo
+  3. Aurora recolecta datos → crear FAMILIA + NIÑOS
+  4. Aurora confirma horario → CONVERSION=AGENDA + crear RESERVA
   5. Crear evento Google Calendar
 
 Flujo CLIENTE_INSCRIPTO:
-  1. Padre escribe directo → NIXIE busca en FAMILIAS por nombre
+  1. Padre escribe directo → AURORA busca en FAMILIAS por nombre
   2. Recupera NIÑOS vinculados
   3. Padre elige horario → crear RESERVA
   4. Crear evento Google Calendar
@@ -161,13 +161,13 @@ async def actualizar_conversion_lead(telefono: str, estado: str) -> bool:
 
 
 async def actualizar_agent_lead(telefono: str, agent: str, modo_nixie: str | None = None) -> bool:
-    """Actualiza AGENT_ACTUAL y opcionalmente MODO_NIXIE en LEADS."""
+    """Actualiza AGENT_ACTUAL y opcionalmente MODO_AURORA en LEADS."""
     record_id = await obtener_lead_record_id(telefono)
     if not record_id:
         return False
     campos: dict = {"AGENT_ACTUAL": agent.upper()}
     if modo_nixie:
-        campos["MODO_NIXIE"] = modo_nixie
+        campos["MODO_AURORA"] = modo_nixie
     return await _patch(_LEADS, record_id, campos)
 
 

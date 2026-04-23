@@ -1,5 +1,5 @@
 # agent/main.py — Servidor FastAPI + Webhook WhatsApp
-# FENIX KIDS ACADEMY — dual agente: Profe Ivan + Nixie
+# FENIX KIDS ACADEMY — dual agente: Profe Ivan + Aurora
 
 """
 Endpoints:
@@ -374,23 +374,23 @@ async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)
 
 # ── Detección de activación / handoff / confirmación ────────────────────────
 
-_CLAVES_NIXIE = [
+_CLAVES_AURORA = [
     "nixi", "hola nixi", "quiero hablar con nixi",
     "quiero reservar con nixi", "quiero agendar con nixi",
-    "hablar con nixie", "reservar con nixie", "agendar con nixie",
+    "hablar con aurora", "reservar con aurora", "agendar con aurora",
 ]
 
 
-def _detectar_activacion_nixie(texto: str) -> bool:
-    """El padre escribió directamente a Nixie."""
+def _detectar_activacion_aurora(texto: str) -> bool:
+    """El padre escribió directamente a Aurora."""
     t = texto.lower()
-    return any(k in t for k in _CLAVES_NIXIE)
+    return any(k in t for k in _CLAVES_AURORA)
 
 
-def _detectar_handoff_ivan_nixie(respuesta: str) -> bool:
-    """Ivan dijo 'En breve te contacta NIXIE' — señal de transferencia."""
+def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
+    """Ivan dijo 'En breve te contacta AURORA' — señal de transferencia."""
     t = respuesta.lower()
-    return "en breve te contacta nixie" in t or "te contacta nixie" in t
+    return "en breve te contacta aurora" in t or "te contacta aurora" in t
 
 
 # ── Detección de pedido de llamada ───────────────────────────────────────────
@@ -513,9 +513,9 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         logger.error(f"[LLAMADA] Error Telegram: {e}")
 
 
-def _detectar_confirmacion_nixie(respuesta: str) -> dict | None:
+def _detectar_confirmacion_aurora(respuesta: str) -> dict | None:
     """
-    Detecta si Nixie confirmó una reserva.
+    Detecta si Aurora confirmó una reserva.
     Retorna {"fecha": ..., "hora": ...} o None.
     """
     patrones = [
@@ -596,9 +596,9 @@ async def _procesar_mensaje_webhook(msg):
     4. Protección prompt injection
     5. Modo nocturno (23:00–07:00 PY)
     6. Transcribir audio si aplica
-    7. Detectar activación directa de Nixie
+    7. Detectar activación directa de Aurora
     8. Lead nuevo → crear en LEADS
-    9. Generar respuesta con Ivan o Nixie
+    9. Generar respuesta con Ivan o Aurora
     10. Detectar handoff / extraer formulario / confirmación de reserva
     11. Guardar mensajes + enviar respuesta + espejo en Telegram
     """
@@ -733,17 +733,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Obtener historial (40 msgs para no perder contexto en charlas largas)
         historial = await obtener_historial(telefono, limite=40)
 
-        # ── Lead nuevo: primer contacto + router Ivan/Nixie por teléfono ──
+        # ── Lead nuevo: primer contacto + router Ivan/Aurora por teléfono ──
         _, es_nuevo = await asignar_variante(telefono)
         if es_nuevo:
-            # Router: si el teléfono ya está en FAMILIAS (inscripto) → Nixie.
+            # Router: si el teléfono ya está en FAMILIAS (inscripto) → Aurora.
             # Si no → Ivan (lead de anuncios / nuevo).
             familia_inscripta = await buscar_familia_por_telefono(telefono)
             if familia_inscripta:
-                agent_actual = "nixie"
+                agent_actual = "aurora"
                 modo_nixie = "cliente_inscripto"
-                await actualizar_agent_actual(telefono, "nixie", modo_nixie)
-                logger.info(f"[ROUTER] {telefono} es inscripto → Nixie")
+                await actualizar_agent_actual(telefono, "aurora", modo_nixie)
+                logger.info(f"[ROUTER] {telefono} es inscripto → Aurora")
             else:
                 agent_actual = "ivan"
                 modo_nixie = None
@@ -754,9 +754,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await guardar_airtable_record_id(telefono, record_id)
             await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
 
-        # ── Si es Nixie cliente_inscripto: inyectar contexto con sus hijos ──
+        # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
-        if agent_actual == "nixie" and modo_nixie == "cliente_inscripto":
+        if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
             familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
                 campos = familia_existente.get("fields", {})
@@ -804,8 +804,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[FORMULARIO] Error extrayendo datos para {telefono}: {e}")
 
-        # ── Detectar confirmación de reserva (Ivan o Nixie) ───────────────
-        confirmacion = _detectar_confirmacion_nixie(respuesta)
+        # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
+        confirmacion = _detectar_confirmacion_aurora(respuesta)
         if confirmacion:
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta)
 
@@ -818,7 +818,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         await proveedor.enviar_mensaje(telefono, respuesta)
 
         # ── Espejo respuesta en Telegram ──────────────────────────────────
-        agente_label = "🐼 NIXIE" if agent_actual == "nixie" else "👨‍🏫 IVAN"
+        agente_label = "🌟 AURORA" if agent_actual == "aurora" else "👨‍🏫 IVAN"
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
@@ -842,10 +842,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 async def _procesar_confirmacion_reserva(
     telefono: str,
     confirmacion: dict,
-    respuesta_nixie: str,
+    respuesta_aurora: str,
 ):
     """
-    Cuando Nixie confirma una reserva:
+    Cuando Aurora confirma una reserva:
     1. Actualizar CONVERSION=AGENDA en LEADS
     2. Obtener/crear HORARIO en Airtable
     3. Crear RESERVA(s) en Airtable — una por cada niño de la familia
@@ -856,7 +856,7 @@ async def _procesar_confirmacion_reserva(
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")
 
-    logger.info(f"Confirmación Nixie detectada: {fecha_str} {hora_str} para {telefono}")
+    logger.info(f"Confirmación Aurora detectada: {fecha_str} {hora_str} para {telefono}")
 
     # Actualizar LEADS
     await actualizar_conversion_lead(telefono, "AGENDA")

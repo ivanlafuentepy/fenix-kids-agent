@@ -1,5 +1,5 @@
 # agent/ab_test.py — Estado de conversaciones FENIX KIDS ACADEMY
-# Maneja: agente activo, modo Nixie, variante rompehielos, conversión, Calendar
+# Maneja: agente activo, modo Aurora, variante rompehielos, conversión, Calendar
 
 import random
 import logging
@@ -29,7 +29,7 @@ _KEYWORDS_CONVERSION = [
 
 
 def detectar_conversion(texto_respuesta: str) -> bool:
-    """Retorna True si Nixie llegó al paso de recolección de datos o confirmación."""
+    """Retorna True si Aurora llegó al paso de recolección de datos o confirmación."""
     texto_lower = texto_respuesta.lower()
     return any(kw in texto_lower for kw in _KEYWORDS_CONVERSION)
 
@@ -107,7 +107,7 @@ async def obtener_variante(telefono: str) -> str | None:
 # ── Conversión y formulario ───────────────────────────────────────────────────
 
 async def marcar_conversion(telefono: str):
-    """Marca que Nixie ya inició el proceso de recolección de datos."""
+    """Marca que Aurora ya inició el proceso de recolección de datos."""
     async with async_session() as session:
         result = await session.execute(
             select(ConversacionAB).where(ConversacionAB.telefono == telefono)

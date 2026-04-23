@@ -2,7 +2,7 @@
 # FENIX KIDS ACADEMY
 
 """
-Crea automáticamente un evento en Google Calendar cuando Nixie
+Crea automáticamente un evento en Google Calendar cuando Aurora
 confirma una clase de prueba o una reserva.
 
 Requiere una Service Account de Google Cloud con acceso al calendar
@@ -33,7 +33,7 @@ _KEYWORDS_CONFIRMACION = [
     "confirmad",        # "confirmado/a"
     "reservad",         # "reservado/a"
     "te espero",        # "te espero el..."
-    "te esperamos",     # "te esperamos el..." ← forma común que usa Nixie
+    "te esperamos",     # "te esperamos el..." ← forma común que usa Aurora
     "primera clase",
     "quedás para",
     "quedas para",
@@ -264,7 +264,7 @@ async def insertar_evento_google(dia: str, hora: str, telefono: str, nombre: str
             "description": (
                 f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {telefono}\n"
-                f"Registrado via Nixie (FENIX Kids WhatsApp)"
+                f"Registrado via Aurora (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}-04:00", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}-04:00",   "timeZone": "America/Asuncion"},
@@ -342,7 +342,7 @@ async def crear_evento_primera_clase(historial: list[dict], telefono: str) -> di
             "description": (
                 f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {datos['telefono']}\n"
-                f"Registrado via Nixie (FENIX Kids WhatsApp)"
+                f"Registrado via Aurora (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}-04:00", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}-04:00",   "timeZone": "America/Asuncion"},
@@ -510,7 +510,7 @@ async def insertar_evento_desde_fecha_iso(
             "description": (
                 f"Niño/a: {nombre_display}\n"
                 f"Teléfono: {telefono}\n"
-                f"Registrado via Nixie (FENIX Kids WhatsApp)"
+                f"Registrado via Aurora (FENIX Kids WhatsApp)"
             ),
             "start": {"dateTime": f"{inicio.strftime('%Y-%m-%dT%H:%M:%S')}{py_offset_fmt}", "timeZone": "America/Asuncion"},
             "end":   {"dateTime": f"{fin.strftime('%Y-%m-%dT%H:%M:%S')}{py_offset_fmt}",   "timeZone": "America/Asuncion"},
