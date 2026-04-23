@@ -954,7 +954,7 @@ _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_f
 _AFICHE_FOLLOWUP = (
     "Con la opción trimestral como verás tenemos un gran descuento, "
     "tb tenés la opción de venir a probar un sábado en cualquiera de los horarios por 90.000 Gs 🔥\n\n"
-    "¿Cuál opción te gustaría agendar?"
+    "¿Te gustaría ser parte de Fenix Kids Academy?"
 )
 
 
