@@ -131,11 +131,13 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     if records:
         return records[0]["id"]
 
+    from datetime import datetime, timezone
     resultado = await _post(_LEADS, {
         "TELEFONO": telefono,
         "ROMPEHIELOS": rompehielos,
         "CONVERSION": "CONSULTA",
         "AGENT_ACTUAL": "IVAN",
+        "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
     })
     if resultado:
         record_id = resultado["id"]
@@ -166,6 +168,17 @@ async def actualizar_diagnostico_lead(telefono: str, numeros: list[int]) -> bool
     existentes = records[0].get("fields", {}).get("DIAGNOSTICO", [])
     todos = list(set(existentes + nuevos_ids))
     return await _patch(_LEADS, records[0]["id"], {"DIAGNOSTICO": todos})
+
+
+async def actualizar_reserva_lead(telefono: str, fecha_reserva: str, hora_reserva: str) -> bool:
+    """Actualiza FECHA RESERVA y HORA RESERVA en LEADS FENIX."""
+    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    if not records:
+        return False
+    return await _patch(_LEADS, records[0]["id"], {
+        "FECHA RESERVA": fecha_reserva,
+        "HORA RESERVA": hora_reserva,
+    })
 
 
 async def actualizar_datos_lead(telefono: str, nombre_responsable: str = "", nombre_nino: str = "", edad: str = "") -> bool:
@@ -580,6 +593,7 @@ async def crear_prueba_fenix(
     monto: int = 90_000,
 ) -> str | None:
     """Crea un registro en PRUEBA FENIX. Retorna record_id o None."""
+    from datetime import datetime, timezone
     campos = {
         "TELEFONO": telefono,
         "NOMBRE RESPONSABLE": nombre_responsable,
@@ -591,6 +605,7 @@ async def crear_prueba_fenix(
         "HORA": hora,
         "CONVERSION": conversion,
         "MONTO": monto,
+        "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
     }
     # Limpiar campos vacíos
     campos = {k: v for k, v in campos.items() if v}

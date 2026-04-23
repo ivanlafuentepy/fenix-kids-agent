@@ -73,6 +73,7 @@ from agent.airtable_client import (
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
+    actualizar_reserva_lead,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -891,8 +892,9 @@ async def _procesar_confirmacion_reserva(
 
     logger.info(f"Confirmación Aurora detectada: {fecha_str} {hora_str} para {telefono}")
 
-    # Actualizar LEADS
+    # Actualizar LEADS con conversión + datos de reserva
     await actualizar_conversion_lead(telefono, "AGENDA")
+    await actualizar_reserva_lead(telefono, fecha_str, hora_str)
 
     # Calcular fecha ISO
     fecha_iso = None
