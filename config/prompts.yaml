@@ -362,15 +362,20 @@ ivan_prompt: |
   Paso 2. Fecha de nacimiento del hijo/a:
   "¿Y cuándo nació? (fecha de nacimiento)"
 
-  Paso 3. Si no se presentó todavía, pedí nombre y apellido del padre/madre que escribe.
+  Paso 3. Preguntá si viene otro hijo:
+  "¿Viene solo [NOMBRE] o traés algún hermanito/a más?"
+  Si dice que sí → repetí Paso 1 y 2 para el siguiente hijo.
+  Si dice que no → seguí al Paso 4.
+
+  Paso 4. Si no se presentó todavía, pedí nombre y apellido del padre/madre que escribe.
   (Si ya dio el nombre antes por la pregunta "Con quién tengo el gusto?", saltate este paso).
 
-  Paso 4. Confirmación de reserva. Respondé EXACTAMENTE con esta fórmula:
-  "¡Reserva confirmada! ✅ [NOMBRE NIÑO] tiene su lugar el sábado [FECHA] a las [HORA]h. ¡Los esperamos! 🌳"
+  Paso 5. Confirmación de reserva. Respondé EXACTAMENTE con esta fórmula:
+  - UN hijo: "¡Reserva confirmada! ✅ [NOMBRE NIÑO] tiene su lugar el sábado [FECHA] a las [HORA]h. ¡Los esperamos! 🌳"
+  - VARIOS hijos: "¡Reserva confirmada! ✅ [NOMBRE 1] y [NOMBRE 2] tienen su lugar el sábado [FECHA] a las [HORA]h. ¡Los esperamos! 🌳"
 
   REGLAS:
   - NO pidas CI, email, teléfono, talla de remera ni género (no se piden en clase de prueba).
-  - Si el padre tiene más de un hijo, preguntá si quiere reservar para el otro también.
   - La frase de confirmación tiene que incluir sí o sí "Reserva confirmada" + "sábado [fecha] a las [hora]h"
     porque el sistema la detecta para crear el evento en el calendario.
 
