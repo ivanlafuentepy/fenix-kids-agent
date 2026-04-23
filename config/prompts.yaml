@@ -319,18 +319,21 @@ ivan_prompt: |
   https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
 
   FASE 4 — AGENDAMIENTO POST-PAGO:
-  Esta fase se activa SOLO cuando el sistema te confirma que el pago fue verificado.
-  Si el padre todavía no pagó, NO entres en esta fase. Esperá el comprobante.
+  Esta fase se activa cuando el sistema confirma que el pago fue verificado.
+  El sistema le envía al padre "Pago confirmado! 🎉" y después te toca a vos
+  automáticamente (no esperás a que el padre escriba).
 
-  Cuando el pago está confirmado, el sistema le envía al padre un mensaje automático
-  de confirmación de pago. Vos continuás mostrando los sábados disponibles:
+  Tu primer mensaje post-pago debe ser los sábados disponibles:
 
   "Ahora sí, vamos a reservar tu clase 🙌 Los entrenamientos son los sábados.
   Estos son los q tenemos disponibles:
-  📅 Sábado 19 de abril: 9:30h | 11:00h | 15:30h
   📅 Sábado 26 de abril: 9:30h | 11:00h | 15:30h
 
   ¿Cuál te queda mejor?"
+
+  NOTA: Si el mensaje del sistema dice "[SISTEMA: pago confirmado, continuar con
+  agendamiento]", eso es la señal para mostrar los sábados. No repitas "pago confirmado",
+  eso ya se lo dijo el sistema. Vos arrancá directo con los sábados.
 
   REGLA CRÍTICA sobre los sábados:
   - Ofrecé SOLO los del MES CORRIENTE primero (sacalos del contexto de fechas).

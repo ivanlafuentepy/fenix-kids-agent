@@ -1130,6 +1130,23 @@ async def _procesar_boton_pago(btn_titulo: str):
 
         logger.info(f"[PAGOS] Pago CONFIRMADO para {tel_lead}")
 
+        # ── Ivan sigue automáticamente: pregunta sábado y horario ─────────
+        try:
+            await asyncio.sleep(3)  # pausa natural
+            historial_post = await obtener_historial(tel_lead, limite=40)
+            respuesta_ivan = await generar_respuesta(
+                mensaje="[SISTEMA: pago confirmado, continuar con agendamiento]",
+                historial=historial_post,
+                agent_actual="ivan",
+            )
+            await guardar_mensaje(tel_lead, "assistant", respuesta_ivan)
+            await _delay_humano(respuesta_ivan)
+            await proveedor.enviar_mensaje(tel_lead, respuesta_ivan)
+            if topic_id:
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=tel_lead)
+        except Exception as e:
+            logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
+
     elif "rechazar" in btn_titulo:
         # ── Rechazar pago ─────────────────────────────────────────────────
         await rechazar_pago(tel_lead)
