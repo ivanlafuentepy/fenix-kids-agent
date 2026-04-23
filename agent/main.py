@@ -945,29 +945,32 @@ async def _procesar_confirmacion_reserva(
             nombre_responsable = partes[0]
             apellido_responsable = partes[1]
 
-        nombre_hijo = ""
-        apellido_hijo = ""
-        edad_hijo = ""
+        # Crear un registro PRUEBA FENIX por cada niño
         if ninos:
-            n = ninos[0]
-            nombre_hijo = n.get("nombre", "")
-            apellido_hijo = n.get("apellido", "")
+            for n in ninos:
+                await crear_prueba_fenix(
+                    telefono=telefono,
+                    nombre_responsable=nombre_responsable,
+                    apellido_responsable=apellido_responsable,
+                    nombre_hijo=n.get("nombre", ""),
+                    apellido_hijo=n.get("apellido", ""),
+                    edad_hijo="",
+                    fecha_reserva=fecha_str,
+                    hora=hora_str,
+                )
         else:
-            # Extraer del historial
+            # Sin familia creada — extraer del historial
             nh = _extraer_nombre_hijo_historial(historial_completo)
-            if nh and nh != "no mencionó":
-                nombre_hijo = nh
-
-        await crear_prueba_fenix(
-            telefono=telefono,
-            nombre_responsable=nombre_responsable,
-            apellido_responsable=apellido_responsable,
-            nombre_hijo=nombre_hijo,
-            apellido_hijo=apellido_hijo,
-            edad_hijo=edad_hijo,
-            fecha_reserva=fecha_str,
-            hora=hora_str,
-        )
+            await crear_prueba_fenix(
+                telefono=telefono,
+                nombre_responsable=nombre_responsable,
+                apellido_responsable=apellido_responsable,
+                nombre_hijo=nh if nh != "no mencionó" else "",
+                apellido_hijo="",
+                edad_hijo="",
+                fecha_reserva=fecha_str,
+                hora=hora_str,
+            )
     except Exception as e:
         logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
 
