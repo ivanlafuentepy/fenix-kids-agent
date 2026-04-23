@@ -828,6 +828,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         if _match_edad and 2 <= int(_match_edad.group(1)) <= 15:
                             _edad = _match_edad.group(1)
                             break
+                # Si no matcheó regex pero el mensaje anterior preguntó "con quién tengo el gusto"
+                # y el texto es un nombre corto (1-3 palabras, sin números), tomarlo como nombre
+                if not _nombre_resp and len(historial) >= 1:
+                    _ultimo_agente = historial[-1].get("content", "").lower() if historial[-1].get("role") == "assistant" else ""
+                    if "con quién tengo el gusto" in _ultimo_agente or "con quien tengo el gusto" in _ultimo_agente:
+                        _palabras = texto.strip().split()
+                        if 1 <= len(_palabras) <= 3 and not any(c.isdigit() for c in texto):
+                            _nombre_resp = texto.strip().title()
+
                 if _nombre_resp or (_nombre_hijo and _nombre_hijo != "no mencionó") or _edad:
                     await actualizar_datos_lead(
                         telefono,
