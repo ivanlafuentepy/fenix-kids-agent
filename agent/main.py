@@ -1044,7 +1044,9 @@ _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_f
 _AFICHE_FOLLOWUP = (
     "Con la opción trimestral como verás tenemos un gran descuento, "
     "tb tenés la opción de venir a probar un sábado en cualquiera de los horarios por 90.000 Gs 🔥\n\n"
-    "¿Te gustaría ser parte de Fenix Kids Academy?"
+    "¿Te gustaría que tu hijo sea parte de Fenix Kids?\n\n"
+    "Te puedo agendar una clase de prueba acá, o si preferís te puedo llamar "
+    "un rato y te explico mejor todo 😊"
 )
 
 
@@ -1273,6 +1275,130 @@ async def _procesar_boton_pago(btn_titulo: str):
         logger.info(f"[PAGOS] Pago RECHAZADO para {tel_lead}")
 
 
+# ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
+
+_MONTOS_AGENDA = {"90mil": 90_000, "120mil": 120_000, "150mil": 150_000}
+
+
+async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int):
+    """
+    /agenda 90mil Carolina   → 1 hijo, 90k
+    /agenda 120mil Carolina  → 2 hijos, 120k
+    /agenda 150mil Carolina  → 3 hijos, 150k
+
+    Ivan usa esto cuando cierra la agenda por llamada telefónica.
+    Crea PRUEBA FENIX, reactiva el agente, y le manda al padre
+    el formulario + datos bancarios para el comprobante.
+    """
+    partes = comando.strip().split(maxsplit=2)
+    if len(partes) < 3 or partes[1].lower() not in _MONTOS_AGENDA:
+        await enviar_a_topic(
+            thread_id,
+            "⚠️ Uso: /agenda 90mil|120mil|150mil nombre\nEj: /agenda 90mil Carolina",
+            telefono=telefono,
+        )
+        return
+
+    monto = _MONTOS_AGENDA[partes[1].lower()]
+    nombre_padre = partes[2].strip()
+
+    try:
+        historial_completo = await obtener_historial(telefono, limite=40)
+
+        # Extraer datos con Haiku
+        datos_form = await extraer_datos_formulario(historial_completo)
+        padre_data = datos_form.get("padre") or {}
+        nombre_resp = padre_data.get("nombre", "") or nombre_padre
+        apellido_resp = padre_data.get("apellido", "") or ""
+        ninos_form = datos_form.get("ninos", [])
+
+        # Obtener lead_id y diagnóstico
+        from agent.airtable_client import _get_records, _LEADS
+        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        lead_record_id = lead_records[0]["id"] if lead_records else None
+        diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
+
+        # Actualizar conversión a AGENDA
+        await actualizar_conversion_lead(telefono, "AGENDA")
+
+        # Crear PRUEBA FENIX por cada niño (monto solo en primero)
+        creados = 0
+        if ninos_form:
+            for i, n in enumerate(ninos_form):
+                await crear_prueba_fenix(
+                    telefono=telefono,
+                    nombre_responsable=nombre_resp,
+                    apellido_responsable=apellido_resp,
+                    nombre_hijo=n.get("nombre", ""),
+                    apellido_hijo=n.get("apellido", ""),
+                    edad_hijo="",
+                    fecha_reserva="(por definir)",
+                    hora="(por definir)",
+                    fecha_nacimiento=n.get("fecha_nacimiento", ""),
+                    monto=monto if i == 0 else 0,
+                    diagnostico_ids=diagnostico_ids,
+                    lead_record_id=lead_record_id,
+                )
+                creados += 1
+        else:
+            # Fallback sin datos de hijos
+            nh = _extraer_nombre_hijo_historial(historial_completo)
+            await crear_prueba_fenix(
+                telefono=telefono,
+                nombre_responsable=nombre_resp,
+                apellido_responsable=apellido_resp,
+                nombre_hijo=nh if nh != "no mencionó" else "",
+                apellido_hijo="",
+                edad_hijo="",
+                fecha_reserva="(por definir)",
+                hora="(por definir)",
+                monto=monto,
+                diagnostico_ids=diagnostico_ids,
+                lead_record_id=lead_record_id,
+            )
+            creados = 1
+
+        # ── Determinar cantidad de hijos para el mensaje ──────────────────
+        cant_hijos = len(ninos_form) if ninos_form else 1
+        if cant_hijos == 1:
+            texto_form = "Te envío el formulario para tu hijo/a"
+        else:
+            texto_form = f"Te envío los formularios para tus {cant_hijos} hijos"
+
+        # ── Datos bancarios para el comprobante ───────────────────────────
+        from agent.pagos import DATOS_BANCARIOS
+        monto_fmt = f"{monto:,}".replace(",", ".")
+
+        msg_whatsapp = (
+            f"{texto_form} 📋\n\n"
+            f"El monto de la clase de prueba es {monto_fmt} Gs\n\n"
+            f"{DATOS_BANCARIOS}\n\n"
+            f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
+        )
+
+        # Enviar al padre por WhatsApp
+        await proveedor.enviar_mensaje(telefono, msg_whatsapp)
+        await guardar_mensaje(telefono, "assistant", msg_whatsapp)
+
+        # Reactivar el agente para que procese el comprobante
+        await reactivar_dorita(telefono)
+
+        # Notificar en Telegram
+        monto_label = f"{monto_fmt} Gs"
+        await enviar_a_topic(
+            thread_id,
+            f"✅ Agenda cerrada — {creados} PRUEBA FENIX — {monto_label}\n"
+            f"📲 Mensaje enviado a {nombre_padre} con formulario + datos bancarios\n"
+            f"🔊 Agente reactivado (esperando comprobante)",
+            telefono=telefono,
+        )
+        logger.info(f"[AGENDA] {telefono}: {creados} registros, {monto_label}, msg enviado a {nombre_padre}")
+
+    except Exception as e:
+        logger.error(f"[CERRAR_AGENDA] Error: {e}")
+        await enviar_a_topic(thread_id, f"❌ Error cerrando agenda: {e}", telefono=telefono)
+
+
 # ── Telegram webhook (admin → WhatsApp) ──────────────────────────────────────
 
 @app.post("/telegram/webhook")
@@ -1312,6 +1438,11 @@ async def telegram_webhook(request: Request):
         if texto_tg.strip() in ("/reactivar", "/fenix"):
             await reactivar_dorita(telefono)
             await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono)
+            return {"status": "ok"}
+
+        # /agenda [monto] [nombre] — Ivan cierra agenda tras llamada telefónica
+        if texto_tg.strip().startswith("/agenda"):
+            await _cerrar_agenda_desde_telegram(telefono, texto_tg, thread_id)
             return {"status": "ok"}
 
         # Reenviar mensaje de Ivan al WhatsApp del lead
