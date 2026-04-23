@@ -949,26 +949,27 @@ async def _procesar_confirmacion_reserva(
     # ── Crear registro en PRUEBA FENIX ──────────────────────────────────────────
     try:
         historial_completo = await obtener_historial(telefono, limite=40)
-        nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
-        apellido_responsable = ""
-        if nombre_responsable and " " in nombre_responsable:
-            partes = nombre_responsable.split(" ", 1)
-            nombre_responsable = partes[0]
-            apellido_responsable = partes[1]
 
-        # Obtener diagnóstico del lead (IDs ya linkeados en LEADS FENIX)
+        # Obtener diagnóstico y lead_id
         from agent.airtable_client import _get_records, _LEADS
         lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
         lead_record_id = lead_records[0]["id"] if lead_records else None
         diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
 
+        # Usar Haiku para extraer TODOS los datos del historial de forma confiable
+        datos_form = await extraer_datos_formulario(historial_completo)
+        padre_data = datos_form.get("padre") or {}
+        nombre_resp = padre_data.get("nombre", "") or ""
+        apellido_resp = padre_data.get("apellido", "") or ""
+        ninos_form = datos_form.get("ninos", [])
+
         # Crear un registro PRUEBA FENIX por cada niño
-        if ninos:
-            for n in ninos:
+        if ninos_form:
+            for n in ninos_form:
                 await crear_prueba_fenix(
                     telefono=telefono,
-                    nombre_responsable=nombre_responsable,
-                    apellido_responsable=apellido_responsable,
+                    nombre_responsable=nombre_resp,
+                    apellido_responsable=apellido_resp,
                     nombre_hijo=n.get("nombre", ""),
                     apellido_hijo=n.get("apellido", ""),
                     edad_hijo="",
@@ -979,7 +980,14 @@ async def _procesar_confirmacion_reserva(
                     lead_record_id=lead_record_id,
                 )
         else:
+            # Fallback: extraer nombre del hijo del historial
             nh = _extraer_nombre_hijo_historial(historial_completo)
+            nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
+            apellido_responsable = ""
+            if nombre_responsable and " " in nombre_responsable:
+                partes = nombre_responsable.split(" ", 1)
+                nombre_responsable = partes[0]
+                apellido_responsable = partes[1]
             await crear_prueba_fenix(
                 telefono=telefono,
                 nombre_responsable=nombre_responsable,
