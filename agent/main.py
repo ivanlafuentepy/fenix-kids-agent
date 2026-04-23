@@ -827,12 +827,29 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             try:
                 _nombre_resp = _extraer_nombre_del_historial(historial, texto)
                 _nombre_hijo = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
-                # Extraer edad: buscar número tras "tiene X años" o respuesta a "cuántos años"
+                # Extraer edad: solo cuando el mensaje anterior del agente preguntó la edad
+                # y el padre responde (con número solo o "X años"). Esto evita confundir
+                # los números del rompehielos (1, 6, 12) con la edad.
                 _edad = ""
                 import re as _re
-                for _m in reversed(historial + [{"role": "user", "content": texto}]):
-                    if _m.get("role") == "user":
-                        _match_edad = _re.search(r'\b(\d{1,2})\s*(?:años|ano|a[ñn]os)?\b', _m["content"])
+                _hist_completo = historial + [{"role": "user", "content": texto}]
+                for _idx, _m in enumerate(reversed(_hist_completo)):
+                    if _m.get("role") != "user":
+                        continue
+                    _contenido = _m["content"]
+                    _real_idx = len(_hist_completo) - 1 - _idx
+                    # Verificar que el msg anterior del agente preguntó edad
+                    if _real_idx > 0:
+                        _prev = _hist_completo[_real_idx - 1]
+                        _agente_pregunto_edad = (
+                            _prev.get("role") == "assistant"
+                            and _re.search(r'cu[aá]ntos\s+a[ñn]os|qu[eé]\s+edad', _prev.get("content", ""), _re.IGNORECASE)
+                        )
+                    else:
+                        _agente_pregunto_edad = False
+                    if _agente_pregunto_edad:
+                        # "7 años", "tiene 5 años", o simplemente "7"
+                        _match_edad = _re.search(r'\b(\d{1,2})\b', _contenido)
                         if _match_edad and 2 <= int(_match_edad.group(1)) <= 15:
                             _edad = _match_edad.group(1)
                             break
