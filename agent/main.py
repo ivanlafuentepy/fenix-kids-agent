@@ -1082,13 +1082,18 @@ async def _procesar_confirmacion_reserva(
 
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
 
-_AFICHE_FOLLOWUP = (
-    "Con la opción trimestral como verás tenemos un gran descuento, "
-    "tb tenés la opción de venir a probar un sábado en cualquiera de los horarios por 90.000 Gs 🔥\n\n"
-    "¿Te gustaría que tu hijo sea parte de Fenix Kids?\n\n"
-    "Te puedo agendar una clase de prueba acá, o si preferís te puedo llamar "
-    "un rato y te explico mejor todo 😊"
-)
+def _armar_followup_afiche(historial: list[dict]) -> str:
+    """Arma el follow-up del afiche con nombre del hijo si está disponible."""
+    nombre_hijo = _extraer_nombre_hijo_historial(historial)
+    if nombre_hijo and nombre_hijo != "no mencionó":
+        parte_nombre = f"¿Te gustaría que {nombre_hijo} sea parte de Fenix Kids?"
+    else:
+        parte_nombre = "¿Te gustaría que tu hijo sea parte de Fenix Kids?"
+    return (
+        f"{parte_nombre}\n\n"
+        "Te puedo agendar una clase de prueba por acá, o si podés hablar "
+        "te puedo llamar un rato y te explico mejor todo 😊"
+    )
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
@@ -1106,9 +1111,11 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         # Delay de 3 segundos antes del follow-up
         await asyncio.sleep(3)
 
-        # Follow-up
-        await proveedor.enviar_mensaje(telefono, _AFICHE_FOLLOWUP)
-        await guardar_mensaje(telefono, "assistant", _AFICHE_FOLLOWUP)
+        # Follow-up dinámico con nombre del hijo
+        historial = await obtener_historial(telefono, limite=20)
+        followup = _armar_followup_afiche(historial)
+        await proveedor.enviar_mensaje(telefono, followup)
+        await guardar_mensaje(telefono, "assistant", followup)
 
         if topic_id:
             await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono)
