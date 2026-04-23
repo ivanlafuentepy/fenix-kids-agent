@@ -52,9 +52,10 @@ _KEYWORDS_PAGO = [
 def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     """
     Detecta si el mensaje es un comprobante de pago.
-    Dos condiciones deben cumplirse AMBAS:
+    Tres condiciones deben cumplirse TODAS:
     1. Es media ([imagen]/[documento]) o contiene keywords de pago
     2. Ivan ya envió los datos bancarios (CI 1604338 en mensajes del assistant)
+    3. El lead pidió pagar/agendar (evita falso positivo con fotos casuales)
     """
     # Condición 1: parece un pago
     es_media = texto in ("[imagen]", "[documento]")
@@ -71,23 +72,54 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
         if m.get("role") == "assistant"
     )
 
-    return datos_enviados
+    if not datos_enviados:
+        return False
+
+    # Condición 3: si es solo media (sin keyword), verificar que el lead
+    # haya mencionado pago/transferencia/comprobante en mensajes recientes.
+    # Esto evita que una foto del hijo se marque como comprobante.
+    if es_media and not tiene_keyword:
+        _keywords_contexto_pago = [
+            "transfer", "pago", "pague", "pagué", "comprobante",
+            "mand", "prueba", "90", "inscri", "itaú", "itau",
+        ]
+        msgs_lead_recientes = [
+            m.get("content", "").lower()
+            for m in historial[-10:]
+            if m.get("role") == "user"
+        ]
+        msgs_agente_recientes = [
+            m.get("content", "").lower()
+            for m in historial[-6:]
+            if m.get("role") == "assistant"
+        ]
+        # El agente mencionó transferencia/comprobante recientemente
+        agente_pidio_pago = any(
+            any(k in msg for k in ["transferencia", "comprobante", CI_BANCARIO])
+            for msg in msgs_agente_recientes
+        )
+        # El lead mencionó algo de pago
+        lead_hablo_pago = any(
+            any(k in msg for k in _keywords_contexto_pago)
+            for msg in msgs_lead_recientes
+        )
+        if not agente_pidio_pago and not lead_hablo_pago:
+            return False
+
+    return True
 
 
-# ── Estado en memoria ────────────────────────────────────────────────────────
+# ── Estado persistente en PostgreSQL (sobrevive reinicios) ────────────────────
 
-# Lead que envió comprobante, esperando que admin confirme/rechace
-_pago_pendiente_confirmacion: dict[str, dict] = {}
-# key: telefono_lead
-# value: {"tipo": str, "plan": str, "monto": int, "ts": datetime, "media_id": str|None}
-
-# Lead cuyo pago fue confirmado, esperando que complete datos post-pago
-_esperando_post_pago: dict[str, str] = {}
-# key: telefono_lead
-# value: tipo ("prueba" | "inscripcion")
+from agent.memory import (
+    registrar_pago_pendiente_db,
+    obtener_pago_pendiente_db,
+    tiene_pago_pendiente_db,
+    resolver_pago_db,
+)
 
 
-def registrar_pago_pendiente(
+async def registrar_pago_pendiente(
     telefono: str,
     tipo: str,
     plan: str = "",
@@ -95,47 +127,31 @@ def registrar_pago_pendiente(
     media_id: str | None = None,
 ):
     """Registra que el lead envió un comprobante y esperamos confirmación del admin."""
-    _pago_pendiente_confirmacion[telefono] = {
-        "tipo": tipo,
-        "plan": plan,
-        "monto": monto,
-        "ts": datetime.utcnow(),
-        "media_id": media_id,
-    }
+    await registrar_pago_pendiente_db(telefono, tipo, plan, monto, media_id)
     logger.info(f"[PAGOS] Pago pendiente registrado: {telefono} tipo={tipo} plan={plan} monto={monto}")
 
 
-def tiene_pago_pendiente(telefono: str | None = None) -> bool:
-    """Verifica si hay pago(s) pendiente(s). Si no se pasa teléfono, verifica si hay alguno."""
-    if telefono:
-        return telefono in _pago_pendiente_confirmacion
-    return len(_pago_pendiente_confirmacion) > 0
+async def tiene_pago_pendiente(telefono: str | None = None) -> bool:
+    """Verifica si hay pago(s) pendiente(s)."""
+    return await tiene_pago_pendiente_db(telefono)
 
 
-def obtener_pago_pendiente(telefono: str | None = None) -> tuple[str | None, dict | None]:
-    """
-    Retorna (telefono, datos) del pago pendiente.
-    Si se pasa teléfono, busca ese específico. Si no, retorna el primero.
-    """
-    if telefono and telefono in _pago_pendiente_confirmacion:
-        return telefono, _pago_pendiente_confirmacion[telefono]
-    if not telefono and _pago_pendiente_confirmacion:
-        tel = next(iter(_pago_pendiente_confirmacion))
-        return tel, _pago_pendiente_confirmacion[tel]
-    return None, None
+async def obtener_pago_pendiente(telefono: str | None = None) -> tuple[str | None, dict | None]:
+    """Retorna (telefono, datos) del pago pendiente más reciente."""
+    return await obtener_pago_pendiente_db(telefono)
 
 
-def confirmar_pago(telefono: str) -> dict | None:
-    """Confirma el pago y lo saca del dict de pendientes. Retorna los datos o None."""
-    datos = _pago_pendiente_confirmacion.pop(telefono, None)
+async def confirmar_pago(telefono: str) -> dict | None:
+    """Confirma el pago en PostgreSQL. Retorna los datos o None."""
+    datos = await resolver_pago_db(telefono, "confirmado")
     if datos:
         logger.info(f"[PAGOS] Pago CONFIRMADO para {telefono}")
     return datos
 
 
-def rechazar_pago(telefono: str) -> dict | None:
-    """Rechaza el pago y lo saca del dict de pendientes. Retorna los datos o None."""
-    datos = _pago_pendiente_confirmacion.pop(telefono, None)
+async def rechazar_pago(telefono: str) -> dict | None:
+    """Rechaza el pago en PostgreSQL. Retorna los datos o None."""
+    datos = await resolver_pago_db(telefono, "rechazado")
     if datos:
         logger.info(f"[PAGOS] Pago RECHAZADO para {telefono}")
     return datos

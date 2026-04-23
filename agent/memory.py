@@ -119,6 +119,30 @@ class Recordatorio(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PagoPendiente(Base):
+    """Pagos esperando confirmación del admin — persistente en PostgreSQL."""
+    __tablename__ = "pagos_pendientes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # "prueba" / "inscripcion"
+    plan: Mapped[str] = mapped_column(String(50), default="")
+    monto: Mapped[int] = mapped_column(Integer, default=0)
+    media_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente/confirmado/rechazado
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    resuelto_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MensajeProcesado(Base):
+    """Deduplicación persistente de webhooks — sobrevive reinicios."""
+    __tablename__ = "mensajes_procesados"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mensaje_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    procesado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def crear_recordatorio(telefono: str, tipo: str, programado_para: datetime, payload: str) -> int:
     """Inserta un recordatorio y retorna su ID."""
     async with async_session() as session:
@@ -246,6 +270,98 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
             {"role": msg.role, "content": msg.content}
             for msg in mensajes
         ]
+
+
+# ── Pagos persistentes ────────────────────────────────────────────────────────
+
+async def registrar_pago_pendiente_db(
+    telefono: str, tipo: str, plan: str = "", monto: int = 0, media_id: str | None = None
+):
+    """Registra un pago pendiente en PostgreSQL."""
+    async with async_session() as session:
+        pago = PagoPendiente(
+            telefono=telefono, tipo=tipo, plan=plan,
+            monto=monto, media_id=media_id, estado="pendiente",
+        )
+        session.add(pago)
+        await session.commit()
+
+
+async def obtener_pago_pendiente_db(telefono: str | None = None) -> tuple[str | None, dict | None]:
+    """Retorna (telefono, datos) del pago pendiente más reciente."""
+    async with async_session() as session:
+        q = select(PagoPendiente).where(PagoPendiente.estado == "pendiente")
+        if telefono:
+            q = q.where(PagoPendiente.telefono == telefono)
+        q = q.order_by(PagoPendiente.creado_en.desc()).limit(1)
+        result = await session.execute(q)
+        pago = result.scalar_one_or_none()
+        if not pago:
+            return None, None
+        return pago.telefono, {
+            "id": pago.id, "tipo": pago.tipo, "plan": pago.plan,
+            "monto": pago.monto, "media_id": pago.media_id,
+            "ts": pago.creado_en,
+        }
+
+
+async def tiene_pago_pendiente_db(telefono: str | None = None) -> bool:
+    """Verifica si hay pagos pendientes."""
+    tel, datos = await obtener_pago_pendiente_db(telefono)
+    return tel is not None
+
+
+async def resolver_pago_db(telefono: str, estado: str) -> dict | None:
+    """Confirma o rechaza un pago (estado='confirmado' o 'rechazado'). Retorna datos o None."""
+    async with async_session() as session:
+        q = (
+            select(PagoPendiente)
+            .where(PagoPendiente.telefono == telefono, PagoPendiente.estado == "pendiente")
+            .order_by(PagoPendiente.creado_en.desc())
+            .limit(1)
+        )
+        result = await session.execute(q)
+        pago = result.scalar_one_or_none()
+        if not pago:
+            return None
+        pago.estado = estado
+        pago.resuelto_en = datetime.utcnow()
+        await session.commit()
+        return {"tipo": pago.tipo, "plan": pago.plan, "monto": pago.monto, "media_id": pago.media_id}
+
+
+# ── Deduplicación persistente ─────────────────────────────────────────────────
+
+async def mensaje_ya_procesado(mensaje_id: str) -> bool:
+    """Verifica si un mensaje ya fue procesado (dedup persistente)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(MensajeProcesado).where(MensajeProcesado.mensaje_id == mensaje_id)
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def registrar_mensaje_procesado(mensaje_id: str):
+    """Registra un mensaje como procesado."""
+    async with async_session() as session:
+        try:
+            session.add(MensajeProcesado(mensaje_id=mensaje_id))
+            await session.commit()
+        except Exception:
+            await session.rollback()  # duplicado — OK, ya estaba
+
+
+async def limpiar_mensajes_procesados_antiguos():
+    """Limpia mensajes procesados de más de 24h (evitar que la tabla crezca infinito)."""
+    from datetime import timedelta
+    limite = datetime.utcnow() - timedelta(hours=24)
+    async with async_session() as session:
+        result = await session.execute(
+            select(MensajeProcesado).where(MensajeProcesado.procesado_en < limite)
+        )
+        for m in result.scalars().all():
+            await session.delete(m)
+        await session.commit()
 
 
 async def limpiar_historial(telefono: str):

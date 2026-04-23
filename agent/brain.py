@@ -182,7 +182,31 @@ async def generar_respuesta(
                 await asyncio.sleep(_espera)
             else:
                 logger.error(f"Error Claude API (intento {_intento + 1}): {e}")
+                # Alerta a Telegram si fallan todos los reintentos
+                asyncio.create_task(_alertar_fallo_api(str(e)))
                 return obtener_mensaje_error()
+
+
+async def _alertar_fallo_api(error: str):
+    """Envía alerta a Telegram cuando Claude API falla tras todos los reintentos."""
+    try:
+        from agent.telegram_bridge import notificar_llamada_urgente
+        # Reutilizamos el canal de alertas urgentes de Telegram
+        import httpx
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        group_id = os.getenv("TELEGRAM_AGENDA_GROUP_ID", "")
+        if bot_token and group_id:
+            async with httpx.AsyncClient() as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={
+                        "chat_id": int(group_id),
+                        "text": f"⚠️ ALERTA: Claude API falló tras 3 reintentos\n\nError: {error[:200]}",
+                    },
+                    timeout=10,
+                )
+    except Exception as e:
+        logger.error(f"[ALERTA] Error enviando alerta de fallo API: {e}")
 
 
 async def extraer_datos_formulario(historial: list[dict]) -> dict:

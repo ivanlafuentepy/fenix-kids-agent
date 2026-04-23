@@ -75,8 +75,12 @@ class ProveedorMeta(ProveedorWhatsApp):
                         # Quick reply de template
                         texto = msg.get("button", {}).get("text", "")
                         es_boton = True
+                    elif tipo == "sticker":
+                        continue  # stickers: ignorar silenciosamente
+                    elif tipo in ("video", "location", "contacts", "reaction"):
+                        continue  # tipos no soportados: ignorar
                     else:
-                        continue  # sticker, etc. — ignorar
+                        continue  # cualquier otro tipo desconocido
 
                     if texto:
                         mensajes.append(MensajeEntrante(

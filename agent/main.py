@@ -27,6 +27,8 @@ from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
     marcar_recordatorio_enviado, cancelar_recordatorios_por_telefono,
+    mensaje_ya_procesado, registrar_mensaje_procesado,
+    limpiar_mensajes_procesados_antiguos,
 )
 from agent.providers import obtener_proveedor
 from agent.ab_test import (
@@ -107,9 +109,46 @@ def _es_mensaje_sospechoso(texto: str) -> bool:
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
-# Evita doble procesamiento por webhooks duplicados de Meta (LRU)
-_mensajes_procesados: OrderedDict = OrderedDict()
-_MAX_MENSAJES_PROCESADOS = 500
+# Lock por teléfono: evita race conditions con mensajes rápidos
+_locks_telefono: dict[str, asyncio.Lock] = {}
+_MAX_LOCKS = 200
+
+
+def _obtener_lock(telefono: str) -> asyncio.Lock:
+    """Retorna un lock exclusivo por teléfono (evita procesamiento paralelo)."""
+    if telefono not in _locks_telefono:
+        if len(_locks_telefono) > _MAX_LOCKS:
+            # Limpiar los más viejos
+            oldest = list(_locks_telefono.keys())[:50]
+            for k in oldest:
+                _locks_telefono.pop(k, None)
+        _locks_telefono[telefono] = asyncio.Lock()
+    return _locks_telefono[telefono]
+
+
+# Rate limit por teléfono: máx 10 mensajes en 60 segundos
+_rate_limit: dict[str, list[float]] = {}
+_RATE_LIMIT_MAX = 10
+_RATE_LIMIT_WINDOW = 60
+
+
+def _check_rate_limit(telefono: str) -> bool:
+    """Retorna True si el teléfono excede el rate limit."""
+    import time as _time
+    ahora = _time.time()
+    if telefono not in _rate_limit:
+        _rate_limit[telefono] = []
+    # Limpiar entradas viejas
+    _rate_limit[telefono] = [t for t in _rate_limit[telefono] if ahora - t < _RATE_LIMIT_WINDOW]
+    if len(_rate_limit[telefono]) >= _RATE_LIMIT_MAX:
+        return True
+    _rate_limit[telefono].append(ahora)
+    return False
+
+
+# Cache local rápido para dedup (complementa PostgreSQL)
+_dedup_cache: OrderedDict = OrderedDict()
+_MAX_DEDUP_CACHE = 500
 
 
 async def _delay_humano(texto: str):
@@ -182,6 +221,7 @@ async def _enviar_recordatorio(rec):
 
 async def _recordatorios_loop():
     """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía."""
+    _ciclo = 0
     while True:
         try:
             pendientes = await obtener_recordatorios_pendientes(datetime.utcnow())
@@ -192,6 +232,10 @@ async def _recordatorios_loop():
                     logger.info(f"[RECORDATORIO] Enviado id={rec.id} a {rec.telefono}")
                 except Exception as e:
                     logger.error(f"[RECORDATORIO] Error enviando id={rec.id}: {e}")
+            # Cada 30 min: limpiar dedup table (mensajes > 24h)
+            _ciclo += 1
+            if _ciclo % 30 == 0:
+                await limpiar_mensajes_procesados_antiguos()
         except Exception as e:
             logger.error(f"[RECORDATORIO] Error en loop: {e}")
         await asyncio.sleep(60)
@@ -514,13 +558,21 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación sincrónica (antes de lanzar el task)
+            # Deduplicación: cache local rápido + PostgreSQL persistente
             if msg.mensaje_id:
-                if msg.mensaje_id in _mensajes_procesados:
+                if msg.mensaje_id in _dedup_cache:
                     continue
-                _mensajes_procesados[msg.mensaje_id] = True
-                while len(_mensajes_procesados) > _MAX_MENSAJES_PROCESADOS:
-                    _mensajes_procesados.popitem(last=False)
+                _dedup_cache[msg.mensaje_id] = True
+                while len(_dedup_cache) > _MAX_DEDUP_CACHE:
+                    _dedup_cache.popitem(last=False)
+                if await mensaje_ya_procesado(msg.mensaje_id):
+                    continue
+                await registrar_mensaje_procesado(msg.mensaje_id)
+
+            # Rate limit por teléfono
+            if _check_rate_limit(msg.telefono):
+                logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
+                continue
 
             # Lanzar procesamiento en background — no bloquear el webhook
             _fire_and_forget(_procesar_mensaje_webhook(msg))
@@ -555,9 +607,17 @@ async def _procesar_mensaje_webhook(msg):
 
     logger.info(f"[WA] {telefono}: {texto[:80]}")
 
+    # Lock por teléfono: evita que mensajes rápidos se procesen en paralelo
+    async with _obtener_lock(telefono):
+      await _procesar_mensaje_interno(telefono, texto, msg)
+
+
+async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
+    """Procesamiento real del mensaje, protegido por lock de teléfono."""
     try:
-        # ── Comando reset ─────────────────────────────────────────────────
-        if texto.lower() == "holayosoyfenix":
+        # ── Comando reset (solo admin) ────────────────────────────────────
+        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        if texto.lower() == "holayosoyfenix" and telefono == admin_phone:
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             event_id_prev = await obtener_calendar_event_id(telefono)
@@ -670,8 +730,8 @@ async def _procesar_mensaje_webhook(msg):
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
 
-        # ── Obtener historial ─────────────────────────────────────────────
-        historial = await obtener_historial(telefono)
+        # ── Obtener historial (40 msgs para no perder contexto en charlas largas)
+        historial = await obtener_historial(telefono, limite=40)
 
         # ── Lead nuevo: primer contacto + router Ivan/Nixie por teléfono ──
         _, es_nuevo = await asignar_variante(telefono)
@@ -848,12 +908,16 @@ async def _procesar_confirmacion_reserva(
         if event_id_anterior:
             await borrar_evento_google(event_id_anterior)
 
-        evento = await insertar_evento_desde_fecha_iso(
-            fecha_iso=fecha_iso,
-            telefono=telefono,
-            nombre=nombre_display,
-        )
-        if evento:
+        try:
+            evento = await insertar_evento_desde_fecha_iso(
+                fecha_iso=fecha_iso,
+                telefono=telefono,
+                nombre=nombre_display,
+            )
+        except Exception as e:
+            logger.error(f"[CALENDAR] Error creando evento para {telefono}: {e}")
+            evento = None
+        if evento and evento.get("evento_id"):
             await guardar_calendar_event_id(telefono, evento["evento_id"])
             await marcar_evento_creado(telefono)
             # Enviar link del evento al padre
@@ -863,6 +927,8 @@ async def _procesar_confirmacion_reserva(
                     telefono,
                     f"📅 Guardá la fecha en tu calendario: {link}"
                 )
+        elif fecha_iso:
+            logger.error(f"[CALENDAR] Evento no creado para {telefono} — fecha_iso={fecha_iso}")
 
     # Notificar en Telegram
     await notificar_agenda_telegram(
@@ -954,7 +1020,7 @@ async def _procesar_comprobante(
         await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono)
 
     # Registrar pago pendiente
-    registrar_pago_pendiente(
+    await registrar_pago_pendiente(
         telefono=telefono,
         tipo=tipo,
         plan=tipo,
@@ -1015,7 +1081,7 @@ async def _procesar_boton_pago(btn_titulo: str):
     """
     admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
 
-    tel_lead, datos = obtener_pago_pendiente()
+    tel_lead, datos = await obtener_pago_pendiente()
     if not tel_lead or not datos:
         await proveedor.enviar_mensaje(admin_phone, "No hay pagos pendientes de confirmar.")
         return
@@ -1025,7 +1091,7 @@ async def _procesar_boton_pago(btn_titulo: str):
 
     if "confirmar" in btn_titulo:
         # ── Confirmar pago ────────────────────────────────────────────────
-        confirmar_pago(tel_lead)
+        await confirmar_pago(tel_lead)
 
         # Mensaje al admin
         await proveedor.enviar_mensaje(admin_phone, f"✅ Pago de {tel_lead} confirmado.")
@@ -1066,7 +1132,7 @@ async def _procesar_boton_pago(btn_titulo: str):
 
     elif "rechazar" in btn_titulo:
         # ── Rechazar pago ─────────────────────────────────────────────────
-        rechazar_pago(tel_lead)
+        await rechazar_pago(tel_lead)
 
         # Mensaje al admin
         await proveedor.enviar_mensaje(admin_phone, f"❌ Pago de {tel_lead} rechazado.")
