@@ -484,7 +484,7 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     """
     Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
     """
-    formula = f"{{FAMILIA}}='{familia_id}'"
+    formula = f"FIND('{familia_id}', ARRAYJOIN({{FAMILIA}}))"
     records = await _get_records(_NINOS, formula=formula, max_records=20)
     resultado = []
     for r in records:
