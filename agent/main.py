@@ -977,32 +977,33 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando "modo padre" (solo admin, después de transcripción) ──
         if texto.lower().startswith("modo padre") and telefono == admin_phone:
-            nombre_buscar = texto[len("modo padre"):].strip().strip(",").strip()
+            nombre_buscar = texto[len("modo padre"):].strip().strip(",").strip().rstrip(".")
             if not nombre_buscar:
                 await proveedor.enviar_mensaje(telefono, "Usá: modo padre Nombre Apellido")
                 return
-            familia = await buscar_familia_por_nombre(nombre_buscar)
-            if not familia:
-                await proveedor.enviar_mensaje(telefono, f"No encontré familia con '{nombre_buscar}'")
-                return
-            campos = familia.get("fields", {})
-            await limpiar_estado_completo(telefono)
-            await asignar_variante(telefono)
-            await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
-            await guardar_familia_id(telefono, familia["id"])
-            nombre_padre = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
-            nombre_madre = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
-            hijos = await obtener_ninos_de_familia(familia["id"])
-            nombres_hijos = [h.get("apodo") or h.get("nombre") for h in hijos]
-            resumen = (
-                f"Modo padre activado ✅\n"
-                f"Familia: {campos.get('FAMILIA', '')}\n"
-                f"Padre: {nombre_padre}\n"
-                f"Madre: {nombre_madre}\n"
-                f"Hijos: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno'}\n\n"
-                f"Escribí 'hola' para empezar como este padre."
-            )
-            await proveedor.enviar_mensaje(telefono, resumen)
+            try:
+                familia = await buscar_familia_por_nombre(nombre_buscar)
+                if not familia:
+                    await proveedor.enviar_mensaje(telefono, f"No encontré familia con '{nombre_buscar}'")
+                    return
+                campos = familia.get("fields", {})
+                await limpiar_estado_completo(telefono)
+                await asignar_variante(telefono)
+                await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+                await guardar_familia_id(telefono, familia["id"])
+                # Nombre display: apodo o nombre del padre/madre que mejor matchee
+                nombre_display = (
+                    campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+                    or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+                    or nombre_buscar
+                )
+                await proveedor.enviar_mensaje(
+                    telefono,
+                    f"Listo para atenderte como {nombre_display} ✅"
+                )
+            except Exception as e:
+                logger.error(f"[MODO PADRE] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error activando modo padre: {e}")
             return
 
         # ── Espejo en Telegram ────────────────────────────────────────────
