@@ -24,6 +24,8 @@ Variables de entorno:
 
 import os
 import logging
+import unicodedata
+from difflib import SequenceMatcher
 import httpx
 from dotenv import load_dotenv
 
@@ -31,7 +33,7 @@ load_dotenv()
 logger = logging.getLogger("agentkit")
 
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "apph96UwbdbHoEdYr")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "appWwCQxALdMMV4MA")
 
 _BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}"
 
@@ -300,22 +302,75 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
 
 # ── FAMILIAS ──────────────────────────────────────────────────────────────────
 
-async def buscar_familia_por_nombre(nombre: str, apellido: str) -> dict | None:
-    """
-    Busca una FAMILIA por nombre y apellido del padre o madre.
-    Retorna el record completo o None.
-    """
-    nombre = nombre.strip()
-    apellido = apellido.strip()
-    # Buscar por NOMBRE PADRE + APELLIDO PADRE
-    formula = (
-        f"OR("
-        f"AND(LOWER({{NOMBRE PADRE}})=LOWER('{nombre}'), LOWER({{APELLIDO PADRE}})=LOWER('{apellido}')),"
-        f"AND(LOWER({{NOMBRE MADRE}})=LOWER('{nombre}'), LOWER({{APELLIDO MADRE}})=LOWER('{apellido}'))"
-        f")"
+def _sin_acentos(texto: str) -> str:
+    """Elimina acentos y convierte a minúsculas para comparación."""
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto.lower())
+        if unicodedata.category(c) != 'Mn'
     )
-    records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
-    return records[0] if records else None
+
+
+# Fórmula Airtable para normalizar acentos en NOMBRE COMPLETO del padre/madre
+_NORM_PADRE = (
+    'SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE('
+    'LOWER(CONCATENATE({NOMBRE PADRE}," ",{APELLIDO PADRE}," ",{NOMBRE MADRE}," ",{APELLIDO MADRE}))'
+    ', "á", "a"), "é", "e"), "í", "i"), "ó", "o"), "ú", "u")'
+)
+
+
+async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | None:
+    """
+    Búsqueda fuzzy de FAMILIA por nombre (y opcionalmente apellido).
+    Ignora acentos, no requiere nombre completo exacto.
+    Retorna el record con mejor match o None.
+    """
+    texto_busqueda = f"{nombre} {apellido}".strip()
+    palabras = [_sin_acentos(p) for p in texto_busqueda.replace("-", " ").replace(".", " ").split() if len(p) > 1]
+    if not palabras:
+        return None
+
+    # Búsqueda AND: todas las palabras deben matchear
+    condiciones_and = [f'SEARCH("{p}", {_NORM_PADRE})>0' for p in palabras]
+    formula_and = f"AND({','.join(condiciones_and)})"
+    records = await _get_records(_FAMILIAS, formula=formula_and, max_records=10)
+
+    # Fallback OR: cualquier palabra matchea
+    if not records:
+        condiciones_or = [f'SEARCH("{p}", {_NORM_PADRE})>0' for p in palabras]
+        formula_or = f"OR({','.join(condiciones_or)})"
+        records = await _get_records(_FAMILIAS, formula=formula_or, max_records=10)
+
+    if not records:
+        return None
+    if len(records) == 1:
+        return records[0]
+
+    # Scoring: elegir el mejor candidato
+    def _nombre_completo_familia(rec: dict) -> str:
+        f = rec.get("fields", {})
+        return _sin_acentos(
+            f"{f.get('NOMBRE PADRE', '')} {f.get('APELLIDO PADRE', '')} "
+            f"{f.get('NOMBRE MADRE', '')} {f.get('APELLIDO MADRE', '')}"
+        )
+
+    def _puntaje(rec: dict) -> tuple[int, float, float]:
+        candidato = _nombre_completo_familia(rec)
+        palabras_candidato = set(candidato.split())
+        palabras_candidato_lista = list(palabras_candidato)
+        palabras_set = set(palabras)
+        exactas = sum(1 for p in palabras_set if p in palabras_candidato)
+        fuzzy = sum(
+            max(
+                (SequenceMatcher(None, p, c).ratio() for c in palabras_candidato_lista),
+                default=0.0,
+            )
+            for p in palabras
+        )
+        ratio = exactas / len(palabras_candidato) if palabras_candidato else 0.0
+        return (exactas, round(fuzzy, 3), round(ratio, 3))
+
+    records.sort(key=_puntaje, reverse=True)
+    return records[0]
 
 
 async def buscar_familia_por_telefono(telefono: str) -> dict | None:
@@ -323,6 +378,11 @@ async def buscar_familia_por_telefono(telefono: str) -> dict | None:
     formula = f"OR({{CELL PADRE}}='{telefono}', {{CELL MADRE}}='{telefono}')"
     records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
     return records[0] if records else None
+
+
+async def marcar_control_datos(familia_id: str) -> bool:
+    """Marca CONTROL DATOS = True en FAMILIAS FENIX."""
+    return await _patch(_FAMILIAS, familia_id, {"CONTROL DATOS": True})
 
 
 async def crear_familia(datos: dict) -> str | None:
@@ -416,8 +476,7 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
 
 async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     """
-    Retorna la lista de NIÑOS vinculados a una FAMILIA.
-    Cada item: {"id": record_id, "nombre_completo": "...", "nombre": "...", "apellido": "..."}
+    Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
     """
     formula = f"{{FAMILIA}}='{familia_id}'"
     records = await _get_records(_NINOS, formula=formula, max_records=20)
@@ -429,6 +488,11 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
             "nombre_completo": f.get("NOMBRE COMPLETO", ""),
             "nombre": f.get("NOMBRE", ""),
             "apellido": f.get("APELLIDO", ""),
+            "apodo": f.get("APODO", ""),
+            "ci": f.get("CI", ""),
+            "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
+            "sexo": f.get("SEXO", ""),
+            "talla_remera": f.get("TALLA REMERA", ""),
         })
     return resultado
 
@@ -510,6 +574,94 @@ async def obtener_horario_por_id(horario_id: str) -> dict | None:
         except Exception as e:
             logger.error(f"GET HORARIO {horario_id}: {e}")
     return None
+
+
+async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
+    """
+    Retorna la lista de niños reservados para un horario específico (fecha + hora).
+    Cada item: {"nombre": "...", "apellido": "...", "edad": "...", "apodo": "..."}
+    Ordenados alfabéticamente por apellido + nombre.
+    """
+    from datetime import date
+
+    # Normalizar hora
+    hora_norm = hora.strip().lower().replace("hs", "").replace("h", ":").rstrip(":")
+    if hora_norm.startswith("0"):
+        hora_norm = hora_norm[1:]
+
+    # Buscar el HORARIO
+    formula = f"AND({{FECHA}}='{fecha_iso}', {{HORA}}='{hora_norm}')"
+    horarios = await _get_records(_HORARIOS, formula=formula, max_records=1)
+    if not horarios:
+        return []
+
+    horario_id = horarios[0]["id"]
+    reserva_ids = horarios[0].get("fields", {}).get("RESERVAS FENIX", [])
+    if not reserva_ids:
+        return []
+
+    # Obtener cada reserva y su niño
+    ninos = []
+    for res_id in reserva_ids:
+        url = f"{_BASE_URL}/{_RESERVAS}/{res_id}"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=_headers(), timeout=10)
+                if r.status_code != 200:
+                    continue
+                res_fields = r.json().get("fields", {})
+                nino_ids = res_fields.get("NIÑO", [])
+                for nino_id in nino_ids:
+                    url_nino = f"{_BASE_URL}/{_NINOS}/{nino_id}"
+                    rn = await client.get(url_nino, headers=_headers(), timeout=10)
+                    if rn.status_code == 200:
+                        nf = rn.json().get("fields", {})
+                        # Calcular edad
+                        edad = ""
+                        fecha_nac = nf.get("FECHA NACIMIENTO", "")
+                        if fecha_nac:
+                            try:
+                                nac = date.fromisoformat(fecha_nac)
+                                hoy = date.today()
+                                edad = str(hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day)))
+                            except ValueError:
+                                pass
+                        ninos.append({
+                            "nombre": nf.get("NOMBRE", ""),
+                            "apellido": nf.get("APELLIDO", ""),
+                            "edad": edad,
+                            "apodo": nf.get("APODO", ""),
+                        })
+            except Exception as e:
+                logger.error(f"Error obteniendo reserva/niño: {e}")
+
+    # Ordenar alfabéticamente por nombre + apellido
+    ninos.sort(key=lambda n: f"{n['nombre']} {n['apellido']}".lower())
+    return ninos
+
+
+def formatear_lista_ninos(ninos: list[dict], fecha_label: str = "", hora: str = "") -> str:
+    """Formatea la lista de niños para mostrar en WhatsApp — linda y dinámica."""
+    if not ninos:
+        return "Todavía no hay nadie agendado para ese horario 😊"
+
+    header = f"🌳 *Fenix Kids"
+    if fecha_label and hora:
+        header += f" — {fecha_label} {hora}h"
+    header += f"*\n"
+    header += f"👧👦 *{len(ninos)} guerrero{'s' if len(ninos) > 1 else ''} agendado{'s' if len(ninos) > 1 else ''}:*\n\n"
+
+    emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆"]
+    lineas = []
+    for i, n in enumerate(ninos):
+        emoji = emojis[i % len(emojis)]
+        primer_nombre = (n.get('apodo') or n['nombre']).split()[0]
+        primer_apellido = n['apellido'].split()[0] if n['apellido'] else ""
+        nombre = f"{primer_nombre} {primer_apellido}".strip()
+        edad_str = f" — {n['edad']} años" if n['edad'] else ""
+        lineas.append(f"{emoji} {nombre}{edad_str}")
+
+    return header + "\n".join(lineas) + "\n\n💪 ¡Va a estar buenísimo!"
 
 
 # ── RESERVAS ──────────────────────────────────────────────────────────────────

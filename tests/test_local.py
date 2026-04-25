@@ -33,7 +33,8 @@ from agent.ab_test import (
 from agent.airtable_client import (
     crear_lead, actualizar_conversion_lead, actualizar_agent_lead,
     crear_familia_completa, eliminar_lead,
-    buscar_familia_por_telefono, obtener_ninos_de_familia,
+    buscar_familia_por_telefono, buscar_familia_por_nombre,
+    obtener_ninos_de_familia,
 )
 from agent.calendar_google import (
     insertar_evento_desde_fecha_iso, borrar_evento_google,
@@ -45,9 +46,11 @@ from agent.main import (
     _detectar_activacion_nixie,
     _detectar_handoff_ivan_nixie,
     _detectar_confirmacion_nixie,
+    _build_contexto_aurora,
 )
 
 TELEFONO_TEST = "595900000001"  # número de prueba — fácil de identificar y borrar
+_MODO_PADRE = None  # familia simulada (record de Airtable)
 
 
 async def mostrar_estado():
@@ -87,8 +90,38 @@ async def reset_completo():
     print("[reset] Estado local borrado\n")
 
 
+async def activar_modo_padre(nombre_apellido: str):
+    """Busca familia por nombre (fuzzy) y activa modo Aurora simulando ser ese padre."""
+    global _MODO_PADRE
+    texto = nombre_apellido.strip()
+    if not texto:
+        print("[padre] Usá: padre Nombre (o Nombre Apellido)")
+        return
+    familia = await buscar_familia_por_nombre(texto)
+    if not familia:
+        print(f"[padre] No encontré familia con '{nombre} {apellido}' en FAMILIAS FENIX")
+        return
+    _MODO_PADRE = familia
+    campos = familia.get("fields", {})
+    hijos = await obtener_ninos_de_familia(familia["id"])
+    nombres_hijos = [h.get("apodo") or h.get("nombre") for h in hijos]
+    nombre_display = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "") or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+    print(f"[padre] Modo padre activado: {nombre_display}")
+    print(f"[padre] Hijos: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno'}")
+    print(f"[padre] Aurora te va a saludar como si fueras este padre. Escribí 'hola' para empezar.")
+    # Forzar agente a Aurora
+    telefono = TELEFONO_TEST
+    await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+    # Limpiar historial para empezar limpio
+    await limpiar_estado_completo(telefono)
+    await asignar_variante(telefono)
+    await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+    print()
+
+
 async def procesar_mensaje(texto: str):
     """Replica el flujo de webhook_handler en terminal (sin Telegram)."""
+    global _MODO_PADRE
     telefono = TELEFONO_TEST
 
     # Estado actual
@@ -118,21 +151,20 @@ async def procesar_mensaje(texto: str):
         except Exception as e:
             print(f"[airtable] Error creando lead: {e}")
 
-    # Contexto extra para cliente inscripto
+    # Contexto extra: modo padre simulado o cliente inscripto real
     contexto_extra = None
-    if agent_actual == "nixie" and modo_nixie == "cliente_inscripto":
+    if _MODO_PADRE and agent_actual == "aurora":
+        try:
+            # En modo test: forzar CONTROL_DATOS pendiente para probar onboarding
+            contexto_extra = await _build_contexto_aurora(_MODO_PADRE)
+            # NO hacemos check en CONTROL DATOS en modo test
+        except Exception as e:
+            print(f"[airtable] Error cargando familia simulada: {e}")
+    elif agent_actual in ("nixie", "aurora") and modo_nixie == "cliente_inscripto":
         try:
             familia = await buscar_familia_por_telefono(telefono)
             if familia:
-                campos = familia.get("fields", {})
-                nombre_padre = campos.get("NOMBRE PADRE", "")
-                hijos = await obtener_ninos_de_familia(familia["id"])
-                nombres = [h.get("nombre_completo") or h.get("nombre") for h in hijos]
-                contexto_extra = (
-                    f"CONTEXTO: Este padre ya está inscripto. "
-                    f"Su nombre es {nombre_padre}. "
-                    f"Sus hijos registrados son: {', '.join(nombres) if nombres else 'ninguno aún'}."
-                )
+                contexto_extra = await _build_contexto_aurora(familia, telefono)
         except Exception as e:
             print(f"[airtable] Error buscando familia: {e}")
 
@@ -206,7 +238,7 @@ async def procesar_mensaje(texto: str):
     await guardar_mensaje(telefono, "assistant", respuesta)
 
     # Mostrar respuesta con label del agente
-    label = "🐼 NIXIE" if agent_actual == "nixie" else "👨‍🏫 IVAN"
+    label = "🌟 AURORA" if agent_actual in ("nixie", "aurora") else "👨‍🏫 IVAN"
     print(f"\n{label}: {respuesta}\n")
 
 
@@ -219,7 +251,7 @@ async def main():
     print("=" * 55)
     print()
     print("  Escribí mensajes como si fueras un padre interesado.")
-    print("  Comandos: 'reset', 'estado', 'salir'")
+    print("  Comandos: 'reset', 'estado', 'salir', 'padre Nombre Apellido'")
     print(f"  Teléfono test: {TELEFONO_TEST}")
     print()
     print("-" * 55)
@@ -241,7 +273,11 @@ async def main():
             await mostrar_estado()
             continue
         if mensaje.lower() == "reset":
+            _MODO_PADRE = None
             await reset_completo()
+            continue
+        if mensaje.lower().startswith("padre "):
+            await activar_modo_padre(mensaje[6:])
             continue
 
         await procesar_mensaje(mensaje)

@@ -73,7 +73,9 @@ from agent.airtable_client import (
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
-    actualizar_reserva_lead,
+    actualizar_reserva_lead, marcar_control_datos,
+    obtener_ninos_por_horario, formatear_lista_ninos,
+    obtener_horarios_disponibles,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -737,6 +739,120 @@ async def webhook_handler(request: Request):
         return {"status": "error"}
 
 
+async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
+    """Arma el contexto completo de una familia para inyectar en Aurora."""
+    campos = familia.get("fields", {})
+
+    # Detectar quién escribe por teléfono
+    if telefono and campos.get("CELL PADRE") == telefono:
+        quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+        es_genero = "papá"
+    elif telefono and campos.get("CELL MADRE") == telefono:
+        quien_escribe = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+        es_genero = "mamá"
+    else:
+        quien_escribe = (
+            campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+            or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+        )
+        es_genero = "padre/madre"
+
+    # Datos de quien escribe
+    datos_quien_escribe = f"Nombre: {quien_escribe}, género: {es_genero}"
+
+    # Datos del padre
+    datos_padre = []
+    if campos.get("NOMBRE PADRE"):
+        p = f"PADRE: {campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip()
+        if campos.get("APODO PADRE"):
+            p += f" (apodo: {campos['APODO PADRE']})"
+        if campos.get("CI PADRE"):
+            p += f", CI: {campos['CI PADRE']}"
+        if campos.get("CELL PADRE"):
+            p += f", cel: {campos['CELL PADRE']}"
+        if campos.get("EMAIL PADRE"):
+            p += f", email: {campos['EMAIL PADRE']}"
+        if campos.get("FECHA NACIMIENTO PADRE"):
+            p += f", nac: {campos['FECHA NACIMIENTO PADRE']}"
+        datos_padre.append(p)
+
+    # Datos de la madre
+    if campos.get("NOMBRE MADRE"):
+        m = f"MADRE: {campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
+        if campos.get("APODO MADRE"):
+            m += f" (apodo: {campos['APODO MADRE']})"
+        if campos.get("CI MADRE"):
+            m += f", CI: {campos['CI MADRE']}"
+        if campos.get("CELL MADRE"):
+            m += f", cel: {campos['CELL MADRE']}"
+        if campos.get("EMAIL MADRE"):
+            m += f", email: {campos['EMAIL MADRE']}"
+        if campos.get("FECHA NACIMIENTO MADRE"):
+            m += f", nac: {campos['FECHA NACIMIENTO MADRE']}"
+        datos_padre.append(m)
+
+    # Datos de los hijos
+    hijos_raw = await obtener_ninos_de_familia(familia["id"])
+    hijos_info = []
+    nombres_hijos_display = []
+    for i, h in enumerate(hijos_raw, 1):
+        nombre_display = h["apodo"] or h["nombre"]
+        nombres_hijos_display.append(nombre_display)
+        info = f"HIJO {i}: {h['nombre']} {h['apellido']}".strip()
+        if h["apodo"]:
+            info += f" (apodo: {h['apodo']})"
+        if h["ci"]:
+            info += f", CI: {h['ci']}"
+        if h["fecha_nacimiento"]:
+            info += f", nac: {h['fecha_nacimiento']}"
+        if h["sexo"]:
+            info += f", sexo: {h['sexo']}"
+        if h["talla_remera"]:
+            info += f", talla: {h['talla_remera']}"
+        hijos_info.append(info)
+
+    # Estado de verificación de datos
+    control_datos = "verificado" if campos.get("CONTROL DATOS") else "pendiente"
+
+    contexto = (
+        f"CONTEXTO FAMILIA INSCRIPTA:\n"
+        f"CONTROL_DATOS: {control_datos}\n"
+        f"Quien escribe: {datos_quien_escribe}\n"
+        f"Hijos ({len(hijos_raw)}): {', '.join(nombres_hijos_display) if nombres_hijos_display else 'ninguno registrado aún'}\n"
+        f"\nDATOS COMPLETOS PARA VERIFICACIÓN:\n"
+    )
+    for dp in datos_padre:
+        contexto += f"  {dp}\n"
+    for hi in hijos_info:
+        contexto += f"  {hi}\n"
+    if not hijos_info:
+        contexto += "  (sin hijos registrados)\n"
+
+    # Niños agendados por horario (próximos sábados)
+    try:
+        from datetime import date as _date_cls
+        horarios = await obtener_horarios_disponibles(max_horarios=6)
+        if horarios:
+            contexto += "\nNIÑOS AGENDADOS POR HORARIO:\n"
+            for hor in horarios:
+                fecha_iso = hor.get("fecha", "")
+                hora = hor.get("hora", "")
+                if not fecha_iso or not hora:
+                    continue
+                ninos_hor = await obtener_ninos_por_horario(fecha_iso, hora)
+                _fd = _date_cls.fromisoformat(fecha_iso)
+                fecha_label = f"Sábado {_fd.day}/{_fd.month}"
+                if ninos_hor:
+                    nombres_lista = [f"{n['nombre']} {n['apellido']} ({n['edad']})" if n['edad'] else f"{n['nombre']} {n['apellido']}" for n in ninos_hor]
+                    contexto += f"  {fecha_label} {hora}h: {', '.join(nombres_lista)}\n"
+                else:
+                    contexto += f"  {fecha_label} {hora}h: (nadie todavía)\n"
+    except Exception as e:
+        logger.error(f"[AURORA] Error cargando niños por horario: {e}")
+
+    return contexto
+
+
 async def _procesar_mensaje_webhook(msg):
     """
     Procesa un mensaje entrante en background (fuera del ciclo del webhook Meta).
@@ -959,15 +1075,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
             familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
-                campos = familia_existente.get("fields", {})
-                nombre_padre = campos.get("NOMBRE PADRE", "") or campos.get("NOMBRE MADRE", "")
-                hijos_raw = await obtener_ninos_de_familia(familia_existente["id"])
-                nombres_hijos = [h["nombre_completo"] or h["nombre"] for h in hijos_raw]
-                contexto_extra = (
-                    f"CONTEXTO: Este padre ya está inscripto. "
-                    f"Su nombre es {nombre_padre}. "
-                    f"Sus hijos registrados son: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno aún'}."
-                )
+                contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
 
         # ── Delay de análisis (respuesta a números del rompehielos) ────────
         cant_numeros = _contar_numeros_rompehielos(texto)
@@ -1109,6 +1217,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     )
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
+
+        # ── Detectar cierre de onboarding Aurora (CONTROL DATOS) ──────────
+        if agent_actual == "aurora" and "todo confirmado" in respuesta.lower():
+            try:
+                familia = await buscar_familia_por_telefono(telefono)
+                if familia and not familia.get("fields", {}).get("CONTROL DATOS"):
+                    await marcar_control_datos(familia["id"])
+                    logger.info(f"[AURORA] CONTROL DATOS marcado para {telefono}")
+            except Exception as e:
+                logger.error(f"[AURORA] Error marcando CONTROL DATOS: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmacion = _detectar_confirmacion_aurora(respuesta)
@@ -1298,6 +1416,21 @@ async def _procesar_confirmacion_reserva(
                 )
         elif fecha_iso:
             logger.error(f"[CALENDAR] Evento no creado para {telefono} — fecha_iso={fecha_iso}")
+
+    # ── Enviar lista de niños agendados para ese horario ─────────────────────
+    if fecha_iso:
+        try:
+            fecha_airtable = fecha_iso.split("T")[0]
+            ninos_horario = await obtener_ninos_por_horario(fecha_airtable, hora_str)
+            if ninos_horario:
+                # Armar label de fecha: "Sábado 26/4"
+                from datetime import date as _date_cls
+                _fd = _date_cls.fromisoformat(fecha_airtable)
+                fecha_label = f"Sábado {_fd.day}/{_fd.month}"
+                lista = formatear_lista_ninos(ninos_horario, fecha_label, hora_str)
+                await proveedor.enviar_mensaje(telefono, lista)
+        except Exception as e:
+            logger.error(f"[LISTA] Error enviando lista de niños: {e}")
 
     # Notificar en Telegram
     await notificar_agenda_telegram(
