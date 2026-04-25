@@ -324,8 +324,6 @@ async def notificar_referido_telegram(
     Envía notificación al grupo 'Referidos Salsa Soul' cuando un lead referido
     agenda o paga. Usa TELEGRAM_REFERIDOS_SALSA_SOUL_CHAT_ID.
     """
-    from agent.calendar_google import fecha_proxima_texto
-
     chat_id = int(os.getenv("TELEGRAM_REFERIDOS_SALSA_SOUL_CHAT_ID", "0"))
     token = _token()
     if not token or not chat_id:
@@ -333,8 +331,7 @@ async def notificar_referido_telegram(
         return False
 
     if dia and hora:
-        fecha = fecha_proxima_texto(dia, hora)
-        fecha_display = f"{fecha} a las {hora}"
+        fecha_display = f"{dia} a las {hora}"
     else:
         fecha_display = "fecha a confirmar"
 
@@ -394,8 +391,6 @@ async def notificar_agenda_telegram(
     Envía notificación de nueva agenda al grupo de Telegram de notificaciones.
     Usa TELEGRAM_AGENDA_GROUP_ID (grupo separado del de topics/espejo).
     """
-    from agent.calendar_google import fecha_proxima_texto
-
     agenda_group_id = int(os.getenv("TELEGRAM_AGENDA_GROUP_ID", "0"))
     token = _token()
     if not token or not agenda_group_id:
@@ -403,18 +398,16 @@ async def notificar_agenda_telegram(
         return False
 
     if dia and hora:
-        fecha = fecha_proxima_texto(dia, hora)
-        fecha_display = f"{fecha} a las {hora}"
+        fecha_display = f"{dia} a las {hora}"
     else:
         fecha_display = "fecha a confirmar"
-        fecha = fecha_display
 
     nombre_display = nombre or telefono
     primer_nombre = (nombre or "").split()[0] if nombre else "alumno"
 
     wa_text_preescrito = (
         f"Hola {primer_nombre}! Te saluda el Profe Iván de FENIX Kids 🌳 "
-        f"Recibí tu reserva, los esperamos el {fecha} a las {hora or ''} 🔥 "
+        f"Recibí tu reserva, los esperamos el {dia or ''} a las {hora or ''} 🔥 "
         f"Nos vemos pronto!"
     )
 

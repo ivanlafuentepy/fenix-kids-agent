@@ -27,8 +27,6 @@ from agent.ab_test import (
     asignar_variante, marcar_conversion, esta_convertido,
     obtener_agent_actual, actualizar_agent_actual,
     guardar_airtable_record_id, obtener_familia_id,
-    guardar_calendar_event_id, marcar_evento_creado,
-    obtener_calendar_event_id, ya_tiene_evento,
 )
 from agent.airtable_client import (
     crear_lead, actualizar_conversion_lead, actualizar_agent_lead,
@@ -36,11 +34,6 @@ from agent.airtable_client import (
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     obtener_ninos_de_familia,
 )
-from agent.calendar_google import (
-    insertar_evento_desde_fecha_iso, borrar_evento_google,
-    fecha_iso_from_dia_hora,
-)
-
 # Importar las funciones de detección desde main (sin levantar el server)
 from agent.main import (
     _detectar_activacion_nixie,
@@ -57,7 +50,6 @@ async def mostrar_estado():
     agent, modo = await obtener_agent_actual(TELEFONO_TEST)
     familia_id = await obtener_familia_id(TELEFONO_TEST)
     convertido = await esta_convertido(TELEFONO_TEST)
-    evento = await ya_tiene_evento(TELEFONO_TEST)
     historial = await obtener_historial(TELEFONO_TEST, limite=100)
     print()
     print("─" * 55)
@@ -67,20 +59,12 @@ async def mostrar_estado():
     print(f"  Mensajes     : {len(historial)}")
     print(f"  Convertido   : {convertido}")
     print(f"  Familia ID   : {familia_id or '-'}")
-    print(f"  Evento Cal.  : {evento}")
     print("─" * 55)
     print()
 
 
 async def reset_completo():
-    """Borra historial local + lead Airtable + evento Calendar."""
-    event_id = await obtener_calendar_event_id(TELEFONO_TEST)
-    if event_id:
-        try:
-            await borrar_evento_google(event_id)
-            print("[reset] Evento Calendar borrado")
-        except Exception as e:
-            print(f"[reset] Error borrando evento Calendar: {e}")
+    """Borra historial local + lead Airtable."""
     try:
         await eliminar_lead(TELEFONO_TEST)
         print("[reset] Lead Airtable eliminado")
@@ -215,23 +199,6 @@ async def procesar_mensaje(texto: str):
             await actualizar_conversion_lead(telefono, "AGENDA")
         except Exception:
             pass
-        try:
-            fecha_iso = fecha_iso_from_dia_hora(f"sabado {fecha_str}", hora_str)
-            event_id_anterior = await obtener_calendar_event_id(telefono)
-            if event_id_anterior:
-                await borrar_evento_google(event_id_anterior)
-            evento = await insertar_evento_desde_fecha_iso(
-                fecha_iso=fecha_iso,
-                telefono=telefono,
-                nombre=f"TEST {telefono}",
-            )
-            if evento:
-                await guardar_calendar_event_id(telefono, evento["evento_id"])
-                await marcar_evento_creado(telefono)
-                link = evento.get("evento_link", "")
-                print(f"[calendar] Evento creado: {link}")
-        except Exception as e:
-            print(f"[calendar] Error creando evento: {e}")
 
     # Guardar mensajes
     await guardar_mensaje(telefono, "user", texto)

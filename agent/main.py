@@ -35,8 +35,6 @@ from agent.ab_test import (
     asignar_variante, obtener_estadisticas,
     marcar_conversion, esta_convertido,
     guardar_airtable_record_id, obtener_airtable_record_id,
-    guardar_calendar_event_id, obtener_calendar_event_id,
-    marcar_evento_creado, ya_tiene_evento,
     obtener_agent_actual, actualizar_agent_actual,
     obtener_familia_id, guardar_familia_id,
     marcar_noche_pendiente, tiene_noche_pendiente,
@@ -45,10 +43,6 @@ from agent.night_mode import (
     es_horario_nocturno, MENSAJE_NOCHE,
     wakeup_loop as _noche_wakeup_loop,
     procesar_leads_pendientes as _noche_procesar_pendientes,
-)
-from agent.calendar_google import (
-    insertar_evento_desde_fecha_iso, borrar_evento_google,
-    fecha_iso_from_dia_hora,
 )
 from agent.telegram_bridge import (
     obtener_o_crear_topic, enviar_a_topic,
@@ -196,17 +190,16 @@ from zoneinfo import ZoneInfo
 _TZ_PY = ZoneInfo("America/Asuncion")
 
 
-async def _programar_recordatorio_clase(telefono: str, fecha_iso: str):
+async def _programar_recordatorio_clase(telefono: str, fecha_iso: str, hora_clase: str = ""):
     """Programa recordatorio de clase para las 07:00 PY del día de la reserva."""
     await cancelar_recordatorios_por_telefono(telefono, tipo="clase")
-    dt_clase = datetime.fromisoformat(fecha_iso)
-    dia_clase = dt_clase.astimezone(_TZ_PY).date()
+    from datetime import date as _date_cls
+    dia_clase = _date_cls.fromisoformat(fecha_iso)
     envio_local = datetime.combine(dia_clase, time(7, 0), tzinfo=_TZ_PY)
     envio_utc = envio_local.astimezone(timezone.utc).replace(tzinfo=None)
     if envio_utc <= datetime.utcnow():
         logger.info(f"[RECORDATORIO] 07:00 PY ya pasó para {telefono} — omitido")
         return
-    hora_clase = dt_clase.strftime("%H:%M")
     payload = json.dumps({"template": "recordatorio_clase", "hora": hora_clase})
     rec_id = await crear_recordatorio(telefono, "clase", envio_utc, payload)
     logger.info(f"[RECORDATORIO] Clase programado id={rec_id} para {telefono} — {dia_clase} 07:00 PY")
@@ -331,7 +324,6 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     historial = await obtener_historial(telefono, limite=50)
     agent, modo = await obtener_agent_actual(telefono)
     familia_id = await obtener_familia_id(telefono)
-    evento = await ya_tiene_evento(telefono)
     convertido = await esta_convertido(telefono)
     return {
         "telefono": telefono,
@@ -339,7 +331,6 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
         "agent_actual": agent,
         "modo_nixie": modo,
         "familia_id": familia_id,
-        "ya_tiene_evento": evento,
         "esta_convertido": convertido,
         "ultimos_5": historial[-5:] if len(historial) >= 5 else historial,
     }
@@ -922,12 +913,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _cancelar_diagnostico_pendiente(telefono)
             if telefono == admin_phone:
                 # Admin: reset completo incluyendo Airtable
-                event_id_prev = await obtener_calendar_event_id(telefono)
-                if event_id_prev:
-                    try:
-                        await borrar_evento_google(event_id_prev)
-                    except Exception as e:
-                        logger.error(f"Error borrando evento Calendar en reset: {e}")
                 contador = await eliminar_todo_de_telefono(telefono)
                 await limpiar_estado_completo(telefono)
                 resumen = (
@@ -1349,7 +1334,7 @@ async def _procesar_confirmacion_reserva(
     1. Actualizar CONVERSION=AGENDA en LEADS
     2. Obtener/crear HORARIO en Airtable
     3. Crear RESERVA(s) en Airtable — una por cada niño de la familia
-    4. Crear evento en Google Calendar con nombre real del/los niño/s
+    4. Enviar lista de niños agendados para ese horario
     5. Notificar en Telegram
     6. Programar recordatorio 07:00 PY del día de la clase
     """
@@ -1362,13 +1347,21 @@ async def _procesar_confirmacion_reserva(
     await actualizar_conversion_lead(telefono, "AGENDA")
     await actualizar_reserva_lead(telefono, fecha_str, hora_str)
 
-    # Calcular fecha ISO
+    # Calcular fecha ISO para Airtable
     fecha_iso = None
     if fecha_str and hora_str:
         try:
-            fecha_iso = fecha_iso_from_dia_hora(f"sabado {fecha_str}", hora_str)
+            from agent.airtable_client import obtener_o_crear_horario as _ooh
+            # Parsear fecha del texto "3/5" → "2026-05-03"
+            import re
+            from datetime import date as _d
+            _m = re.search(r'(\d{1,2})/(\d{1,2})', fecha_str)
+            if _m:
+                dia, mes = int(_m.group(1)), int(_m.group(2))
+                anio = _d.today().year
+                fecha_iso = f"{anio}-{mes:02d}-{dia:02d}"
         except Exception as e:
-            logger.error(f"Error calculando fecha ISO: {e}")
+            logger.error(f"Error calculando fecha: {e}")
 
     # ── Obtener niños de la familia (para nombre real + RESERVAS) ──────────────
     familia_id = await obtener_familia_id(telefono)
@@ -1389,8 +1382,7 @@ async def _procesar_confirmacion_reserva(
 
     # ── Crear RESERVA en Airtable por cada niño ─────────────────────────────────
     if fecha_iso and ninos:
-        # fecha_iso viene como "YYYY-MM-DDTHH:MM:SS-04:00" → extraer YYYY-MM-DD
-        fecha_airtable = fecha_iso.split("T")[0]
+        fecha_airtable = fecha_iso
         try:
             horario_id = await obtener_o_crear_horario(fecha_airtable, hora_str)
             if horario_id:
@@ -1465,39 +1457,10 @@ async def _procesar_confirmacion_reserva(
     except Exception as e:
         logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
 
-    # ── Crear o actualizar evento en Google Calendar ───────────────────────────
-    if fecha_iso:
-        event_id_anterior = await obtener_calendar_event_id(telefono)
-        if event_id_anterior:
-            await borrar_evento_google(event_id_anterior)
-
-        try:
-            evento = await insertar_evento_desde_fecha_iso(
-                fecha_iso=fecha_iso,
-                telefono=telefono,
-                nombre=nombre_display,
-            )
-        except Exception as e:
-            logger.error(f"[CALENDAR] Error creando evento para {telefono}: {e}")
-            evento = None
-        if evento and evento.get("evento_id"):
-            await guardar_calendar_event_id(telefono, evento["evento_id"])
-            await marcar_evento_creado(telefono)
-            # Enviar link del evento al padre
-            link = evento.get("evento_link", "")
-            if link:
-                await proveedor.enviar_mensaje(
-                    telefono,
-                    f"📅 Guardá la fecha en tu calendario: {link}"
-                )
-        elif fecha_iso:
-            logger.error(f"[CALENDAR] Evento no creado para {telefono} — fecha_iso={fecha_iso}")
-
     # ── Enviar lista de niños agendados para ese horario ─────────────────────
     if fecha_iso:
         try:
-            fecha_airtable = fecha_iso.split("T")[0]
-            ninos_horario = await obtener_ninos_por_horario(fecha_airtable, hora_str)
+            ninos_horario = await obtener_ninos_por_horario(fecha_iso, hora_str)
             if ninos_horario:
                 # Armar label de fecha: "Sábado 26/4"
                 from datetime import date as _date_cls
@@ -1519,7 +1482,7 @@ async def _procesar_confirmacion_reserva(
     # Programar recordatorio persistente para el día de la clase (07:00 PY)
     if fecha_iso:
         try:
-            await _programar_recordatorio_clase(telefono, fecha_iso)
+            await _programar_recordatorio_clase(telefono, fecha_iso, hora_str)
         except Exception as _e_rec:
             logger.error(f"[RECORDATORIO] Error programando para {telefono}: {_e_rec}")
 
