@@ -688,10 +688,10 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         logger.error(f"[LLAMADA] Error Telegram: {e}")
 
 
-def _detectar_confirmacion_aurora(respuesta: str) -> dict | None:
+def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
     """
-    Detecta si Aurora confirmó una reserva.
-    Retorna {"fecha": ..., "hora": ...} o None.
+    Detecta si Aurora confirmó una o más reservas.
+    Retorna lista de {"fecha": ..., "hora": ...} (puede tener 0, 1 o más).
     """
     patrones = [
         r"reserva confirmada[!✅\s]*.*?(?:el\s+)?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
@@ -702,11 +702,17 @@ def _detectar_confirmacion_aurora(respuesta: str) -> dict | None:
         r"agendam.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
     ]
     texto_lower = respuesta.lower()
+    resultados = []
+    fechas_vistas = set()
     for patron in patrones:
-        match = re.search(patron, texto_lower)
-        if match:
-            return {"fecha": match.group(1).strip(), "hora": match.group(2).strip()}
-    return None
+        for match in re.finditer(patron, texto_lower):
+            fecha = match.group(1).strip()
+            hora = match.group(2).strip()
+            key = f"{fecha}|{hora}"
+            if key not in fechas_vistas:
+                fechas_vistas.add(key)
+                resultados.append({"fecha": fecha, "hora": hora})
+    return resultados
 
 
 # ── WhatsApp webhook ──────────────────────────────────────────────────────────
@@ -1286,8 +1292,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[AURORA] Error marcando CONTROL DATOS: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
-        confirmacion = _detectar_confirmacion_aurora(respuesta)
-        if confirmacion:
+        confirmaciones = _detectar_confirmacion_aurora(respuesta)
+        for confirmacion in confirmaciones:
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta)
 
         # ── Guardar mensajes ──────────────────────────────────────────────

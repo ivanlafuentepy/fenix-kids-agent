@@ -38,7 +38,7 @@ from agent.airtable_client import (
 from agent.main import (
     _detectar_activacion_nixie,
     _detectar_handoff_ivan_nixie,
-    _detectar_confirmacion_nixie,
+    _detectar_confirmacion_aurora,
     _build_contexto_aurora,
 )
 
@@ -190,8 +190,8 @@ async def procesar_mensaje(texto: str):
             print(f"[brain] Error extrayendo formulario: {e}")
 
     # Detectar confirmación de reserva
-    confirmacion = _detectar_confirmacion_nixie(respuesta)
-    if agent_actual == "nixie" and confirmacion:
+    confirmaciones = _detectar_confirmacion_aurora(respuesta)
+    for confirmacion in confirmaciones:
         fecha_str = confirmacion.get("fecha", "")
         hora_str = confirmacion.get("hora", "")
         print(f"[reserva] Detectada confirmación: {fecha_str} {hora_str}")
