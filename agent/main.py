@@ -983,8 +983,31 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"Error transcribiendo audio: {e}")
 
 
-        # ── Espejo en Telegram ────────────────────────────────────────────
-        topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
+        # ── Espejo en Telegram (con nombre de Airtable si existe) ─────────
+        _topic_nombre = f"📱 {telefono}"
+        try:
+            # Buscar nombre en FAMILIAS o LEADS
+            _fam_tg = await buscar_familia_por_telefono(telefono)
+            if _fam_tg:
+                _campos_tg = _fam_tg.get("fields", {})
+                if _campos_tg.get("CELL PADRE") == telefono or _campos_tg.get("CELL LIMPIO PADRE") == telefono:
+                    _n = f"{_campos_tg.get('NOMBRE PADRE', '')} {_campos_tg.get('APELLIDO PADRE', '')}".strip()
+                elif _campos_tg.get("CELL MADRE") == telefono or _campos_tg.get("CELL LIMPIO MADRE") == telefono:
+                    _n = f"{_campos_tg.get('NOMBRE MADRE', '')} {_campos_tg.get('APELLIDO MADRE', '')}".strip()
+                else:
+                    _n = _campos_tg.get("FAMILIA", "")
+                if _n:
+                    _topic_nombre = f"📱 {_n}"
+            else:
+                from agent.airtable_client import _get_records, _LEADS
+                _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr:
+                    _nombre_lead = _lr[0].get("fields", {}).get("NOMBRE RESPONSABLE", "")
+                    if _nombre_lead:
+                        _topic_nombre = f"📱 {_nombre_lead}"
+        except Exception:
+            pass
+        topic_id = await obtener_o_crear_topic(telefono, _topic_nombre)
         if topic_id:
             await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono)
 
