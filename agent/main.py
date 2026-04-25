@@ -915,7 +915,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
     try:
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
-        if texto.lower() == "holayosoyfenix" and telefono == admin_phone:
+        _reset_phones = {admin_phone, "595982844548"}
+        if texto.lower() == "holayosoyfenix" and telefono in _reset_phones:
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
