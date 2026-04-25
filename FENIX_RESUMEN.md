@@ -36,7 +36,7 @@ Opera con **dos agentes IA** en el mismo número de WhatsApp:
 | **Meta WhatsApp Cloud API** | Envío y recepción de mensajes de WhatsApp |
 | **Anthropic API** | Generación de respuestas (Ivan/Nixie) y extracción de datos (Haiku) |
 | **Airtable** | CRM en base Salsa Soul: LEADS FENIX, PRUEBA FENIX, FAMILIAS FENIX, NIÑOS FENIX, HORARIOS FENIX, RESERVAS FENIX, DIAGNOSTICO FENIX |
-| **Google Calendar API** | Creación automática de eventos al confirmar clase de prueba o reserva |
+| ~~Google Calendar API~~ | **Eliminado** — ya no se usa |
 | **Telegram Bot API** | Espejo de conversaciones en grupo de Telegram por topics |
 | **Groq Whisper** | Transcripción de mensajes de audio de WhatsApp |
 
@@ -55,7 +55,7 @@ agent/
   ab_test.py        — Estado por conversación: agente, modo, familia_id, Calendar
   pagos.py          — Flujo de pagos: comprobante, confirmación admin, precios (PostgreSQL persistente)
   airtable_client.py — Integración con Airtable base Salsa Soul (LEADS/PRUEBA/FAMILIAS/NIÑOS FENIX, etc.)
-  calendar_google.py — Integración con Google Calendar
+  calendar_google.py — (ELIMINADO, ya no se importa)
   telegram_bridge.py — Integración con Telegram
   reminders.py      — Recordatorios automáticos de seguimiento y formulario
   transcriber.py    — Transcripción de audios con Groq Whisper
@@ -76,9 +76,12 @@ config/
 - **Transferencia a Nixie:** cuando dice exactamente *"Perfecto 🙌 En breve te contacta NIXIE, ella se va a encargar de pedirte los datos y hacerte la reserva."*
 
 ### Aurora (antes Nixie)
-- **Rol:** operaciones, reservas para familias inscriptas
-- **Activación:** solo cuando el teléfono del padre ya está en FAMILIAS FENIX (router automático)
-- **Modo único:** `cliente_inscripto` — pide nombre, busca en FAMILIAS, muestra hijos, agenda reserva
+- **Rol:** operaciones, consultas y reservas para familias inscriptas
+- **Activación:** solo cuando el teléfono del padre ya está en FAMILIAS FENIX (router automático, busca en CELL PADRE/MADRE y CELL LIMPIO)
+- **Sin restricción nocturna:** padres inscriptos pueden escribir a cualquier hora
+- **Onboarding (primera vez):** saluda por nombre/apodo, pregunta por hijos, verifica datos paso a paso (quien escribe → hijos → otro padre). Campo CONTROL DATOS (checkbox) en FAMILIAS FENIX marca como verificado.
+- **Atención normal (post-onboarding):** saluda y atiende directo. Asume agenda para todos los hijos (multi-hijo). Confirmación con apodos.
+- **Campos APODO:** APODO PADRE/MADRE en FAMILIAS, APODO en NIÑOS. Si existe, se usa para saludar y confirmar reservas.
 
 ---
 
@@ -182,9 +185,12 @@ config/
 | NOMBRE PADRE / APELLIDO PADRE | Texto | Datos del padre |
 | CI PADRE / EMAIL PADRE / CELL PADRE | Texto | Contacto del padre |
 | FECHA NACIMIENTO PADRE | Fecha | Para calcular P/EDAD |
+| APODO PADRE | Texto | Apodo del padre (Aurora usa para saludar si existe) |
 | NOMBRE MADRE / APELLIDO MADRE | Texto | Datos de la madre |
 | CI MADRE / EMAIL MADRE / CELL MADRE | Texto | Contacto de la madre |
 | FECHA NACIMIENTO MADRE | Fecha | Para calcular M/EDAD |
+| APODO MADRE | Texto | Apodo de la madre (Aurora usa para saludar si existe) |
+| CONTROL DATOS | Checkbox | True = datos verificados por Aurora, no repetir onboarding |
 | NIÑOS | Link records | Hijos vinculados a esta familia |
 
 ### Tabla NIÑOS (hijos inscriptos)
@@ -197,6 +203,7 @@ config/
 | EDAD | Formula | Calculada automáticamente |
 | SEXO | Select | HOMBRE o MUJER |
 | TALLA REMERA | Select | 2, 4, 6, 8, 10, 12, 14, 16, XS, S, M, L, XL |
+| APODO | Texto | Apodo o nombre corto (ej: Mati, Ichi). Aurora usa para saludar |
 | FAMILIA | Link record | Familia a la que pertenece |
 | RESERVAS | Link records | Clases reservadas |
 | LINK RESERVA | Formula | URL del formulario de reserva prefillado |
@@ -294,15 +301,14 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ✅ Configurada | API de Claude |
 | `AIRTABLE_API_KEY` | ✅ Configurada | Token de Airtable |
-| `AIRTABLE_BASE_ID` | ✅ Configurada | `apph96UwbdbHoEdYr` |
+| `AIRTABLE_BASE_ID` | ✅ Configurada | `appWwCQxALdMMV4MA` (base Salsa Soul) |
 | `META_ACCESS_TOKEN` | ✅ Configurada | Token permanente (System User Admin bajo Salsa Soul) |
 | `META_PHONE_NUMBER_ID` | ✅ Configurada | `1005063086033214` (número nuevo bajo app Salsa Soul) |
 | `META_VERIFY_TOKEN` | ✅ Configurada | `fenix-kids-2026` |
-| `AIRTABLE_BASE_ID` | ✅ Configurada | `appWwCQxALdMMV4MA` (base Salsa Soul, antes era Fenix propia) |
 | `TELEGRAM_BOT_TOKEN` | ✅ Configurada | Bot de Telegram de Fenix |
 | `TELEGRAM_GROUP_ID` | ✅ Configurada | `-1003965489354` |
-| `GOOGLE_CALENDAR_ID` | ✅ Configurada | Calendar de Fenix Kids |
-| `GOOGLE_CREDENTIALS_JSON` | ✅ Configurada | Service Account en `config/google_credentials_fenix.json` (local) y cargada en Railway |
+| ~~`GOOGLE_CALENDAR_ID`~~ | ❌ Eliminada | Ya no se usa Google Calendar |
+| ~~`GOOGLE_CREDENTIALS_JSON`~~ | ❌ Eliminada | Ya no se usa Google Calendar |
 | `GROQ_API_KEY` | ✅ Configurada | Para transcripción de audios |
 | `ADMIN_API_KEY` | ✅ Configurada | Header `X-ADMIN-KEY` para endpoints /stats, /debug, /telegram/setup |
 | `ADMIN_PHONE` | ✅ Default `595982790407` | Número del admin para alertas WhatsApp (también se usa para excluir delays) |
@@ -360,6 +366,25 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 43 | Clase prueba no repite datos que ya tiene de FASE 1.5 | ✅ Hecho |
 | 44 | Afiche diferido: se envía después de que padre responda al diagnóstico | ✅ Hecho |
 | 45 | Nuevo afiche de precios (diseño actualizado) | ✅ Hecho |
+| 46 | Aurora onboarding: saludo personalizado + verificación de datos paso a paso | ✅ Hecho |
+| 47 | Campos APODO en NIÑOS FENIX y APODO PADRE/MADRE en FAMILIAS FENIX | ✅ Hecho |
+| 48 | Campo CONTROL DATOS (checkbox) en FAMILIAS FENIX | ✅ Hecho |
+| 49 | Búsqueda fuzzy de familias (sin acentos, SequenceMatcher) | ✅ Hecho |
+| 50 | Lista de niños agendados por horario al confirmar reserva | ✅ Hecho |
+| 51 | Afiche automático cuando padre muestra interés post-diagnóstico (no depende de frase Ivan) | ✅ Hecho |
+| 52 | Ivan prohibido inventar comandos falsos | ✅ Hecho |
+| 53 | Ivan nunca dice "no te entendí" → "en qué te puedo ayudar?" | ✅ Hecho |
+| 54 | Padres inscriptos sin restricción de horario nocturno | ✅ Hecho |
+| 55 | Reset no-admin solo limpia conversación, NO borra Airtable | ✅ Hecho |
+| 56 | buscar_familia_por_telefono busca también en CELL LIMPIO PADRE/MADRE | ✅ Hecho |
+| 57 | obtener_ninos_de_familia lee IDs del registro familia (no fórmula) | ✅ Hecho |
+| 58 | Topic Telegram muestra nombre del contacto de Airtable | ✅ Hecho |
+| 59 | Aurora asume agenda para todos los hijos (multi-hijo) + confirmación con apodos | ✅ Hecho |
+| 60 | Google Calendar eliminado — ya no se usa | ✅ Hecho |
+| 61 | Horarios abril+mayo creados en HORARIOS FENIX (9 sábados x 3 turnos = 27) | ✅ Hecho |
+| 62 | .env local actualizado a base Salsa Soul (appWwCQxALdMMV4MA) + token nuevo | ✅ Hecho |
+| 63 | Plantillas WhatsApp para recordatorios (reemplazar Calendar) | ⏳ Pendiente |
+| 64 | Borrar archivo calendar_google.py (ya no se importa) | ⏳ Pendiente |
 
 ---
 
@@ -383,3 +408,4 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 2026-04-22/23 | **Sesión masiva — 27 commits. Hardening + migración Airtable + nuevo número WhatsApp.** (1) **Análisis de flujo conversacional**: endpoint `/conversacion/{telefono}`, comando `endpoint` en Claude Code para análisis rápido. Fixes: anti-loop "Agendar", precios siempre por afiche, Alias CI en datos bancarios, no condicionar info a pago, follow-up afiche "¿Te gustaría ser parte de Fenix Kids Academy?". (2) **Hardening producción**: lock por teléfono (asyncio.Lock), dedup persistente PostgreSQL, rate limit 10 msgs/60s, pagos persistentes en PostgreSQL (tabla pagos_pendientes), Calendar null check, alerta Telegram si Claude API falla 3x, reset solo admin, historial 40 msgs. (3) **Nuevo número WhatsApp**: app Fenix Kids Academy creada bajo Business Manager de Salsa Soul Studio (verificado). Número +595 971 938655, phone_number_id 1005063086033214. Token permanente de System User Admin. (4) **Migración Airtable**: todas las tablas migradas de base Fenix a base Salsa Soul (appWwCQxALdMMV4MA). Tablas renombradas con sufijo FENIX: LEADS FENIX, PRUEBA FENIX, FAMILIAS FENIX, NIÑOS FENIX, HORARIOS FENIX, RESERVAS FENIX. Nueva tabla DIAGNOSTICO FENIX (15 condiciones categorizadas: EMOCIONAL/FISICO/SOCIAL/CONDUCTUAL/CLINICO). Datos migrados: 27 familias, 32 niños, 8 horarios, 22 reservas. Campo FAMILIA FENIX creado en tabla PAGOS. (5) **Nixie → Aurora**: renombre completo del agente asistente en código y prompts. (6) **PRUEBA FENIX**: nueva tabla para leads que agendan. 1 registro por hijo, monto solo en el primero. Haiku extrae datos del historial. Vinculada a LEADS, DIAGNOSTICO, FAMILIA, PAGOS. Precio multi-hijo: 90k/1, 120k/2, 150k/3. (7) **FAMILIAS solo en inscripción**: ya no se crea FAMILIA al agendar prueba. PRUEBA FENIX tiene campo INSCRIPCION (checkbox) para migrar a FAMILIAS manual o por automatización Airtable. (8) **Formulario multi-hijo**: pregunta hermanitos uno por uno, nombre + apellido + fecha nac, siempre pide nombre completo del responsable. |
 | 2026-04-23 | **Fix crítico WABA + mejoras flujo conversacional (3 commits).** (1) **Bug WABA Dorita**: app FENIX KIDS 2026 estaba suscrita al WABA de Dorita (error de sesión anterior al usar token temporal para POST subscribed_apps). Mensajes de 9 clientes de Dorita llegaban al server de Fenix y se procesaban como leads nuevos. Fix en código: filtro por `phone_number_id` en `parsear_webhook` (meta.py). Fix raíz: desuscripción de FENIX KIDS 2026 del WABA Dorita vía API. Disculpa enviada a los 9 clientes desde número de Dorita. (2) **Follow-up afiche mejorado**: ahora ofrece dos opciones — "te puedo agendar una clase de prueba acá, o si preferís te puedo llamar". Si elige llamar → alerta urgente al admin. (3) **Comando /agenda en Telegram**: `/agenda 90mil|120mil|150mil nombre` — Ivan cierra agenda tras llamada telefónica. Crea PRUEBA FENIX con Haiku, envía formulario + datos bancarios al padre por WhatsApp, reactiva el agente. (4) **FASE 1.5 en prompt**: cuando padre responde números, ANTES del análisis pregunta nombre padre + hijo. Diagnóstico personalizado: usa nombre del padre al inicio, menciona nombre del hijo 2 veces. Prohibido "me alegra que me lo contés" (argentinismo). (5) **Alerta llamada mejorada**: "Urgente: Llamar a [nombre]" con hijo + edad + link wa.me "soy el profe Ivan desde mi personal". |
 | 2026-04-23/24 | **Refinamiento del flujo conversacional completo (10 commits).** (1) **Diagnóstico diferido**: si padre eligió 2+ números, después de recibir edad Ivan dice "dame unos minutitos" y envía diagnóstico 3 min después (5s admin). Si padre dice "ok/dale/gracias" durante la espera, Fenix no responde. (2) **Afiche diferido**: ya no se envía junto al diagnóstico. Cierre del diagnóstico = "Qué te parece que [hijo] pruebe Fenix Kids?" → espera respuesta → recién ahí afiche. (3) **Follow-up afiche busca nombre hijo en Airtable** (antes regex agarraba nombre del padre). (4) **Dos escenarios de llamada**: padre pide → "aguantame un ratito"; Ivan ofreció y padre acepta → "Super, te llamo desde mi personal". Nuevos patrones: "puedo hablar", "llamame", "la segunda". (5) **Alerta llamada busca datos en Airtable** (nombre/hijo/edad) como fuente de verdad, regex solo fallback. (6) **Edad no se confunde con rompehielos**: regex solo extrae edad cuando Ivan preguntó "cuántos años". (7) **Clase prueba no repite datos**: si ya tiene nombre padre + hijo + edad de FASE 1.5, solo pide lo que falta. Formulario completo solo para inscripción. (8) **Nuevo afiche de precios** (diseño actualizado). (9) **FENIX_API_COSTO.md**: análisis de costos de API (~$0.15-0.20 por conversación completa). |
+| 2026-04-25 | **Sesión Aurora + apodos + eliminación Calendar (27 commits).** (1) **Aurora onboarding completo**: saludo personalizado por nombre/apodo, pregunta por hijos por apodo, verificación de datos paso a paso (quien escribe → hijos con nombre completo + apodo → otro padre). Campo CONTROL DATOS (checkbox) en FAMILIAS FENIX marca como verificado para no repetir onboarding. (2) **Campos APODO**: APODO en NIÑOS FENIX, APODO PADRE/MADRE en FAMILIAS FENIX — creados por API. Si existe, Aurora y la lista de agendados usan apodo. (3) **Búsqueda fuzzy de familias**: `buscar_familia_por_nombre` con normalización de acentos (unicodedata), búsqueda AND/OR en Airtable, scoring con SequenceMatcher. (4) **Lista de niños agendados por horario**: al confirmar reserva se envía lista con emojis (nombre+apellido+edad, orden alfabético). Aurora puede compartir lista si el padre pregunta. (5) **Afiche automático**: ya no depende de que Ivan diga "te paso un afiche". Sistema detecta interés post-diagnóstico y envía automático. (6) **Ivan mejorado**: prohibido inventar comandos falsos, nunca dice "no te entendí" → "en qué te puedo ayudar?". (7) **Padres inscriptos sin modo nocturno**: Aurora atiende a cualquier hora. (8) **Reset seguro**: reset desde números no-admin solo limpia conversación local, NO borra datos de Airtable. (9) **buscar_familia_por_telefono** busca en CELL PADRE/MADRE + CELL LIMPIO. (10) **obtener_ninos_de_familia** lee IDs del registro familia directamente (fórmulas Airtable no funcionaban con linked records). (11) **Topic Telegram con nombre**: muestra nombre del contacto de Airtable en vez del teléfono. (12) **Aurora multi-hijo**: asume agenda para todos los hijos, confirmación con apodos. (13) **Google Calendar eliminado**: toda la integración removida. (14) **Horarios abril+mayo**: 27 horarios creados (9 sábados x 3 turnos). (15) **.env local** actualizado a base Salsa Soul + token nuevo. |
