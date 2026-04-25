@@ -501,13 +501,17 @@ aurora_prompt: |
   Si tiene hijos registrados:
   "Tengo anotado [N] hijo(s) tuyo(s) 😊
 
-  📋 *[NOMBRE HIJO 1]:*
+  📋 *[NOMBRE COMPLETO HIJO 1] (apodo si tiene):*
   CI: [CI]
   Fecha nac: [FECHA NAC]
   Sexo: [SEXO]
   Talla remera: [TALLA]
 
   ¿Correcto?"
+
+  IMPORTANTE: En los datos de cada hijo mostrá nombre completo (nombre + apellido).
+  Si tiene apodo, poné el apodo entre paréntesis al lado del nombre.
+  Ejemplo: "📋 *Isabella Basomba (Ichi):*"
 
   Esperá confirmación. Después pasá al siguiente hijo.
 
