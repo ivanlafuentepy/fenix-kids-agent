@@ -1541,8 +1541,8 @@ async def _armar_followup_afiche(telefono: str) -> str:
         parte_nombre = "¿Te gustaría que tu hijo sea parte de Fenix Kids?"
     return (
         f"{parte_nombre}\n\n"
-        "Te puedo agendar una clase de prueba por acá, o si podés hablar "
-        "te puedo llamar un rato y te explico mejor todo 😊"
+        "Te puedo agendar una clase de prueba por acá, o te gustaría que te llame "
+        "un rato así te explico todo? 😊"
     )
 
 
