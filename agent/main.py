@@ -920,23 +920,29 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
-            event_id_prev = await obtener_calendar_event_id(telefono)
-            if event_id_prev:
-                try:
-                    await borrar_evento_google(event_id_prev)
-                except Exception as e:
-                    logger.error(f"Error borrando evento Calendar en reset: {e}")
-            contador = await eliminar_todo_de_telefono(telefono)
-            await limpiar_estado_completo(telefono)
-            resumen = (
-                f"Reset completo ✅\n"
-                f"Borrados: lead={contador['lead']}, pruebas={contador.get('pruebas', 0)}, "
-                f"familia={contador['familia']}, niños={contador['ninos']}, reservas={contador['reservas']}"
-            )
+            if telefono == admin_phone:
+                # Admin: reset completo incluyendo Airtable
+                event_id_prev = await obtener_calendar_event_id(telefono)
+                if event_id_prev:
+                    try:
+                        await borrar_evento_google(event_id_prev)
+                    except Exception as e:
+                        logger.error(f"Error borrando evento Calendar en reset: {e}")
+                contador = await eliminar_todo_de_telefono(telefono)
+                await limpiar_estado_completo(telefono)
+                resumen = (
+                    f"Reset completo ✅\n"
+                    f"Borrados: lead={contador['lead']}, pruebas={contador.get('pruebas', 0)}, "
+                    f"familia={contador['familia']}, niños={contador['ninos']}, reservas={contador['reservas']}"
+                )
+            else:
+                # No admin: solo limpiar estado local, NO tocar Airtable
+                await limpiar_estado_completo(telefono)
+                resumen = "Reset conversación ✅ (datos de Airtable intactos)"
             await proveedor.enviar_mensaje(telefono, resumen)
             topic_reset = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
             if topic_reset:
-                await enviar_a_topic(topic_reset, f"⚙️ RESET completo — {resumen}", telefono=telefono)
+                await enviar_a_topic(topic_reset, f"⚙️ RESET — {resumen}", telefono=telefono)
             return
 
         # ── Botones del admin (confirmar/rechazar pago) ────────────────────
