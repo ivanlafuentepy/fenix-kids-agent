@@ -402,6 +402,7 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
 _diagnostico_pendiente: dict[str, asyncio.Task] = {}
 _DELAY_DIAGNOSTICO = 180  # 3 minutos
 _afiche_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche
+_modo_padre_nombre: dict[str, str] = {}  # telefono → nombre simulado
 
 
 def _cancelar_diagnostico_pendiente(telefono: str):
@@ -769,12 +770,24 @@ async def webhook_handler(request: Request):
         return {"status": "error"}
 
 
-async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
+async def _build_contexto_aurora(familia: dict, telefono: str = "", simular_nombre: str = "") -> str:
     """Arma el contexto completo de una familia para inyectar en Aurora."""
     campos = familia.get("fields", {})
 
-    # Detectar quién escribe por teléfono
-    if telefono and campos.get("CELL PADRE") == telefono:
+    # Detectar quién escribe
+    if simular_nombre:
+        # Modo padre: buscar si el nombre simulado matchea padre o madre
+        from agent.airtable_client import _sin_acentos
+        _busq = _sin_acentos(simular_nombre)
+        _nm = _sin_acentos(f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}")
+        _np = _sin_acentos(f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}")
+        if _busq in _nm or _nm in _busq:
+            quien_escribe = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+            es_genero = "mamá"
+        else:
+            quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+            es_genero = "papá"
+    elif telefono and campos.get("CELL PADRE") == telefono:
         quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
         es_genero = "papá"
     elif telefono and campos.get("CELL MADRE") == telefono:
@@ -991,12 +1004,18 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await asignar_variante(telefono)
                 await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
                 await guardar_familia_id(telefono, familia["id"])
-                # Nombre display: apodo o nombre del padre/madre que mejor matchee
-                nombre_display = (
-                    campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
-                    or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
-                    or nombre_buscar
-                )
+                _modo_padre_nombre[telefono] = nombre_buscar
+                # Nombre display: el que mejor matchee con lo buscado
+                from agent.airtable_client import _sin_acentos
+                _busq = _sin_acentos(nombre_buscar)
+                _np = f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip()
+                _nm = f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
+                if _busq in _sin_acentos(_nm) or _sin_acentos(_nm) in _busq:
+                    nombre_display = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+                elif _busq in _sin_acentos(_np) or _sin_acentos(_np) in _busq:
+                    nombre_display = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+                else:
+                    nombre_display = nombre_buscar
                 await proveedor.enviar_mensaje(
                     telefono,
                     f"Listo para atenderte como {nombre_display} ✅"
@@ -1144,7 +1163,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if not familia_existente:
                 familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
-                contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
+                simular = _modo_padre_nombre.get(telefono, "")
+                contexto_extra = await _build_contexto_aurora(familia_existente, telefono, simular_nombre=simular)
 
         # ── Delay de análisis (respuesta a números del rompehielos) ────────
         cant_numeros = _contar_numeros_rompehielos(texto)
