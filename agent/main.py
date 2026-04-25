@@ -274,7 +274,7 @@ async def _enviar_recordatorio(rec):
         hora = data.get("hora", "")
         from urllib.parse import quote
         primer_nombre = nombre_padre.split()[0] if nombre_padre else ""
-        mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan, te puedo llamar ahora?"
+        mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?"
         wa_link = f"https://wa.me/{telefono_lead}?text={quote(mensaje_pre)}"
         alerta = (
             f"🔔 Llamada programada AHORA\n\n"
@@ -747,7 +747,7 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         edad_hijo = _extraer_edad_historial(historial)
 
     primer_nombre = nombre_padre.split()[0] if nombre_padre != "no se presentó" else ""
-    mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan desde mi personal, te puedo llamar ahora?"
+    mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
     alerta = (
