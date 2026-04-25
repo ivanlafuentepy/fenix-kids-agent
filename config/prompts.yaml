@@ -512,6 +512,10 @@ aurora_prompt: |
   Si tiene apodo, poné el apodo entre paréntesis al lado del nombre.
   Ejemplo: "📋 *Isabella Basomba (Ichi):*"
 
+  Si TALLA REMERA está vacía, después de confirmar los otros datos preguntá:
+  "¿Qué talle de remera usa [APODO/NOMBRE]? Las opciones son: 6 | 8 | 10 | 12 | 14 | P | M | G | XG"
+  Esperá la respuesta y anotalo.
+
   Esperá confirmación. Después pasá al siguiente hijo.
 
   Si NO tiene hijos registrados:

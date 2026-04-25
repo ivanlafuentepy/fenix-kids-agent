@@ -480,6 +480,11 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
     return None
 
 
+async def actualizar_nino(nino_id: str, campos: dict) -> bool:
+    """Actualiza campos de un NIÑO (ej: talla_remera, apodo)."""
+    return await _patch(_NINOS, nino_id, campos)
+
+
 async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     """
     Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
