@@ -374,8 +374,14 @@ async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | N
 
 
 async def buscar_familia_por_telefono(telefono: str) -> dict | None:
-    """Busca una FAMILIA por CELL PADRE o CELL MADRE."""
-    formula = f"OR({{CELL PADRE}}='{telefono}', {{CELL MADRE}}='{telefono}')"
+    """Busca una FAMILIA por CELL PADRE, CELL MADRE o CELL LIMPIO."""
+    # Buscar por número exacto y también por CELL LIMPIO (formato normalizado)
+    formula = (
+        f"OR("
+        f"{{CELL PADRE}}='{telefono}', {{CELL MADRE}}='{telefono}', "
+        f"{{CELL LIMPIO PADRE}}='{telefono}', {{CELL LIMPIO MADRE}}='{telefono}'"
+        f")"
+    )
     records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
     return records[0] if records else None
 
