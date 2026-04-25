@@ -273,7 +273,7 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
         for nino in ninos:
             nino_id = nino["id"]
             # Las reservas del niño
-            formula = f"FIND('{nino_id}', ARRAYJOIN({{NIÑO}}))"
+            formula = f"FIND('{nino_id}', ARRAYJOIN({{NINO}}))"
             reservas = await _get_records(_RESERVAS, formula=formula, max_records=20)
             for r in reservas:
                 if await _delete(_RESERVAS, r["id"]):
@@ -637,7 +637,7 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                 if r.status_code != 200:
                     continue
                 res_fields = r.json().get("fields", {})
-                nino_ids = res_fields.get("NIÑO", [])
+                nino_ids = res_fields.get("NINO", [])
                 for nino_id in nino_ids:
                     url_nino = f"{_BASE_URL}/{_NINOS}/{nino_id}"
                     rn = await client.get(url_nino, headers=_headers(), timeout=10)
@@ -699,14 +699,14 @@ async def crear_reserva(nino_id: str, horario_id: str) -> str | None:
     Retorna el record_id de la RESERVA creada.
     """
     # Verificar que no exista ya esa reserva
-    formula = f"AND({{NIÑO}}='{nino_id}', {{HORARIO}}='{horario_id}')"
+    formula = f"AND({{NINO}}='{nino_id}', {{HORARIO}}='{horario_id}')"
     existing = await _get_records(_RESERVAS, formula=formula, max_records=1)
     if existing:
         logger.info(f"Reserva ya existe: {nino_id} + {horario_id}")
         return existing[0]["id"]
 
     resultado = await _post(_RESERVAS, {
-        "NIÑO": [nino_id],
+        "NINO": [nino_id],
         "HORARIO": [horario_id],
     })
     if resultado:
