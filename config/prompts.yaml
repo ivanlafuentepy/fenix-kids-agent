@@ -504,7 +504,6 @@ aurora_prompt: |
   📋 *[NOMBRE COMPLETO HIJO 1] (apodo si tiene):*
   CI: [CI]
   Fecha nac: [FECHA NAC]
-  Sexo: [SEXO]
   Talla remera: [TALLA]
 
   ¿Correcto?"
