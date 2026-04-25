@@ -1060,18 +1060,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, respuesta)
             return
 
-        # ── Modo nocturno (23:00–07:00 PY) — admin puede testear siempre
+        # ── Modo nocturno (23:00–07:00 PY) — admin y padres inscriptos sin límite
         if es_horario_nocturno() and telefono not in _PHONES_SIN_DELAY:
-            historial_noche = await obtener_historial(telefono, limite=5)
-            _tiene_actividad = len(historial_noche) > 0
-            if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
-                await guardar_mensaje(telefono, "user", texto)
-                if not await tiene_noche_pendiente(telefono):
-                    await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
-                    await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
-                await asignar_variante(telefono)
-                await marcar_noche_pendiente(telefono)
-                return
+            # Padres inscriptos no tienen restricción nocturna
+            _familia_nocturno = await buscar_familia_por_telefono(telefono)
+            if not _familia_nocturno:
+                historial_noche = await obtener_historial(telefono, limite=5)
+                _tiene_actividad = len(historial_noche) > 0
+                if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
+                    await guardar_mensaje(telefono, "user", texto)
+                    if not await tiene_noche_pendiente(telefono):
+                        await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
+                        await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
+                    await asignar_variante(telefono)
+                    await marcar_noche_pendiente(telefono)
+                    return
 
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
