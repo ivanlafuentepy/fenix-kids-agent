@@ -693,24 +693,22 @@ def formatear_lista_ninos(ninos: list[dict], fecha_label: str = "", hora: str = 
 
 # ── RESERVAS ──────────────────────────────────────────────────────────────────
 
-async def crear_reserva(nino_id: str, horario_id: str) -> str | None:
+async def crear_reserva(nino_id: str, horario_id: str, familia_id: str = "") -> str | None:
     """
-    Crea una RESERVA vinculando NIÑO + HORARIO.
+    Crea una RESERVA vinculando NINO + HORARIO + FAMILIAS.
+    Siempre 1 reserva = 1 niño + 1 horario.
     Retorna el record_id de la RESERVA creada.
     """
-    # Verificar que no exista ya esa reserva
-    formula = f"AND({{NINO}}='{nino_id}', {{HORARIO}}='{horario_id}')"
-    existing = await _get_records(_RESERVAS, formula=formula, max_records=1)
-    if existing:
-        logger.info(f"Reserva ya existe: {nino_id} + {horario_id}")
-        return existing[0]["id"]
-
-    resultado = await _post(_RESERVAS, {
+    campos = {
         "NINO": [nino_id],
         "HORARIO": [horario_id],
-    })
+    }
+    if familia_id:
+        campos["FAMILIAS"] = [familia_id]
+
+    resultado = await _post(_RESERVAS, campos)
     if resultado:
-        logger.info(f"Reserva creada: {resultado['id']}")
+        logger.info(f"Reserva creada: {resultado['id']} nino={nino_id} horario={horario_id}")
         return resultado["id"]
     return None
 

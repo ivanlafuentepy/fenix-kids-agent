@@ -1387,7 +1387,7 @@ async def _procesar_confirmacion_reserva(
             horario_id = await obtener_o_crear_horario(fecha_airtable, hora_str)
             if horario_id:
                 for nino in ninos:
-                    rid = await crear_reserva(nino["id"], horario_id)
+                    rid = await crear_reserva(nino["id"], horario_id, familia_id or "")
                     if rid:
                         logger.info(f"Reserva creada: {nino.get('nombre_completo', nino['id'])} → {rid}")
             else:
