@@ -1357,15 +1357,42 @@ async def _procesar_confirmacion_reserva(
     fecha_iso = None
     if fecha_str and hora_str:
         try:
-            from agent.airtable_client import obtener_o_crear_horario as _ooh
-            # Parsear fecha del texto "3/5" → "2026-05-03"
-            import re
             from datetime import date as _d
+            _MESES = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
+                       "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
+            anio = _d.today().year
+            # Formato "3/5" o "03/05"
             _m = re.search(r'(\d{1,2})/(\d{1,2})', fecha_str)
             if _m:
                 dia, mes = int(_m.group(1)), int(_m.group(2))
-                anio = _d.today().year
                 fecha_iso = f"{anio}-{mes:02d}-{dia:02d}"
+            else:
+                # Formato "9 de mayo" o "23 de mayo"
+                _m2 = re.search(r'(\d{1,2})\s+de\s+(\w+)', fecha_str)
+                if _m2:
+                    dia = int(_m2.group(1))
+                    mes_nombre = _m2.group(2).lower()
+                    mes = _MESES.get(mes_nombre, 0)
+                    if mes:
+                        fecha_iso = f"{anio}-{mes:02d}-{dia:02d}"
+            if not fecha_iso:
+                # Último intento: solo número → asumir próximo sábado con ese día
+                _m3 = re.search(r'(\d{1,2})', fecha_str)
+                if _m3:
+                    dia = int(_m3.group(1))
+                    hoy = _d.today()
+                    # Probar este mes y el siguiente
+                    for delta_mes in range(0, 3):
+                        mes_test = hoy.month + delta_mes
+                        anio_test = hoy.year + (mes_test - 1) // 12
+                        mes_test = (mes_test - 1) % 12 + 1
+                        try:
+                            fecha_test = _d(anio_test, mes_test, dia)
+                            if fecha_test.weekday() == 5:  # sábado
+                                fecha_iso = fecha_test.isoformat()
+                                break
+                        except ValueError:
+                            continue
         except Exception as e:
             logger.error(f"Error calculando fecha: {e}")
 
@@ -1470,7 +1497,7 @@ async def _procesar_confirmacion_reserva(
             if ninos_horario:
                 # Armar label de fecha: "Sábado 26/4"
                 from datetime import date as _date_cls
-                _fd = _date_cls.fromisoformat(fecha_airtable)
+                _fd = _date_cls.fromisoformat(fecha_iso)
                 fecha_label = f"Sábado {_fd.day}/{_fd.month}"
                 lista = formatear_lista_ninos(ninos_horario, fecha_label, hora_str)
                 await proveedor.enviar_mensaje(telefono, lista)
