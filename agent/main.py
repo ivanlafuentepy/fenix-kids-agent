@@ -618,7 +618,7 @@ def _extraer_nombre_del_historial(historial: list[dict], texto_nuevo: str = "") 
 
 
 _REGEX_NOMBRE_HIJO = re.compile(
-    r"(?:mi\s+hij[oa]\s+(?:se\s+llama\s+)?|se\s+llama\s+|(?:hijo|hija|nene|nena|niño|niña)\s+)([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)",
+    r"(?:mi\s+hij[oa]\s+(?:se\s+llama\s+)?|se\s+llama\s+|(?:hijo|hija|nene|nena|niño|niña)\s+)([a-záéíóúñA-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[a-záéíóúñA-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)",
     re.IGNORECASE,
 )
 
@@ -1350,10 +1350,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # y el texto es un nombre corto (1-3 palabras, sin números), tomarlo como nombre
                 if not _nombre_resp and len(historial) >= 1:
                     _ultimo_agente = historial[-1].get("content", "").lower() if historial[-1].get("role") == "assistant" else ""
-                    if "con quién tengo el gusto" in _ultimo_agente or "con quien tengo el gusto" in _ultimo_agente:
-                        _palabras = texto.strip().split()
-                        if 1 <= len(_palabras) <= 3 and not any(c.isdigit() for c in texto):
-                            _nombre_resp = texto.strip().title()
+                    if "con quién tengo el gusto" in _ultimo_agente or "con quien tengo el gusto" in _ultimo_agente or "cómo se llama" in _ultimo_agente:
+                        # "Ivan, se llama benja" → nombre padre = Ivan
+                        # "Ivan" → nombre padre = Ivan
+                        _texto_limpio = texto.strip()
+                        # Si tiene coma, tomar la primera parte como nombre padre
+                        if "," in _texto_limpio:
+                            _nombre_resp = _texto_limpio.split(",")[0].strip().title()
+                        elif not any(c.isdigit() for c in _texto_limpio):
+                            _palabras = _texto_limpio.split()
+                            if 1 <= len(_palabras) <= 3:
+                                _nombre_resp = _texto_limpio.title()
 
                 if _nombre_resp or (_nombre_hijo and _nombre_hijo != "no mencionó") or _edad:
                     await actualizar_datos_lead(
