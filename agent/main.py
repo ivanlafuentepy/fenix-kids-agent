@@ -938,8 +938,40 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await enviar_a_topic(topic_reset, f"⚙️ RESET completo — {resumen}", telefono=telefono)
             return
 
+        # ── Comando "modo padre" (solo admin) ─────────────────────────────
+        if texto.lower().startswith("modo padre") and telefono == admin_phone:
+            nombre_buscar = texto[len("modo padre"):].strip().strip(",").strip()
+            if not nombre_buscar:
+                await proveedor.enviar_mensaje(telefono, "Usá: modo padre Nombre Apellido")
+                return
+            familia = await buscar_familia_por_nombre(nombre_buscar)
+            if not familia:
+                await proveedor.enviar_mensaje(telefono, f"No encontré familia con '{nombre_buscar}'")
+                return
+            campos = familia.get("fields", {})
+            # Resetear estado para simular como padre nuevo
+            await limpiar_estado_completo(telefono)
+            await asignar_variante(telefono)
+            await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+            # Guardar familia_id para contexto
+            await guardar_familia_id(telefono, familia["id"])
+            # Armar resumen
+            nombre_padre = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+            nombre_madre = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+            hijos = await obtener_ninos_de_familia(familia["id"])
+            nombres_hijos = [h.get("apodo") or h.get("nombre") for h in hijos]
+            resumen = (
+                f"Modo padre activado ✅\n"
+                f"Familia: {campos.get('FAMILIA', '')}\n"
+                f"Padre: {nombre_padre}\n"
+                f"Madre: {nombre_madre}\n"
+                f"Hijos: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno'}\n\n"
+                f"Escribí 'hola' para empezar como este padre."
+            )
+            await proveedor.enviar_mensaje(telefono, resumen)
+            return
+
         # ── Botones del admin (confirmar/rechazar pago) ────────────────────
-        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
         if telefono == admin_phone and msg.es_boton:
             btn_titulo = texto.lower().strip()
             if "confirmar" in btn_titulo or "rechazar" in btn_titulo:
@@ -1103,7 +1135,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
-            familia_existente = await buscar_familia_por_telefono(telefono)
+            # Primero buscar por familia_id guardada (modo padre admin)
+            familia_existente = None
+            fam_id = await obtener_familia_id(telefono)
+            if fam_id:
+                from agent.airtable_client import _get_records, _FAMILIAS
+                recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{fam_id}'", max_records=1)
+                familia_existente = recs[0] if recs else None
+            # Fallback: buscar por teléfono
+            if not familia_existente:
+                familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
                 contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
 
