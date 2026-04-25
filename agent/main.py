@@ -776,12 +776,15 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "", simular_nomb
 
     # Detectar quién escribe
     if simular_nombre:
-        # Modo padre: buscar si el nombre simulado matchea padre o madre
+        # Modo padre: fuzzy match para detectar si es padre o madre
         from agent.airtable_client import _sin_acentos
+        from difflib import SequenceMatcher as _SM
         _busq = _sin_acentos(simular_nombre)
-        _nm = _sin_acentos(f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}")
-        _np = _sin_acentos(f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}")
-        if _busq in _nm or _nm in _busq:
+        _np = _sin_acentos(f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip())
+        _nm = _sin_acentos(f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip())
+        score_padre = _SM(None, _busq, _np).ratio() if _np else 0
+        score_madre = _SM(None, _busq, _nm).ratio() if _nm else 0
+        if score_madre >= score_padre and campos.get("NOMBRE MADRE"):
             quien_escribe = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
             es_genero = "mamá"
         else:
