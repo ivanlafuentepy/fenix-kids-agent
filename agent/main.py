@@ -1005,17 +1005,18 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
                 await guardar_familia_id(telefono, familia["id"])
                 _modo_padre_nombre[telefono] = nombre_buscar
-                # Nombre display: el que mejor matchee con lo buscado
+                # Nombre display: siempre de Airtable, detectar padre o madre
                 from agent.airtable_client import _sin_acentos
+                from difflib import SequenceMatcher as _SM
                 _busq = _sin_acentos(nombre_buscar)
                 _np = f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip()
                 _nm = f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
-                if _busq in _sin_acentos(_nm) or _sin_acentos(_nm) in _busq:
-                    nombre_display = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
-                elif _busq in _sin_acentos(_np) or _sin_acentos(_np) in _busq:
-                    nombre_display = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+                score_padre = _SM(None, _busq, _sin_acentos(_np)).ratio() if _np else 0
+                score_madre = _SM(None, _busq, _sin_acentos(_nm)).ratio() if _nm else 0
+                if score_madre >= score_padre and _nm:
+                    nombre_display = campos.get("APODO MADRE", "") or _nm
                 else:
-                    nombre_display = nombre_buscar
+                    nombre_display = campos.get("APODO PADRE", "") or _np
                 await proveedor.enviar_mensaje(
                     telefono,
                     f"Listo para atenderte como {nombre_display} ✅"
