@@ -402,7 +402,6 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
 _diagnostico_pendiente: dict[str, asyncio.Task] = {}
 _DELAY_DIAGNOSTICO = 180  # 3 minutos
 _afiche_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche
-_modo_padre_nombre: dict[str, str] = {}  # telefono → nombre simulado
 
 
 def _cancelar_diagnostico_pendiente(telefono: str):
@@ -770,27 +769,12 @@ async def webhook_handler(request: Request):
         return {"status": "error"}
 
 
-async def _build_contexto_aurora(familia: dict, telefono: str = "", simular_nombre: str = "") -> str:
+async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     """Arma el contexto completo de una familia para inyectar en Aurora."""
     campos = familia.get("fields", {})
 
-    # Detectar quién escribe
-    if simular_nombre:
-        # Modo padre: fuzzy match para detectar si es padre o madre
-        from agent.airtable_client import _sin_acentos
-        from difflib import SequenceMatcher as _SM
-        _busq = _sin_acentos(simular_nombre)
-        _np = _sin_acentos(f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip())
-        _nm = _sin_acentos(f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip())
-        score_padre = _SM(None, _busq, _np).ratio() if _np else 0
-        score_madre = _SM(None, _busq, _nm).ratio() if _nm else 0
-        if score_madre >= score_padre and campos.get("NOMBRE MADRE"):
-            quien_escribe = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
-            es_genero = "mamá"
-        else:
-            quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
-            es_genero = "papá"
-    elif telefono and campos.get("CELL PADRE") == telefono:
+    # Detectar quién escribe por teléfono
+    if telefono and campos.get("CELL PADRE") == telefono:
         quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
         es_genero = "papá"
     elif telefono and campos.get("CELL MADRE") == telefono:
@@ -991,43 +975,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"Error transcribiendo audio: {e}")
 
-        # ── Comando "modo padre" (solo admin, después de transcripción) ──
-        if texto.lower().startswith("modo padre") and telefono == admin_phone:
-            nombre_buscar = texto[len("modo padre"):].strip().strip(",").strip().rstrip(".")
-            if not nombre_buscar:
-                await proveedor.enviar_mensaje(telefono, "Usá: modo padre Nombre Apellido")
-                return
-            try:
-                familia = await buscar_familia_por_nombre(nombre_buscar)
-                if not familia:
-                    await proveedor.enviar_mensaje(telefono, f"No encontré familia con '{nombre_buscar}'")
-                    return
-                campos = familia.get("fields", {})
-                await limpiar_estado_completo(telefono)
-                await asignar_variante(telefono)
-                await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
-                await guardar_familia_id(telefono, familia["id"])
-                _modo_padre_nombre[telefono] = nombre_buscar
-                # Nombre display: siempre de Airtable, detectar padre o madre
-                from agent.airtable_client import _sin_acentos
-                from difflib import SequenceMatcher as _SM
-                _busq = _sin_acentos(nombre_buscar)
-                _np = f"{campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip()
-                _nm = f"{campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
-                score_padre = _SM(None, _busq, _sin_acentos(_np)).ratio() if _np else 0
-                score_madre = _SM(None, _busq, _sin_acentos(_nm)).ratio() if _nm else 0
-                if score_madre >= score_padre and _nm:
-                    nombre_display = campos.get("APODO MADRE", "") or _nm
-                else:
-                    nombre_display = campos.get("APODO PADRE", "") or _np
-                await proveedor.enviar_mensaje(
-                    telefono,
-                    f"Listo para atenderte como {nombre_display} ✅"
-                )
-            except Exception as e:
-                logger.error(f"[MODO PADRE] Error: {e}")
-                await proveedor.enviar_mensaje(telefono, f"Error activando modo padre: {e}")
-            return
 
         # ── Espejo en Telegram ────────────────────────────────────────────
         topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
@@ -1167,8 +1114,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if not familia_existente:
                 familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
-                simular = _modo_padre_nombre.get(telefono, "")
-                contexto_extra = await _build_contexto_aurora(familia_existente, telefono, simular_nombre=simular)
+                contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
 
         # ── Delay de análisis (respuesta a números del rompehielos) ────────
         cant_numeros = _contar_numeros_rompehielos(texto)
