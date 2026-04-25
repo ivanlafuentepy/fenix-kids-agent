@@ -483,23 +483,44 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
 async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     """
     Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
+    Lee los IDs de niños del registro de la familia y los fetchea uno por uno.
     """
-    formula = f"FIND('{familia_id}', ARRAYJOIN({{FAMILIA}}))"
-    records = await _get_records(_NINOS, formula=formula, max_records=20)
+    # Leer el registro de la familia para obtener los IDs de NIÑOS FENIX
+    url = f"{_BASE_URL}/{_FAMILIAS}/{familia_id}"
+    nino_ids = []
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                nino_ids = r.json().get("fields", {}).get("NIÑOS FENIX", [])
+        except Exception as e:
+            logger.error(f"Error obteniendo familia {familia_id}: {e}")
+
+    if not nino_ids:
+        return []
+
+    # Fetchear cada niño por ID
     resultado = []
-    for r in records:
-        f = r.get("fields", {})
-        resultado.append({
-            "id": r["id"],
-            "nombre_completo": f.get("NOMBRE COMPLETO", ""),
-            "nombre": f.get("NOMBRE", ""),
-            "apellido": f.get("APELLIDO", ""),
-            "apodo": f.get("APODO", ""),
-            "ci": f.get("CI", ""),
-            "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
-            "sexo": f.get("SEXO", ""),
-            "talla_remera": f.get("TALLA REMERA", ""),
-        })
+    async with httpx.AsyncClient() as client:
+        for nino_id in nino_ids:
+            try:
+                url_nino = f"{_BASE_URL}/{_NINOS}/{nino_id}"
+                r = await client.get(url_nino, headers=_headers(), timeout=10)
+                if r.status_code == 200:
+                    f = r.json().get("fields", {})
+                    resultado.append({
+                        "id": nino_id,
+                        "nombre_completo": f.get("NOMBRE COMPLETO", ""),
+                        "nombre": f.get("NOMBRE", ""),
+                        "apellido": f.get("APELLIDO", ""),
+                        "apodo": f.get("APODO", ""),
+                        "ci": f.get("CI", ""),
+                        "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
+                        "sexo": f.get("SEXO", ""),
+                        "talla_remera": f.get("TALLA REMERA", ""),
+                    })
+            except Exception as e:
+                logger.error(f"Error obteniendo niño {nino_id}: {e}")
     return resultado
 
 
