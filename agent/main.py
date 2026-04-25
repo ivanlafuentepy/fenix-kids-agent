@@ -401,6 +401,7 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
 
 _diagnostico_pendiente: dict[str, asyncio.Task] = {}
 _DELAY_DIAGNOSTICO = 180  # 3 minutos
+_afiche_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche
 
 
 def _cancelar_diagnostico_pendiente(telefono: str):
@@ -428,6 +429,35 @@ def _detectar_respuesta_edad(texto: str, historial: list[dict]) -> bool:
     if re.search(r'\b\d{1,2}\s*(?:años|añitos|a[ñn]os)', t, re.IGNORECASE):
         return True
     return False
+
+
+def _diagnostico_ya_enviado(historial: list[dict]) -> bool:
+    """Detecta si Ivan ya envió el diagnóstico/cierre emocional mirando el historial."""
+    for msg in historial:
+        if msg.get("role") == "assistant":
+            t = msg.get("content", "").lower()
+            # Ivan cierra con "qué te parece" + "pruebe/prueben" + "fenix"
+            if "te parece" in t and "fenix" in t and ("prueb" in t or "parte de" in t):
+                return True
+    return False
+
+
+def _padre_muestra_interes(texto: str) -> bool:
+    """Detecta si el padre muestra interés después del diagnóstico."""
+    t = texto.lower().strip()
+    # Respuestas afirmativas / preguntas de agenda
+    patrones = [
+        r'^s[ií]$', r'^dale$', r'^ok$', r'^bueno$', r'^va$', r'^vamos$',
+        r'^genial$', r'^perfecto$', r'^claro$', r'^obvio$', r'^por supuesto$',
+        r'me interesa', r'quiero', r'quier[oa]', r'nos interesa',
+        r'cuando', r'cuándo', r'cu[aá]ndo', r'horario', r'dias', r'días',
+        r'agendar', r'reservar', r'inscrib', r'anotar',
+        r'cómo es', r'como es', r'cómo hago', r'como hago',
+        r'cuánto', r'cuanto', r'precio', r'costo', r'sale',
+        r'probamos', r'prueba', r'puede probar', r'le gustar',
+        r'que necesito', r'qué necesito',
+    ]
+    return any(re.search(p, t) for p in patrones)
 
 
 def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
@@ -1246,8 +1276,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
-        # ── Enviar afiche si Ivan dijo "te paso un afiche" ───────────────
-        if "te paso un afiche" in respuesta.lower():
+        # ── Enviar afiche cuando padre muestra interés post-diagnóstico ──
+        if (agent_actual == "ivan"
+                and telefono not in _afiche_enviado
+                and _diagnostico_ya_enviado(historial)
+                and _padre_muestra_interes(texto)):
+            _afiche_enviado.add(telefono)
             await _enviar_afiche_y_followup(telefono, topic_id)
 
         # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
