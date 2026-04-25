@@ -205,9 +205,93 @@ async def _programar_recordatorio_clase(telefono: str, fecha_iso: str, hora_clas
     logger.info(f"[RECORDATORIO] Clase programado id={rec_id} para {telefono} — {dia_clase} 07:00 PY")
 
 
+async def _programar_llamada(telefono: str, hora_llamada: str):
+    """Programa alerta de llamada para el admin a la hora indicada por el padre."""
+    from urllib.parse import quote
+    from agent.airtable_client import _get_records, _LEADS
+
+    await cancelar_recordatorios_por_telefono(telefono, tipo="llamada")
+
+    # Parsear hora: "15:00", "3pm", "3 de la tarde", "15", "3"
+    hora_num = None
+    minuto = 0
+    _m = re.search(r'(\d{1,2})[:\.](\d{2})', hora_llamada)
+    if _m:
+        hora_num = int(_m.group(1))
+        minuto = int(_m.group(2))
+    else:
+        _m2 = re.search(r'(\d{1,2})', hora_llamada)
+        if _m2:
+            hora_num = int(_m2.group(1))
+    if hora_num is None:
+        logger.warning(f"[LLAMADA] No pude parsear hora: {hora_llamada}")
+        return
+    # Si hora < 8 asumir PM
+    if hora_num < 8:
+        hora_num += 12
+
+    hoy = datetime.now(_TZ_PY).date()
+    envio_local = datetime.combine(hoy, time(hora_num, minuto), tzinfo=_TZ_PY)
+    envio_utc = envio_local.astimezone(timezone.utc).replace(tzinfo=None)
+    if envio_utc <= datetime.utcnow():
+        # Ya pasó la hora, enviar alerta inmediata
+        await _alertar_pedido_llamada(telefono, await obtener_historial(telefono, limite=20), "")
+        return
+
+    # Buscar datos del lead para el payload
+    nombre_padre = ""
+    nombre_hijo = ""
+    try:
+        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if lead_records:
+            fields = lead_records[0].get("fields", {})
+            nombre_padre = fields.get("NOMBRE RESPONSABLE", "")
+            nombre_hijo = fields.get("NOMBRE NIÑO", "")
+    except Exception:
+        pass
+
+    payload = json.dumps({
+        "template": "llamada",
+        "telefono_lead": telefono,
+        "nombre_padre": nombre_padre,
+        "nombre_hijo": nombre_hijo,
+        "hora": hora_llamada,
+    })
+    rec_id = await crear_recordatorio(telefono, "llamada", envio_utc, payload)
+    logger.info(f"[LLAMADA] Programada id={rec_id} para {telefono} a las {hora_num}:{minuto:02d} PY")
+
+
 async def _enviar_recordatorio(rec):
-    """Envía un recordatorio pendiente como mensaje de texto."""
+    """Envía un recordatorio pendiente."""
     data = json.loads(rec.payload)
+    template = data.get("template", "recordatorio_clase")
+
+    if template == "llamada":
+        # Alerta de llamada programada al admin
+        telefono_lead = data.get("telefono_lead", rec.telefono)
+        nombre_padre = data.get("nombre_padre", "")
+        nombre_hijo = data.get("nombre_hijo", "")
+        hora = data.get("hora", "")
+        from urllib.parse import quote
+        primer_nombre = nombre_padre.split()[0] if nombre_padre else ""
+        mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan, te puedo llamar ahora?"
+        wa_link = f"https://wa.me/{telefono_lead}?text={quote(mensaje_pre)}"
+        alerta = (
+            f"🔔 Llamada programada AHORA\n\n"
+            f"👤 {nombre_padre}\n"
+            f"👦 Hijo/a: {nombre_hijo}\n"
+            f"⏰ Hora acordada: {hora}\n\n"
+            f"📲 {wa_link}"
+        )
+        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        ok = await proveedor.enviar_mensaje(admin_phone, alerta)
+        try:
+            await notificar_llamada_urgente(telefono_lead, nombre_padre, wa_link)
+        except Exception:
+            pass
+        return ok
+
+    # Recordatorio de clase (default)
     hora = data.get("hora", "")
     msg = f"Hola! Te recordamos que hoy tenés tu clase a las {hora} en Fenix Kids 🥋 Te esperamos!"
     ok = await proveedor.enviar_mensaje(rec.telefono, msg)
@@ -1295,6 +1379,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         confirmaciones = _detectar_confirmacion_aurora(respuesta)
         for confirmacion in confirmaciones:
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta)
+
+        # ── Detectar llamada programada ("te llamo a las X") ──────────────
+        if agent_actual == "ivan":
+            _m_llamada = re.search(
+                r'te llamo (?:a las?\s+)?(\d{1,2}(?:[:.]\d{2})?(?:\s*(?:hs?|pm|am))?)',
+                respuesta.lower()
+            )
+            if _m_llamada and "desde mi" not in respuesta.lower():
+                try:
+                    await _programar_llamada(telefono, _m_llamada.group(1))
+                    logger.info(f"[LLAMADA] Programada para {telefono} a las {_m_llamada.group(1)}")
+                except Exception as e:
+                    logger.error(f"[LLAMADA] Error programando: {e}")
 
         # ── Guardar mensajes ──────────────────────────────────────────────
         await guardar_mensaje(telefono, "user", texto)
