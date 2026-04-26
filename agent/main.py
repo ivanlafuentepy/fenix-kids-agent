@@ -360,6 +360,10 @@ async def lifespan(app: FastAPI):
             logger.error(f"[STARTUP] Error procesando pendientes nocturnos: {e}")
     _noche_task = _fire_and_forget(_noche_wakeup_loop(_procesar_pendientes_noche))
 
+    # Contenido social: polling CONTENIDO FENIX + calendario diario
+    from agent.contenido_social import iniciar_contenido_social
+    iniciar_contenido_social(proveedor)
+
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
     print(f"[STARTUP] Proveedor: {proveedor.__class__.__name__}", flush=True)
     print(

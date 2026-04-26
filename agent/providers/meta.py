@@ -195,6 +195,58 @@ class ProveedorMeta(ProveedorWhatsApp):
             return False
         return await self.enviar_imagen(telefono, media_id, caption)
 
+    async def enviar_plantilla(
+        self,
+        telefono: str,
+        template_name: str,
+        variables: list[str] | None = None,
+        language: str = "es",
+    ) -> bool:
+        """
+        Envía un mensaje de plantilla aprobada por Meta.
+        Necesario para: contacto fuera de ventana 24h, mensajes a contactos fríos.
+
+        Args:
+            telefono: Número del destinatario
+            template_name: Nombre de la plantilla en Meta Business
+            variables: Lista de variables {{1}}, {{2}}, etc.
+            language: Código de idioma (default: es)
+        """
+        if not self.access_token or not self.phone_number_id:
+            logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        template = {
+            "name": template_name,
+            "language": {"code": language},
+        }
+        if variables:
+            template["components"] = [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": v} for v in variables
+                    ],
+                }
+            ]
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "template",
+            "template": template,
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.error(f"Error Meta plantilla '{template_name}': {r.status_code} — {r.text}")
+            else:
+                logger.info(f"Plantilla '{template_name}' enviada a {telefono}")
+            return r.status_code == 200
+
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía mensaje via Meta WhatsApp Cloud API."""
         if not self.access_token or not self.phone_number_id:

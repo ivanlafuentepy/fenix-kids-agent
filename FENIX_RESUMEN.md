@@ -228,6 +228,24 @@ config/
 | PRESENTE | Checkbox | Asistencia el día de la clase |
 | OBSERVACIONES | Texto | Notas del entrenador |
 
+### Tabla CONTENIDO FENIX (posteos de redes sociales vinculados a niños)
+| Campo | Tipo | Qué guarda |
+|---|---|---|
+| TITULO | Texto | Descripción del posteo |
+| RED | Select | Instagram / Facebook / TikTok / YouTube / Threads |
+| TIPO | Select | Reel / Posteo / Historia / Carrusel |
+| LINK | URL | Link directo al posteo publicado |
+| NIÑOS FENIX | Link records | Niños que aparecen en el posteo |
+| NOTIFICADO | Checkbox | True = ya se enviaron los WhatsApps |
+| FECHA | DateTime | Cuándo se creó el registro |
+
+### Tabla REDES FENIX (perfiles de redes sociales)
+| Campo | Tipo | Qué guarda |
+|---|---|---|
+| RED | Texto | Nombre de la red (Instagram, Facebook, etc.) |
+| PERFIL | URL | Link al perfil de FENIX Kids |
+| ICONO | Texto | Emoji identificador |
+
 ---
 
 ## 7. Estados del Lead
@@ -383,7 +401,7 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 60 | Google Calendar eliminado — ya no se usa | ✅ Hecho |
 | 61 | Horarios abril+mayo creados en HORARIOS FENIX (9 sábados x 3 turnos = 27) | ✅ Hecho |
 | 62 | .env local actualizado a base Salsa Soul (appWwCQxALdMMV4MA) + token nuevo | ✅ Hecho |
-| 63 | Plantillas WhatsApp para recordatorios (reemplazar Calendar) | ⏳ Pendiente |
+| 63 | Plantillas WhatsApp para recordatorios (reemplazar Calendar) | ✅ Hecho (recordatorio viernes + plantillas Meta) |
 | 64 | Borrar archivo calendar_google.py (ya no se importa) | ⏳ Pendiente |
 | 65 | Tabla RESERVAS FENIX: 1 niño = 1 registro, NINO sin Ñ, FAMILIAS vinculado, lookups | ✅ Hecho |
 | 66 | Detector múltiples confirmaciones en un mensaje (re.finditer) | ✅ Hecho |
@@ -394,6 +412,17 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 71 | Extracción nombres: minúsculas, coma, "Ivan, se llama benja" | ✅ Hecho |
 | 72 | TALLA REMERA campo select (6/8/10/12/14/P/M/G/XG) + Aurora pregunta si vacío | ✅ Hecho |
 | 73 | Aurora acepta agendar para hoy si el padre lo pide | ✅ Hecho |
+| 74 | Tabla CONTENIDO FENIX en Airtable (posteos vinculados a niños) | ✅ Hecho |
+| 75 | Tabla REDES FENIX en Airtable (perfiles de redes sociales) | ✅ Hecho |
+| 76 | Módulo contenido_social.py: polling + calendario diario + recordatorio viernes | ✅ Hecho |
+| 77 | enviar_plantilla en provider Meta (template messages) | ✅ Hecho |
+| 78 | Calendario diario: lun=IG, mar=FB, mié=TT, jue=YT, vie=Threads, sáb=fotos, dom=videos | ✅ Hecho |
+| 79 | "Tu hijo aparece en este posteo" — WhatsApp automático cuando Claude de Postiz carga contenido | ✅ Hecho |
+| 80 | Recordatorio viernes 18:00 PY — confirmación activa pre-clase sábado | ✅ Hecho |
+| 81 | Crear plantillas en Meta Business Manager (contenido_diario, contenido_hijo, recordatorio_clase) | ⏳ Pendiente (Ivan) |
+| 82 | Actualizar links reales en REDES FENIX de Airtable | ⏳ Pendiente (Ivan) |
+| 83 | Sistema de referidos (REFERIDOS FENIX + detección números + plantilla) | ⏳ Pendiente |
+| 84 | Menú Aurora para padres inscriptos (10 opciones) | ⏳ Pendiente |
 
 ---
 
@@ -418,4 +447,5 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 2026-04-23 | **Fix crítico WABA + mejoras flujo conversacional (3 commits).** (1) **Bug WABA Dorita**: app FENIX KIDS 2026 estaba suscrita al WABA de Dorita (error de sesión anterior al usar token temporal para POST subscribed_apps). Mensajes de 9 clientes de Dorita llegaban al server de Fenix y se procesaban como leads nuevos. Fix en código: filtro por `phone_number_id` en `parsear_webhook` (meta.py). Fix raíz: desuscripción de FENIX KIDS 2026 del WABA Dorita vía API. Disculpa enviada a los 9 clientes desde número de Dorita. (2) **Follow-up afiche mejorado**: ahora ofrece dos opciones — "te puedo agendar una clase de prueba acá, o si preferís te puedo llamar". Si elige llamar → alerta urgente al admin. (3) **Comando /agenda en Telegram**: `/agenda 90mil|120mil|150mil nombre` — Ivan cierra agenda tras llamada telefónica. Crea PRUEBA FENIX con Haiku, envía formulario + datos bancarios al padre por WhatsApp, reactiva el agente. (4) **FASE 1.5 en prompt**: cuando padre responde números, ANTES del análisis pregunta nombre padre + hijo. Diagnóstico personalizado: usa nombre del padre al inicio, menciona nombre del hijo 2 veces. Prohibido "me alegra que me lo contés" (argentinismo). (5) **Alerta llamada mejorada**: "Urgente: Llamar a [nombre]" con hijo + edad + link wa.me "soy el profe Ivan desde mi personal". |
 | 2026-04-23/24 | **Refinamiento del flujo conversacional completo (10 commits).** (1) **Diagnóstico diferido**: si padre eligió 2+ números, después de recibir edad Ivan dice "dame unos minutitos" y envía diagnóstico 3 min después (5s admin). Si padre dice "ok/dale/gracias" durante la espera, Fenix no responde. (2) **Afiche diferido**: ya no se envía junto al diagnóstico. Cierre del diagnóstico = "Qué te parece que [hijo] pruebe Fenix Kids?" → espera respuesta → recién ahí afiche. (3) **Follow-up afiche busca nombre hijo en Airtable** (antes regex agarraba nombre del padre). (4) **Dos escenarios de llamada**: padre pide → "aguantame un ratito"; Ivan ofreció y padre acepta → "Super, te llamo desde mi personal". Nuevos patrones: "puedo hablar", "llamame", "la segunda". (5) **Alerta llamada busca datos en Airtable** (nombre/hijo/edad) como fuente de verdad, regex solo fallback. (6) **Edad no se confunde con rompehielos**: regex solo extrae edad cuando Ivan preguntó "cuántos años". (7) **Clase prueba no repite datos**: si ya tiene nombre padre + hijo + edad de FASE 1.5, solo pide lo que falta. Formulario completo solo para inscripción. (8) **Nuevo afiche de precios** (diseño actualizado). (9) **FENIX_API_COSTO.md**: análisis de costos de API (~$0.15-0.20 por conversación completa). |
 | 2026-04-25 (parte 1) | **Sesión Aurora + apodos + eliminación Calendar (27 commits).** (1) **Aurora onboarding completo**: saludo personalizado por nombre/apodo, pregunta por hijos por apodo, verificación de datos paso a paso (quien escribe → hijos con nombre completo + apodo → otro padre). Campo CONTROL DATOS (checkbox) en FAMILIAS FENIX marca como verificado para no repetir onboarding. (2) **Campos APODO**: APODO en NIÑOS FENIX, APODO PADRE/MADRE en FAMILIAS FENIX — creados por API. Si existe, Aurora y la lista de agendados usan apodo. (3) **Búsqueda fuzzy de familias**: `buscar_familia_por_nombre` con normalización de acentos (unicodedata), búsqueda AND/OR en Airtable, scoring con SequenceMatcher. (4) **Lista de niños agendados por horario**: al confirmar reserva se envía lista con emojis (nombre+apellido+edad, orden alfabético). Aurora puede compartir lista si el padre pregunta. (5) **Afiche automático**: ya no depende de que Ivan diga "te paso un afiche". Sistema detecta interés post-diagnóstico y envía automático. (6) **Ivan mejorado**: prohibido inventar comandos falsos, nunca dice "no te entendí" → "en qué te puedo ayudar?". (7) **Padres inscriptos sin modo nocturno**: Aurora atiende a cualquier hora. (8) **Reset seguro**: reset desde n��meros no-admin solo limpia conversación local, NO borra datos de Airtable. (9) **buscar_familia_por_telefono** busca en CELL PADRE/MADRE + CELL LIMPIO. (10) **obtener_ninos_de_familia** lee IDs del registro familia directamente (fórmulas Airtable no funcionaban con linked records). (11) **Topic Telegram con nombre**: muestra nombre del contacto de Airtable en vez del teléfono. (12) **Aurora multi-hijo**: asume agenda para todos los hijos, confirmación con apodos. (13) **Google Calendar eliminado**: toda la integración removida. (14) **Horarios abril+mayo**: 27 horarios creados (9 sábados x 3 turnos). (15) **.env local** actualizado a base Salsa Soul + token nuevo. |
+| 2026-04-26 | **Engranaje redes sociales + follow-up diario.** (1) **Tablas Airtable nuevas**: CONTENIDO FENIX (posteos vinculados a niños, campos: TITULO, RED, TIPO, LINK, NIÑOS FENIX linked, NOTIFICADO, FECHA) + REDES FENIX (perfiles: Instagram, Facebook, TikTok, YouTube, Threads con links e iconos). (2) **Módulo `agent/contenido_social.py`**: polling cada 5 min a CONTENIDO FENIX, detecta registros con NOTIFICADO=false, envía WhatsApp personalizado a padres cuyos hijos aparecen ("tu hijo aparece en este posteo!") o genérico a todos. Calendario diario: lun=Instagram, mar=Facebook, mié=TikTok, jue=YouTube, vie=Threads. Envío automático a las 10:00 PY. Recordatorio viernes 18:00 PY: busca RESERVAS del sábado, envía "mañana [hijo] tiene clase, respondé CONFIRMO". (3) **`enviar_plantilla`** en provider Meta: soporte para template messages (contacto fuera de ventana 24h). (4) **Integración con Editor Pro Max + Postiz**: Claude de Postiz lee nombres de archivos (apodo_apellido.jpg), publica en redes, crea registro en CONTENIDO FENIX con link + niños vinculados. Fenix detecta y envía WhatsApp automático. Airtable como puente entre los dos proyectos. (5) **Estrategia de ventana abierta**: contacto diario mantiene ventana 24h abierta, mensajes gratis. Las fotos del sábado son el ancla (el padre siempre responde). (6) **Plantillas Meta preparadas**: contenido_diario, contenido_hijo, recordatorio_clase. Textos en PLANTILLAS_META.md para crear en Meta Business. (7) **Documento ENGRANAJE_REDES_Y_REFERIDOS.md**: proceso de diseño completo desde la idea inicial hasta la decisión final. |
 | 2026-04-25 (parte 2) | **Tabla RESERVAS + flujo Ivan refinado (11 commits).** (1) **RESERVAS FENIX arreglada**: campo NIÑO renombrado a NINO (encoding UTF-8 rompía la Ñ, reservas se creaban sin niño). 1 reserva = 1 niño + 1 horario. Campo FAMILIAS vinculado. Lookups FECHA, HORA, NOMBRE COMPLETO. (2) **Detector múltiples confirmaciones**: re.finditer en vez de re.search, soporta 2 reservas en un mensaje. (3) **Parseo de fecha robusto**: soporta "9 de mayo", "3/5" y solo número. Antes solo "d/m". (4) **Ivan nunca lista precios**: siempre "te paso un afiche para que veas todas las opciones". (5) **Follow-up afiche exacto**: "te puedo agendar o te gustaría que te llame?". (6) **Llamada programada**: padre dice hora → sistema programa alerta al admin a esa hora (WhatsApp + Telegram). Si ya pasó, alerta inmediata. (7) **FASE 1.5 en 2 pasos**: paso 1 "con quién tengo el gusto?", paso 2 "cómo se llama y cuántos años tiene tu hijo/a?". (8) **Extracción nombres mejorada**: regex hijo acepta minúsculas, detector padre parsea coma ("Ivan, se llama benja"). (9) **TALLA REMERA**: campo select (6/8/10/12/14/P/M/G/XG), Aurora pregunta si vacío. (10) **Link wa.me**: "te escribo desde mi personal, te puedo llamar ahora?". (11) **Aurora acepta agendar para hoy** si el padre lo pide. |

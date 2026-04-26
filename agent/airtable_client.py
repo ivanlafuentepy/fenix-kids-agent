@@ -44,6 +44,8 @@ _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
 _PRUEBAS   = "PRUEBA FENIX"
+_CONTENIDO = "CONTENIDO FENIX"
+_REDES     = "REDES FENIX"
 
 
 # ── Helpers de bajo nivel ──────────────────────────────────────────────────────
@@ -811,4 +813,121 @@ async def crear_prueba_fenix(
         rid = record.get("id")
         logger.info(f"[PRUEBA FENIX] Creado: {nombre_hijo} {apellido_hijo} ({telefono}) → {rid}")
         return rid
+    return None
+
+
+# ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────
+
+async def obtener_contenido_no_notificado() -> list[dict]:
+    """
+    Retorna registros de CONTENIDO FENIX con NOTIFICADO = false (o vacío).
+    Cada item: {"id", "titulo", "red", "tipo", "link", "nino_ids"}
+    """
+    formula = "OR(NOT({NOTIFICADO}), {NOTIFICADO}=FALSE())"
+    records = await _get_records(_CONTENIDO, formula=formula, max_records=20)
+    resultado = []
+    for r in records:
+        f = r.get("fields", {})
+        resultado.append({
+            "id": r["id"],
+            "titulo": f.get("TITULO", ""),
+            "red": f.get("RED", ""),
+            "tipo": f.get("TIPO", ""),
+            "link": f.get("LINK", ""),
+            "nino_ids": f.get("NIÑOS FENIX", []),
+        })
+    return resultado
+
+
+async def marcar_contenido_notificado(record_id: str) -> bool:
+    """Marca NOTIFICADO = True en CONTENIDO FENIX."""
+    return await _patch(_CONTENIDO, record_id, {"NOTIFICADO": True})
+
+
+async def obtener_ultimo_contenido_por_red(red: str) -> dict | None:
+    """
+    Retorna el contenido más reciente de una red social específica.
+    Útil para el calendario diario (ej: lunes → último post de Instagram).
+    """
+    formula = f"AND({{RED}}='{red}', {{NOTIFICADO}}=FALSE())"
+    records = await _get_records(_CONTENIDO, formula=formula, max_records=1)
+    if not records:
+        return None
+    r = records[0]
+    f = r.get("fields", {})
+    return {
+        "id": r["id"],
+        "titulo": f.get("TITULO", ""),
+        "red": f.get("RED", ""),
+        "tipo": f.get("TIPO", ""),
+        "link": f.get("LINK", ""),
+        "nino_ids": f.get("NIÑOS FENIX", []),
+    }
+
+
+# ── REDES FENIX (perfiles de redes sociales) ─────────────────────────────────
+
+async def obtener_redes() -> list[dict]:
+    """
+    Retorna todos los perfiles de redes sociales de FENIX.
+    Cada item: {"red", "perfil", "icono"}
+    """
+    records = await _get_records(_REDES, max_records=10)
+    return [
+        {
+            "red": r.get("fields", {}).get("RED", ""),
+            "perfil": r.get("fields", {}).get("PERFIL", ""),
+            "icono": r.get("fields", {}).get("ICONO", ""),
+        }
+        for r in records
+    ]
+
+
+# ── Helpers para contenido social → familias ─────────────────────────────────
+
+async def obtener_familias_inscriptas() -> list[dict]:
+    """
+    Retorna todas las FAMILIAS con al menos un teléfono cargado.
+    Cada item: {"id", "telefono", "nombre_padre", "apodo_padre",
+                "nombre_madre", "apodo_madre", "nino_ids"}
+    """
+    formula = "OR(LEN({CELL PADRE})>0, LEN({CELL MADRE})>0)"
+    records = await _get_records(_FAMILIAS, formula=formula, max_records=100)
+    resultado = []
+    for r in records:
+        f = r.get("fields", {})
+        # Preferir CELL PADRE, fallback a CELL MADRE
+        telefono = f.get("CELL PADRE", "") or f.get("CELL MADRE", "")
+        if not telefono:
+            continue
+        resultado.append({
+            "id": r["id"],
+            "telefono": telefono,
+            "nombre_padre": f.get("NOMBRE PADRE", ""),
+            "apellido_padre": f.get("APELLIDO PADRE", ""),
+            "apodo_padre": f.get("APODO PADRE", ""),
+            "nombre_madre": f.get("NOMBRE MADRE", ""),
+            "apellido_madre": f.get("APELLIDO MADRE", ""),
+            "apodo_madre": f.get("APODO MADRE", ""),
+            "nino_ids": f.get("NIÑOS FENIX", []),
+        })
+    return resultado
+
+
+async def obtener_nombre_nino(nino_id: str) -> dict | None:
+    """Retorna nombre y apodo de un niño por su record_id."""
+    url = f"{_BASE_URL}/{_NINOS}/{nino_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                f = r.json().get("fields", {})
+                return {
+                    "id": nino_id,
+                    "nombre": f.get("NOMBRE", ""),
+                    "apellido": f.get("APELLIDO", ""),
+                    "apodo": f.get("APODO", ""),
+                }
+        except Exception as e:
+            logger.error(f"GET NIÑO {nino_id}: {e}")
     return None
