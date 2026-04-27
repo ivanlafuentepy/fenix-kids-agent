@@ -1024,6 +1024,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await enviar_a_topic(topic_reset, f"⚙️ RESET — {resumen}", telefono=telefono)
             return
 
+        # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
+        if texto.lower().replace(" ", "") == "modoalumno" and telefono == admin_phone:
+            cancelar_seguimiento(telefono)
+            cancelar_recordatorios(telefono)
+            _cancelar_diagnostico_pendiente(telefono)
+            await limpiar_estado_completo(telefono)
+            await proveedor.enviar_mensaje(
+                telefono,
+                "Modo alumno ✅\nConversación limpia, Airtable intacto.\nEscribí como si fueras un padre inscripto."
+            )
+            topic_alumno = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
+            if topic_alumno:
+                await enviar_a_topic(topic_alumno, "⚙️ MODO ALUMNO — reset conversación sin tocar Airtable", telefono=telefono)
+            return
+
         # ── Botones del admin (confirmar/rechazar pago) ────────────────────
         if telefono == admin_phone and msg.es_boton:
             btn_titulo = texto.lower().strip()
