@@ -69,7 +69,7 @@ from agent.airtable_client import (
     actualizar_datos_lead, actualizar_diagnostico_lead,
     actualizar_reserva_lead, marcar_control_datos,
     obtener_ninos_por_horario, formatear_lista_ninos,
-    obtener_horarios_disponibles,
+    obtener_horarios_disponibles, obtener_redes,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -960,6 +960,20 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                     contexto += f"  {fecha_label} {hora}h: (nadie todavía)\n"
     except Exception as e:
         logger.error(f"[AURORA] Error cargando niños por horario: {e}")
+
+    # Redes sociales (para opción 5 del menú)
+    try:
+        redes = await obtener_redes()
+        if redes:
+            contexto += "\nREDES SOCIALES:\n"
+            for r in redes:
+                icono = r.get("icono", "")
+                red = r.get("red", "")
+                perfil = r.get("perfil", "")
+                if red and perfil:
+                    contexto += f"  {icono} {red}: {perfil}\n"
+    except Exception as e:
+        logger.error(f"[AURORA] Error cargando redes: {e}")
 
     return contexto
 
