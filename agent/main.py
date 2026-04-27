@@ -1356,19 +1356,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"[DIAG] Esperando {_DELAY_DIAGNOSTICO}s para diagnóstico de {telefono} ({cant_romp} números)")
                 return
 
-        # ── Inyectar instrucción anti-repetición si ya se preguntó algo ──
-        if agent_actual == "ivan":
-            _ultimos_assistant = [m.get("content", "").lower() for m in historial[-4:] if m.get("role") == "assistant"]
-            _ya_pregunto_nombre_hijo = any("cómo se llama tu hijo" in msg or "como se llama tu hijo" in msg for msg in _ultimos_assistant)
-            _ya_pregunto_edad = any("cuántos años" in msg or "cuantos años" in msg for msg in _ultimos_assistant)
-            _instruccion_extra = ""
-            if _ya_pregunto_nombre_hijo:
-                _instruccion_extra += "\n[SISTEMA: Ya preguntaste el nombre del hijo en un mensaje anterior. NO lo vuelvas a preguntar. Preguntá la edad si no la tenés, o respondé lo que el padre pide.]"
-            if _ya_pregunto_edad:
-                _instruccion_extra += "\n[SISTEMA: Ya preguntaste la edad. NO la vuelvas a preguntar.]"
-            if _instruccion_extra:
-                contexto_extra = (contexto_extra or "") + _instruccion_extra
-
         # ── Generar respuesta ─────────────────────────────────────────────
         respuesta = await generar_respuesta(
             mensaje=texto,
@@ -1376,6 +1363,31 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             agent_actual=agent_actual,
             contexto_extra=contexto_extra,
         )
+
+        # ── Anti-repetición: si el último msg de Fenix ya preguntó nombre hijo,
+        #    reemplazar cualquier repetición por pregunta de edad ──────────
+        if agent_actual == "ivan" and historial:
+            _ultimo_fenix = ""
+            for _m in reversed(historial):
+                if _m.get("role") == "assistant":
+                    _ultimo_fenix = _m.get("content", "").lower()
+                    break
+            _pregunto_nombre = "cómo se llama tu hijo" in _ultimo_fenix or "como se llama tu hijo" in _ultimo_fenix
+            _pregunto_edad = "cuántos años" in _ultimo_fenix or "cuantos años" in _ultimo_fenix
+            if _pregunto_nombre:
+                # Reemplazar pregunta de nombre por edad en la respuesta
+                respuesta = re.sub(
+                    r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*',
+                    '¿Cuántos años tiene tu hijo/a? 😊',
+                    respuesta
+                )
+            if _pregunto_edad:
+                # Si ya preguntó edad, quitar la repetición
+                respuesta = re.sub(
+                    r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*',
+                    '',
+                    respuesta
+                ).strip()
 
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
         #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
