@@ -1422,18 +1422,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 ).strip()
             # Limpiar TODAS las preguntas de nombre/edad de la respuesta primero
             _preguntas_nombre = [
-                r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa][^?]*\??[^\n]*',
-                r'[¿?]*\s*[Cc][oó]mo se llama\s*\??[^\n]*',
+                r'[¿Y y]*\s*[Cc][oó]mo se llama tu hij[oa][^?]*\??[^\n]*',
+                r'[¿Y y]*\s*[Cc][oó]mo se llama\s*\??[^\n]*',
                 r'[Yy] contame[,.]?\s*',
-                r'[Yy] ¿?[Cc][oó]mo se llama[^?]*\??[^\n]*',
             ]
             _preguntas_edad = [
-                r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??[^\n]*',
-                r'[Yy] cu[aá]ntos a[ñn]os tiene[^?]*\??[^\n]*',
+                r'[¿Y y]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??[^\n]*',
             ]
             _preguntas_padre = [
-                r'[¿?]*\s*[Cc]on qui[eé]n tengo el gusto[^?]*\??[^\n]*',
-                r'[¿?]*\s*[Yy] vos c[oó]mo te llam[aá]s[^?]*\??[^\n]*',
+                r'[¿Y y]*\s*[Cc]on qui[eé]n tengo el gusto[^?]*\??[^\n]*',
+                r'[¿Y y]*\s*[Vv]os c[oó]mo te llam[aá]s[^?]*\??[^\n]*',
+                r'[¿Y y]*\s*[Cc][oó]mo te llam[aá]s[^?]*\??[^\n]*',
             ]
 
             # Quitar preguntas repetidas
@@ -1447,6 +1446,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 for p in _preguntas_padre:
                     respuesta = re.sub(p, '', respuesta)
 
+            # Limpiar basura residual
+            respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
+            respuesta = re.sub(r'[¿?]\s*[Yy]\s*$', '', respuesta)  # "¿Y" suelto al final
+            respuesta = re.sub(r'\b[Yy]\s*$', '', respuesta)  # "Y" suelto al final
+            respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # "a y" residual
             respuesta = respuesta.strip()
 
             # Agregar la pregunta correcta si no quedó ninguna
