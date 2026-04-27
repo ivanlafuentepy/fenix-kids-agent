@@ -1424,3 +1424,17 @@ DATABASE_URL=sqlite+aiosqlite:///./agentkit.db  # local
 6. No sycophantic openers or closing fluff.
 7. Keep solutions simple and direct.
 8. User instructions always override this file.
+
+# Obsidian — Base de conocimiento centralizada
+
+Toda la documentación de conocimiento (resúmenes, pendientes, memorias, decisiones, engranajes) vive en el vault de Obsidian del usuario, NO en el repo git.
+
+**Vault:** `C:\Users\IVAN LAFUENTE\IVAN VAULT`
+**Carpeta de este proyecto:** `FENIX KIDS/`
+
+Reglas:
+- Cuando necesites leer documentación del proyecto (resumen, pendientes, estado), leela desde Obsidian via MCP
+- Cuando actualices documentación, actualizala en Obsidian, NO en el repo git
+- Los `.md` de conocimiento en el repo son legacy — la fuente de verdad es Obsidian
+- El código (.py, .yaml, .env, Dockerfile) sigue en el repo git como siempre
+- Si necesitás info de otro proyecto (Salsa Soul, Editor Pro Max, Postiz), buscala en las otras carpetas del vault
