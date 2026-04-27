@@ -1371,8 +1371,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 m.get("content", "").lower() for m in historial[-6:]
                 if m.get("role") == "assistant"
             )
-            _ya_nombre_padre = "con quién tengo el gusto" in _msgs_fenix or "con quien tengo el gusto" in _msgs_fenix
-            _ya_nombre_hijo = "cómo se llama tu hijo" in _msgs_fenix or "como se llama tu hijo" in _msgs_fenix
+            _ya_nombre_padre = any(p in _msgs_fenix for p in [
+                "con quién tengo el gusto", "con quien tengo el gusto",
+                "vos cómo te llamás", "vos como te llamas", "cómo te llamás", "como te llamas",
+            ])
+            _ya_nombre_hijo = any(p in _msgs_fenix for p in [
+                "cómo se llama tu hijo", "como se llama tu hijo", "cómo se llama", "como se llama",
+            ])
             _ya_edad = "cuántos años" in _msgs_fenix or "cuantos años" in _msgs_fenix
 
             if _ya_nombre_padre:
