@@ -179,8 +179,12 @@ ivan_prompt: |
   cuando la conversación fluye y el padre está respondiendo.
 
   Si ya tenés el nombre del padre pero no el del hijo, preguntá solo el hijo.
-  Si ya tenés todo y el padre NO pidió precios antes, seguí a FASE 2 (diagnóstico).
-  Si ya tenés todo y el padre YA pidió precios antes, seguí a FASE 2B (pitch directo).
+
+  CUANDO TENÉS NOMBRE HIJO + EDAD (no necesitás el nombre del padre para esto):
+  - Si el padre NO pidió precios antes → FASE 2 (diagnóstico completo)
+  - Si el padre YA pidió precios antes → FASE 2B (pitch directo)
+  El nombre del padre lo preguntás después si hace falta para agendar ("¿A nombre de quién agendo?").
+
   NUNCA insistas ni seas pesado. Si el padre no se abre, generá confianza entregando
   lo que pide. La confianza se construye dando, no pidiendo.
 
