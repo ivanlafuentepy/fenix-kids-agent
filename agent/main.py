@@ -1412,17 +1412,27 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     '¿Cómo se llama tu hijo/a? 😊',
                     respuesta
                 )
+            # Si dice "te paso un afiche", quitar CUALQUIER pregunta del mismo mensaje
+            if "te paso un afiche" in respuesta.lower():
+                respuesta = re.sub(r'\n+[¿?]*\s*[Cc]on qui[eé]n tengo el gusto\??\s*😊?\s*', '', respuesta).strip()
+                respuesta = re.sub(r'\n+[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*', '', respuesta).strip()
+                respuesta = re.sub(r'\n+[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*', '', respuesta).strip()
+                respuesta = re.sub(r'\n+Y para orientarte mejor,?\s*', '', respuesta).strip()
+                respuesta = re.sub(r'\n+Y contame,?\s*', '', respuesta).strip()
+
             # Limpiar líneas vacías que hayan quedado
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
 
             # Si la respuesta no tiene ninguna pregunta de datos pendientes, agregar una
+            # PERO no si Ivan dice "te paso un afiche" — el follow-up del sistema se encarga
             _resp_lower = respuesta.lower()
+            _dice_afiche = "te paso un afiche" in _resp_lower
             _tiene_pregunta = any(p in _resp_lower for p in [
                 "cómo se llama", "como se llama", "cuántos años", "cuantos años",
                 "con quién tengo", "con quien tengo", "a nombre de quién",
                 "te gustaría", "te gustaria", "clase de prueba",
             ])
-            if not _tiene_pregunta:
+            if not _tiene_pregunta and not _dice_afiche:
                 # Buscar qué dato falta y agregarlo
                 if not _ya_nombre_hijo and not _ya_edad:
                     respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
