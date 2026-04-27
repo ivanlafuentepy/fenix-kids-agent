@@ -1738,8 +1738,8 @@ async def _armar_followup_afiche(telefono: str) -> str:
             "un rato así te explico todo? 😊"
         )
     else:
-        # Sin nombre del hijo → no preguntar acá, Claude lo maneja en su próxima respuesta
-        return ""
+        # Sin nombre del hijo → preguntar de forma amable
+        return "Y contame, ¿cómo se llama tu hijo/a? 😊"
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
@@ -1759,13 +1759,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
 
         # Follow-up dinámico con nombre del hijo (desde Airtable)
         followup = await _armar_followup_afiche(telefono)
-        if followup:
-            await proveedor.enviar_mensaje(telefono, followup)
-            await guardar_mensaje(telefono, "assistant", followup)
-            logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
+        await proveedor.enviar_mensaje(telefono, followup)
+        await guardar_mensaje(telefono, "assistant", followup)
 
         if topic_id:
-            await enviar_a_topic(topic_id, f"📋 Afiche enviado" + (" + follow-up" if followup else ""), telefono=telefono)
+            await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono)
+
+        logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
     except FileNotFoundError:
         logger.error(f"[AFICHE] Archivo no encontrado: {_AFICHE_PATH}")
