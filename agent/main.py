@@ -1468,11 +1468,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
 
-        # ── Enviar afiche cuando padre muestra interés post-diagnóstico ──
-        if (agent_actual == "ivan"
-                and telefono not in _afiche_enviado
-                and _diagnostico_ya_enviado(historial)
-                and _padre_muestra_interes(texto)):
+        # ── Enviar afiche cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
+        _ivan_dice_afiche = (
+            agent_actual == "ivan"
+            and "te paso un afiche" in respuesta.lower()
+        )
+        _interes_post_diag = (
+            agent_actual == "ivan"
+            and _diagnostico_ya_enviado(historial)
+            and _padre_muestra_interes(texto)
+        )
+        if telefono not in _afiche_enviado and (_ivan_dice_afiche or _interes_post_diag):
             _afiche_enviado.add(telefono)
             await _enviar_afiche_y_followup(telefono, topic_id)
 
@@ -1695,14 +1701,14 @@ async def _armar_followup_afiche(telefono: str) -> str:
     except Exception:
         pass
     if nombre_hijo:
-        parte_nombre = f"¿Te gustaría que {nombre_hijo} sea parte de Fenix Kids?"
+        return (
+            f"¿Te gustaría que {nombre_hijo} sea parte de Fenix Kids?\n\n"
+            "Te puedo agendar una clase de prueba por acá, o te gustaría que te llame "
+            "un rato así te explico todo? 😊"
+        )
     else:
-        parte_nombre = "¿Te gustaría que tu hijo sea parte de Fenix Kids?"
-    return (
-        f"{parte_nombre}\n\n"
-        "Te puedo agendar una clase de prueba por acá, o te gustaría que te llame "
-        "un rato así te explico todo? 😊"
-    )
+        # Sin nombre del hijo → retomar datos de forma amable
+        return "Y contame, ¿cómo se llama tu hijo/a? 😊"
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
