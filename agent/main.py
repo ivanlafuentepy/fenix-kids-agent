@@ -1386,20 +1386,32 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 respuesta = re.sub(
                     r'Y para orientarte mejor,?\s*', '', respuesta
                 ).strip()
-            if _ya_nombre_hijo:
-                # Reemplazar pregunta de nombre hijo por edad
+            if _ya_nombre_hijo and not _ya_edad:
+                # Ya preguntó nombre hijo → cambiar por edad
                 respuesta = re.sub(
                     r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*',
                     '¿Cuántos años tiene tu hijo/a? 😊',
                     respuesta
                 )
-            if _ya_edad:
-                # Quitar repetición de edad
+            elif _ya_nombre_hijo and _ya_edad:
+                # Ya preguntó nombre hijo Y edad → quitar ambas repeticiones
+                respuesta = re.sub(
+                    r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*',
+                    '',
+                    respuesta
+                ).strip()
                 respuesta = re.sub(
                     r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*',
                     '',
                     respuesta
                 ).strip()
+            if _ya_edad and not _ya_nombre_hijo:
+                # Ya preguntó edad pero no nombre hijo → cambiar por nombre hijo
+                respuesta = re.sub(
+                    r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*',
+                    '¿Cómo se llama tu hijo/a? 😊',
+                    respuesta
+                )
             # Limpiar líneas vacías que hayan quedado
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
 
