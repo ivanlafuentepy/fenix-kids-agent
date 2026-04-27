@@ -61,7 +61,7 @@ from agent.pagos import (
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
     actualizar_conversion_lead, actualizar_agent_lead,
-    marcar_formulario_lead, crear_familia_completa,
+    marcar_formulario_lead, crear_familia_completa, crear_nino,
     obtener_ninos_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
@@ -1400,6 +1400,42 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     )
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
+
+        # ── Detectar registro de hijos por Aurora ─────────────────────────
+        if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta:
+            try:
+                familia = await buscar_familia_por_telefono(telefono)
+                if familia:
+                    familia_id = familia["id"]
+                    registros = re.findall(
+                        r'REGISTRO HIJO:\s*(.+?)(?:\n|$)', respuesta
+                    )
+                    for reg in registros:
+                        # Parsear: "nombre apellido, nac: fecha, CI: ci, talla: talla"
+                        datos_nino = {}
+                        # Nombre y apellido (antes de la primera coma)
+                        partes = [p.strip() for p in reg.split(",")]
+                        if partes:
+                            nombre_parts = partes[0].split()
+                            if len(nombre_parts) >= 2:
+                                datos_nino["nombre"] = nombre_parts[0]
+                                datos_nino["apellido"] = " ".join(nombre_parts[1:])
+                            elif len(nombre_parts) == 1:
+                                datos_nino["nombre"] = nombre_parts[0]
+                        for parte in partes[1:]:
+                            parte_lower = parte.lower().strip()
+                            if parte_lower.startswith("nac:"):
+                                datos_nino["fecha_nacimiento"] = parte.split(":", 1)[1].strip()
+                            elif parte_lower.startswith("ci:"):
+                                datos_nino["ci"] = parte.split(":", 1)[1].strip()
+                            elif parte_lower.startswith("talla:"):
+                                datos_nino["talla_remera"] = parte.split(":", 1)[1].strip()
+                        if datos_nino.get("nombre"):
+                            nino_id = await crear_nino(datos_nino, familia_id)
+                            if nino_id:
+                                logger.info(f"[AURORA] Niño creado: {datos_nino.get('nombre')} para familia {familia_id}")
+            except Exception as e:
+                logger.error(f"[AURORA] Error creando niño: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmaciones = _detectar_confirmacion_aurora(respuesta)
