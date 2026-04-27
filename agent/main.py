@@ -539,6 +539,16 @@ def _padre_muestra_interes(texto: str) -> bool:
     return any(re.search(p, t) for p in patrones)
 
 
+def _padre_ya_pidio_precios(historial: list[dict]) -> bool:
+    """Detecta si Ivan ya envió el afiche (padre pidió precios antes del diagnóstico)."""
+    for msg in historial:
+        if msg.get("role") == "assistant":
+            t = msg.get("content", "").lower()
+            if "te paso un afiche" in t:
+                return True
+    return False
+
+
 def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
     """Busca en el historial los números del rompehielos que eligió el padre."""
     for m in historial:
@@ -645,6 +655,13 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
             for j in range(i + 1, len(historial)):
                 if historial[j].get("role") == "user":
                     resp = historial[j]["content"].strip()
+                    # Ignorar si es una pregunta o pedido (no es un nombre)
+                    _resp_lower = resp.lower()
+                    _skip_words = ["precio", "costo", "como funciona", "horario",
+                                   "ubicación", "ubicacion", "donde", "cuanto",
+                                   "cuánto", "?", "info", "información"]
+                    if any(sw in _resp_lower for sw in _skip_words):
+                        break
                     # Puede ser "Maria", "se llama Maria", "Ivan, Maria", etc.
                     # Si tiene coma, el nombre del hijo suele ser la segunda parte
                     if "," in resp:
@@ -1270,8 +1287,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await asyncio.sleep(delay_s)
 
         # ── Diagnóstico diferido: si el padre responde la edad y eligió 2+ números,
-        #    enviar "dame unos minutitos" y programar el diagnóstico con delay ──────
-        if agent_actual == "ivan" and _detectar_respuesta_edad(texto, historial):
+        #    enviar "dame unos minutitos" y programar el diagnóstico con delay.
+        #    PERO si el padre ya pidió precios (afiche enviado), NO hacer delay:
+        #    dejar que Claude responda directo con pitch corto + oferta prueba ──────
+        if agent_actual == "ivan" and _detectar_respuesta_edad(texto, historial) and not _padre_ya_pidio_precios(historial):
             cant_romp, nums_romp = _contar_numeros_rompehielos_historial(historial)
             if cant_romp >= 2:
                 # Buscar nombre del hijo en Airtable
