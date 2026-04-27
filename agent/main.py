@@ -1381,8 +1381,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _tiene_nombre_edad:
                 contexto_extra = (contexto_extra or "") + (
                     "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
-                    "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX, "
-                    "y preguntá si quiere probar. NO preguntes nombre del padre. NO vuelvas al rompehielos.]"
+                    "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
+                    "(naturaleza, trepar, sol, desafíos reales). "
+                    "TERMINÁ SIEMPRE con: '¿Te gustaría que [nombre] venga a probar un día? 😊' "
+                    "NO preguntes nombre del padre. NO vuelvas al rompehielos. "
+                    "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
                 )
 
         # ── Generar respuesta ─────────────────────────────────────────────
@@ -1435,7 +1438,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 r'[¿Y y]*\s*[Cc][oó]mo te llam[aá]s[^?]*\??[^\n]*',
             ]
 
-            # Quitar preguntas repetidas
+            # Quitar preguntas repetidas (ya preguntadas O ya respondidas)
             if _ya_nombre_hijo:
                 for p in _preguntas_nombre:
                     respuesta = re.sub(p, '', respuesta)
@@ -1445,6 +1448,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _ya_nombre_padre:
                 for p in _preguntas_padre:
                     respuesta = re.sub(p, '', respuesta)
+            # También quitar si ya TENEMOS la respuesta (aunque no esté en últimos 6 msgs)
+            # Esto se verifica después de generar, con datos de Airtable
 
             # Limpiar basura residual
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
@@ -1453,20 +1458,45 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # "a y" residual
             respuesta = respuesta.strip()
 
-            # Agregar la pregunta correcta si no quedó ninguna
+            # Verificar qué datos YA TENEMOS (en Airtable o historial)
+            _tenemos_nombre = False
+            _tenemos_edad = False
+            try:
+                from agent.airtable_client import _get_records, _LEADS
+                _lr2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr2:
+                    _f2 = _lr2[0].get("fields", {})
+                    _tenemos_nombre = bool(_f2.get("NOMBRE NIÑO"))
+                    _tenemos_edad = bool(_f2.get("EDAD"))
+            except Exception:
+                pass
+            if not _tenemos_nombre:
+                _nh2 = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
+                _tenemos_nombre = _nh2 and _nh2 != "no mencionó"
+            if not _tenemos_edad:
+                # Buscar edad en respuestas del usuario (no en rompehielos)
+                for _m2 in reversed(historial + [{"role": "user", "content": texto}]):
+                    if _m2.get("role") == "user":
+                        _c2 = _m2.get("content", "").strip()
+                        if re.fullmatch(r'\d{1,2}', _c2) and 2 <= int(_c2) <= 15:
+                            _tenemos_edad = True
+                            break
+
+            # Agregar pregunta SOLO si realmente falta el dato
             _resp_lower = respuesta.lower()
             _tiene_pregunta = any(p in _resp_lower for p in [
                 "cómo se llama", "como se llama", "cuántos años", "cuantos años",
                 "con quién tengo", "con quien tengo", "te gustaría", "te gustaria",
-                "clase de prueba", "a nombre de",
+                "clase de prueba", "a nombre de", "cuál te queda",
             ])
             if not _tiene_pregunta and "te paso un afiche" not in _resp_lower:
-                if _ya_nombre_hijo and not _ya_edad:
+                if not _tenemos_nombre and not _tenemos_edad:
                     respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
-                elif _ya_edad and not _ya_nombre_hijo:
+                elif _tenemos_nombre and not _tenemos_edad:
+                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
+                elif _tenemos_edad and not _tenemos_nombre:
                     respuesta += "\n\n¿Cómo se llama tu hijo/a? 😊"
-                elif not _ya_nombre_hijo and not _ya_edad:
-                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
+                # Si ya tenemos ambos → no agregar nada, el pitch debería estar
             # Limpiar líneas vacías y basura
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
             respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # residuo "a y"
