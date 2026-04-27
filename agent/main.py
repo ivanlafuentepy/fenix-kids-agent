@@ -163,8 +163,10 @@ import re
 
 def _contar_numeros_rompehielos(texto: str) -> int:
     """Cuenta cuántos números del 1 al 15 envió el lead (respuesta al rompehielos)."""
-    # Buscar números del 1 al 15 en el texto
-    numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto)
+    # Normalizar separadores: puntos, guiones, espacios → comas
+    texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
+    # Buscar números del 1 al 15
+    numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto_norm)
     # Deduplicar
     return len(set(numeros))
 
@@ -553,7 +555,8 @@ def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, l
     """Busca en el historial los números del rompehielos que eligió el padre."""
     for m in historial:
         if m.get("role") == "user":
-            nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', m.get("content", ""))]
+            _cont = re.sub(r'[.\-/\s]+', ',', m.get("content", "").strip())
+            nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _cont)]
             if nums and len(nums) >= 1:
                 # Verificar que sea respuesta al rompehielos (no cualquier número suelto)
                 contenido = m.get("content", "").strip()
@@ -1274,7 +1277,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         cant_numeros = _contar_numeros_rompehielos(texto)
         if agent_actual == "ivan" and cant_numeros > 0:
             # Guardar diagnóstico en Airtable
-            numeros_elegidos = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', texto)]
+            _texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
+            numeros_elegidos = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _texto_norm)]
             if numeros_elegidos:
                 try:
                     await actualizar_diagnostico_lead(telefono, list(set(numeros_elegidos)))
@@ -1402,13 +1406,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         # "Ivan, se llama benja" → nombre padre = Ivan
                         # "Ivan" → nombre padre = Ivan
                         _texto_limpio = texto.strip()
-                        # Si tiene coma, tomar la primera parte como nombre padre
-                        if "," in _texto_limpio:
-                            _nombre_resp = _texto_limpio.split(",")[0].strip().title()
-                        elif not any(c.isdigit() for c in _texto_limpio):
-                            _palabras = _texto_limpio.split()
-                            if 1 <= len(_palabras) <= 3:
-                                _nombre_resp = _texto_limpio.title()
+                        # Ignorar si es un pedido/pregunta (no es un nombre)
+                        _tl = _texto_limpio.lower()
+                        _no_nombres = ["precio", "costo", "cuanto", "cuánto", "horario",
+                                       "como funciona", "cómo funciona", "ubicacion",
+                                       "ubicación", "donde", "info", "información",
+                                       "hola", "buenas", "quiero", "necesito", "consulta"]
+                        _es_pedido = any(w in _tl for w in _no_nombres) or "?" in _tl
+                        if not _es_pedido:
+                            # Si tiene coma, tomar la primera parte como nombre padre
+                            if "," in _texto_limpio:
+                                _nombre_resp = _texto_limpio.split(",")[0].strip().title()
+                            elif not any(c.isdigit() for c in _texto_limpio):
+                                _palabras = _texto_limpio.split()
+                                if 1 <= len(_palabras) <= 3:
+                                    _nombre_resp = _texto_limpio.title()
 
                 if _nombre_resp or (_nombre_hijo and _nombre_hijo != "no mencionó") or _edad:
                     await actualizar_datos_lead(
