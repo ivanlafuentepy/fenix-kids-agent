@@ -1415,6 +1415,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Limpiar líneas vacías que hayan quedado
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
 
+            # Si la respuesta no tiene ninguna pregunta de datos pendientes, agregar una
+            _resp_lower = respuesta.lower()
+            _tiene_pregunta = any(p in _resp_lower for p in [
+                "cómo se llama", "como se llama", "cuántos años", "cuantos años",
+                "con quién tengo", "con quien tengo", "a nombre de quién",
+                "te gustaría", "te gustaria", "clase de prueba",
+            ])
+            if not _tiene_pregunta:
+                # Buscar qué dato falta y agregarlo
+                if not _ya_nombre_hijo and not _ya_edad:
+                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
+                elif _ya_nombre_hijo and not _ya_edad:
+                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
+                elif _ya_edad and not _ya_nombre_hijo:
+                    respuesta += "\n\n¿Cómo se llama tu hijo/a? 😊"
+
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
         #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
 
