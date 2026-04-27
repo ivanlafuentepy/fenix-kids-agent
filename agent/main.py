@@ -1386,60 +1386,53 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 respuesta = re.sub(
                     r'Y para orientarte mejor,?\s*', '', respuesta
                 ).strip()
-            if _ya_nombre_hijo and not _ya_edad:
-                # Ya preguntó nombre hijo → cambiar por edad
-                respuesta = re.sub(
-                    r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*',
-                    '¿Cuántos años tiene tu hijo/a? 😊',
-                    respuesta
-                )
-            elif _ya_nombre_hijo and _ya_edad:
-                # Ya preguntó nombre hijo Y edad → quitar ambas repeticiones
-                respuesta = re.sub(
-                    r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*',
-                    '',
-                    respuesta
-                ).strip()
-                respuesta = re.sub(
-                    r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*',
-                    '',
-                    respuesta
-                ).strip()
-            if _ya_edad and not _ya_nombre_hijo:
-                # Ya preguntó edad pero no nombre hijo → cambiar por nombre hijo
-                respuesta = re.sub(
-                    r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*',
-                    '¿Cómo se llama tu hijo/a? 😊',
-                    respuesta
-                )
-            # Si dice "te paso un afiche", quitar CUALQUIER pregunta del mismo mensaje
-            if "te paso un afiche" in respuesta.lower():
-                respuesta = re.sub(r'\n+[¿?]*\s*[Cc]on qui[eé]n tengo el gusto\??\s*😊?\s*', '', respuesta).strip()
-                respuesta = re.sub(r'\n+[¿?]*\s*[Cc][oó]mo se llama tu hij[oa]/?\??\s*😊?\s*', '', respuesta).strip()
-                respuesta = re.sub(r'\n+[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??\s*😊?\s*', '', respuesta).strip()
-                respuesta = re.sub(r'\n+Y para orientarte mejor,?\s*', '', respuesta).strip()
-                respuesta = re.sub(r'\n+Y contame,?\s*', '', respuesta).strip()
+            # Limpiar TODAS las preguntas de nombre/edad de la respuesta primero
+            _preguntas_nombre = [
+                r'[¿?]*\s*[Cc][oó]mo se llama tu hij[oa][^?]*\??[^\n]*',
+                r'[¿?]*\s*[Cc][oó]mo se llama\s*\??[^\n]*',
+                r'[Yy] contame[,.]?\s*',
+                r'[Yy] ¿?[Cc][oó]mo se llama[^?]*\??[^\n]*',
+            ]
+            _preguntas_edad = [
+                r'[¿?]*\s*[Cc]u[aá]ntos a[ñn]os tiene[^?]*\??[^\n]*',
+                r'[Yy] cu[aá]ntos a[ñn]os tiene[^?]*\??[^\n]*',
+            ]
+            _preguntas_padre = [
+                r'[¿?]*\s*[Cc]on qui[eé]n tengo el gusto[^?]*\??[^\n]*',
+                r'[¿?]*\s*[Yy] vos c[oó]mo te llam[aá]s[^?]*\??[^\n]*',
+            ]
 
-            # Limpiar líneas vacías que hayan quedado
-            respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
+            # Quitar preguntas repetidas
+            if _ya_nombre_hijo:
+                for p in _preguntas_nombre:
+                    respuesta = re.sub(p, '', respuesta)
+            if _ya_edad:
+                for p in _preguntas_edad:
+                    respuesta = re.sub(p, '', respuesta)
+            if _ya_nombre_padre:
+                for p in _preguntas_padre:
+                    respuesta = re.sub(p, '', respuesta)
 
-            # Si la respuesta no tiene ninguna pregunta de datos pendientes, agregar una
-            # PERO no si Ivan dice "te paso un afiche" — el follow-up del sistema se encarga
+            respuesta = respuesta.strip()
+
+            # Agregar la pregunta correcta si no quedó ninguna
             _resp_lower = respuesta.lower()
-            _dice_afiche = "te paso un afiche" in _resp_lower
             _tiene_pregunta = any(p in _resp_lower for p in [
                 "cómo se llama", "como se llama", "cuántos años", "cuantos años",
-                "con quién tengo", "con quien tengo", "a nombre de quién",
-                "te gustaría", "te gustaria", "clase de prueba",
+                "con quién tengo", "con quien tengo", "te gustaría", "te gustaria",
+                "clase de prueba", "a nombre de",
             ])
-            if not _tiene_pregunta and not _dice_afiche:
-                # Buscar qué dato falta y agregarlo
-                if not _ya_nombre_hijo and not _ya_edad:
-                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
-                elif _ya_nombre_hijo and not _ya_edad:
+            if not _tiene_pregunta and "te paso un afiche" not in _resp_lower:
+                if _ya_nombre_hijo and not _ya_edad:
                     respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
                 elif _ya_edad and not _ya_nombre_hijo:
                     respuesta += "\n\n¿Cómo se llama tu hijo/a? 😊"
+                elif not _ya_nombre_hijo and not _ya_edad:
+                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
+            # Limpiar líneas vacías y basura
+            respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
+            respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # residuo "a y"
+            respuesta = respuesta.strip()
 
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
         #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
