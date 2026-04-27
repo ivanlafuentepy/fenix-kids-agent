@@ -926,12 +926,8 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
             info += f", talla: {h['talla_remera']}"
         hijos_info.append(info)
 
-    # Estado de verificación de datos
-    control_datos = "verificado" if campos.get("CONTROL DATOS") else "pendiente"
-
     contexto = (
         f"CONTEXTO FAMILIA INSCRIPTA:\n"
-        f"CONTROL_DATOS: {control_datos}\n"
         f"Quien escribe: {datos_quien_escribe}\n"
         f"Hijos ({len(hijos_raw)}): {', '.join(nombres_hijos_display) if nombres_hijos_display else 'ninguno registrado aún'}\n"
         f"\nDATOS COMPLETOS PARA VERIFICACIÓN:\n"
@@ -1390,16 +1386,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     )
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
-
-        # ── Detectar cierre de onboarding Aurora (CONTROL DATOS) ──────────
-        if agent_actual == "aurora" and "todo confirmado" in respuesta.lower():
-            try:
-                familia = await buscar_familia_por_telefono(telefono)
-                if familia and not familia.get("fields", {}).get("CONTROL DATOS"):
-                    await marcar_control_datos(familia["id"])
-                    logger.info(f"[AURORA] CONTROL DATOS marcado para {telefono}")
-            except Exception as e:
-                logger.error(f"[AURORA] Error marcando CONTROL DATOS: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmaciones = _detectar_confirmacion_aurora(respuesta)
