@@ -1356,6 +1356,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"[DIAG] Esperando {_DELAY_DIAGNOSTICO}s para diagnóstico de {telefono} ({cant_romp} números)")
                 return
 
+        # ── Inyectar instrucción anti-repetición si ya se preguntó algo ──
+        if agent_actual == "ivan":
+            _ultimos_assistant = [m.get("content", "").lower() for m in historial[-4:] if m.get("role") == "assistant"]
+            _ya_pregunto_nombre_hijo = any("cómo se llama tu hijo" in msg or "como se llama tu hijo" in msg for msg in _ultimos_assistant)
+            _ya_pregunto_edad = any("cuántos años" in msg or "cuantos años" in msg for msg in _ultimos_assistant)
+            _instruccion_extra = ""
+            if _ya_pregunto_nombre_hijo:
+                _instruccion_extra += "\n[SISTEMA: Ya preguntaste el nombre del hijo en un mensaje anterior. NO lo vuelvas a preguntar. Preguntá la edad si no la tenés, o respondé lo que el padre pide.]"
+            if _ya_pregunto_edad:
+                _instruccion_extra += "\n[SISTEMA: Ya preguntaste la edad. NO la vuelvas a preguntar.]"
+            if _instruccion_extra:
+                contexto_extra = (contexto_extra or "") + _instruccion_extra
+
         # ── Generar respuesta ─────────────────────────────────────────────
         respuesta = await generar_respuesta(
             mensaje=texto,
