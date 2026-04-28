@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, Boolean, text
+from sqlalchemy import String, Text, DateTime, select, Integer, BigInteger, Boolean, text
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -90,7 +90,7 @@ class TopicTelegram(Base):
     telefono: Mapped[str] = mapped_column(String(50), index=True)
     topic_id: Mapped[int] = mapped_column(Integer)
     nombre: Mapped[str] = mapped_column(String(200))
-    group_id: Mapped[int] = mapped_column(Integer, default=0)  # 0 = grupo leads (default)
+    group_id: Mapped[int] = mapped_column(BigInteger, default=0)  # 0 = grupo leads (default)
     agente_silenciado: Mapped[bool] = mapped_column(Boolean, default=False)
     ultimo_mensaje_ivan: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -215,13 +215,18 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "ventana_3_mensajes",  "INTEGER DEFAULT 0"),
         ("conversaciones_ab", "calendar_event_id",   "VARCHAR(200)"),
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
-        ("topics_telegram",   "group_id",             "INTEGER DEFAULT 0"),
+        ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:
             await conn.execute(
                 text(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {columna} {tipo}")
             )
+    # Migrar group_id de INTEGER a BIGINT (IDs de Telegram exceden int32)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("ALTER TABLE topics_telegram ALTER COLUMN group_id TYPE BIGINT")
+        )
 
 
 async def inicializar_db():
