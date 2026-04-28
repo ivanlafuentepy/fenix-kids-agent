@@ -174,13 +174,24 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
     # Buscar topic existente para este teléfono (cualquier grupo)
     topic = await obtener_topic(telefono)
     if topic:
-        if topic.group_id == group:
-            # Mismo grupo → usar el topic existente
+        # group_id=0 es legacy (pre-migración) → tratar como grupo de leads
+        topic_group = topic.group_id if topic.group_id else _group_id()
+        if topic_group == group:
+            # Mismo grupo → usar el topic existente (actualizar group_id si era 0)
+            if not topic.group_id:
+                async with async_session() as session:
+                    result = await session.execute(
+                        select(TopicTelegram).where(TopicTelegram.telefono == telefono)
+                    )
+                    t = result.scalars().first()
+                    if t:
+                        t.group_id = group
+                        await session.commit()
             print(f"[TELEGRAM] Topic existente para {telefono}: id={topic.topic_id}", flush=True)
             return topic.topic_id
 
         # Grupo cambió (ej: lead→familia) → crear topic en el nuevo grupo
-        print(f"[TELEGRAM] Grupo cambió para {telefono}: {topic.group_id} → {group} — creando topic nuevo", flush=True)
+        print(f"[TELEGRAM] Grupo cambió para {telefono}: {topic_group} → {group} — creando topic nuevo", flush=True)
         nuevo_topic_id = await _crear_topic_api(nombre, group_override=group)
         if nuevo_topic_id is None:
             # Fallback: usar el topic viejo si no se pudo crear el nuevo
