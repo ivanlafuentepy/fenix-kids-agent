@@ -32,7 +32,21 @@ def _token() -> str:
 
 
 def _group_id() -> int:
+    """Grupo de leads (Profe Ivan)."""
     return int(os.getenv("TELEGRAM_GROUP_ID", "0"))
+
+
+def _group_id_flias() -> int:
+    """Grupo de familias inscriptas (Aurora)."""
+    return int(os.getenv("TELEGRAM_GROUP_ID_FLIAS", "0"))
+
+
+def group_id_para_agente(agent_actual: str) -> int:
+    """Retorna el group_id según el agente. Aurora → FLIAS, Ivan → LEADS."""
+    if agent_actual == "aurora":
+        gid = _group_id_flias()
+        return gid if gid else _group_id()  # fallback a leads si no hay FLIAS
+    return _group_id()
 
 
 def _api_url(metodo: str) -> str:
@@ -56,11 +70,13 @@ def _telegram_ok() -> bool:
 # ── DB ────────────────────────────────────────────────────────────────────────
 
 async def obtener_topic(telefono: str) -> TopicTelegram | None:
+    """Retorna el primer topic para este teléfono (cualquier grupo)."""
     async with async_session() as session:
         result = await session.execute(
             select(TopicTelegram).where(TopicTelegram.telefono == telefono)
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
+
 
 
 async def obtener_telefono_por_topic(topic_id: int) -> str | None:
@@ -111,9 +127,9 @@ async def dorita_esta_activa(telefono: str) -> bool:
 
 # ── Telegram API ──────────────────────────────────────────────────────────────
 
-async def _crear_topic_api(nombre: str) -> int | None:
+async def _crear_topic_api(nombre: str, group_override: int = 0) -> int | None:
     """Crea un topic en el grupo. Logea la respuesta completa de Telegram."""
-    group = _group_id()
+    group = group_override or _group_id()
     url = _api_url("createForumTopic")
     payload = {"chat_id": group, "name": nombre[:128]}
 
@@ -139,25 +155,56 @@ async def _crear_topic_api(nombre: str) -> int | None:
         return None
 
 
-async def obtener_o_crear_topic(telefono: str, nombre: str) -> int | None:
-    """Retorna el topic_id existente o crea uno nuevo."""
-    print(f"[TELEGRAM] obtener_o_crear_topic para {telefono}", flush=True)
+async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int = 0) -> int | None:
+    """
+    Un solo topic por teléfono. Si el grupo cambió (lead→familia o vice versa),
+    crea topic nuevo en el grupo correcto y actualiza el registro.
+    """
+    group = group_override or _group_id()
+    print(f"[TELEGRAM] obtener_o_crear_topic para {telefono} en grupo {group}", flush=True)
 
-    if not _telegram_ok():
-        print("[TELEGRAM] _telegram_ok=False, saliendo", flush=True)
+    if not _token() or not group:
+        print("[TELEGRAM] token o group vacío, saliendo", flush=True)
         return None
 
     if telefono in TELEGRAM_IGNORE_PHONES:
         print(f"[TELEGRAM] {telefono} en IGNORE_PHONES, no se espeja", flush=True)
         return None
 
+    # Buscar topic existente para este teléfono (cualquier grupo)
     topic = await obtener_topic(telefono)
     if topic:
-        print(f"[TELEGRAM] Topic existente para {telefono}: id={topic.topic_id}", flush=True)
-        return topic.topic_id
+        if topic.group_id == group:
+            # Mismo grupo → usar el topic existente
+            print(f"[TELEGRAM] Topic existente para {telefono}: id={topic.topic_id}", flush=True)
+            return topic.topic_id
 
+        # Grupo cambió (ej: lead→familia) → crear topic en el nuevo grupo
+        print(f"[TELEGRAM] Grupo cambió para {telefono}: {topic.group_id} → {group} — creando topic nuevo", flush=True)
+        nuevo_topic_id = await _crear_topic_api(nombre, group_override=group)
+        if nuevo_topic_id is None:
+            # Fallback: usar el topic viejo si no se pudo crear el nuevo
+            print(f"[TELEGRAM] No se pudo crear topic en grupo nuevo, usando el existente", flush=True)
+            return topic.topic_id
+
+        # Actualizar el registro (un solo topic por teléfono)
+        async with async_session() as session:
+            result = await session.execute(
+                select(TopicTelegram).where(TopicTelegram.telefono == telefono)
+            )
+            existente = result.scalars().first()
+            if existente:
+                existente.topic_id = nuevo_topic_id
+                existente.group_id = group
+                existente.nombre = nombre
+                await session.commit()
+
+        print(f"[TELEGRAM] Topic migrado: {telefono} → topic_id={nuevo_topic_id} grupo={group}", flush=True)
+        return nuevo_topic_id
+
+    # No existe → crear topic nuevo
     print(f"[TELEGRAM] Sin topic previo para {telefono} — creando...", flush=True)
-    topic_id = await _crear_topic_api(nombre)
+    topic_id = await _crear_topic_api(nombre, group_override=group)
     if topic_id is None:
         print(f"[TELEGRAM] No se pudo crear topic para {telefono}", flush=True)
         return None
@@ -167,10 +214,11 @@ async def obtener_o_crear_topic(telefono: str, nombre: str) -> int | None:
             telefono=telefono,
             topic_id=topic_id,
             nombre=nombre,
+            group_id=group,
         ))
         await session.commit()
 
-    print(f"[TELEGRAM] Topic guardado en DB: {telefono} → topic_id={topic_id}", flush=True)
+    print(f"[TELEGRAM] Topic guardado en DB: {telefono} → topic_id={topic_id} grupo={group}", flush=True)
     return topic_id
 
 
@@ -202,15 +250,15 @@ async def enviar_media_a_topic(
     tipo: str,
     caption: str = "",
     telefono: str | None = None,
+    group_override: int = 0,
 ) -> bool:
     """
     Reenvía una imagen o documento al topic de Telegram.
     tipo: "imagen" → sendPhoto, "documento" → sendDocument
     """
-    if not _telegram_ok():
+    group = group_override or _group_id()
+    if not _token() or not group:
         return False
-
-    group = _group_id()
     metodo = "sendPhoto" if tipo == "imagen" else "sendDocument"
     campo  = "photo"     if tipo == "imagen" else "document"
     url    = _api_url(metodo)
@@ -243,16 +291,15 @@ async def enviar_media_a_topic(
         return False
 
 
-async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None) -> bool:
+async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None, group_override: int = 0) -> bool:
     """
     Envía un mensaje a un topic.
     Si recibe HTTP 400 'message thread not found' y se pasa telefono,
     elimina el topic de la DB y lo recrea automáticamente antes de reintentar.
     """
-    if not _telegram_ok():
+    group = group_override or _group_id()
+    if not _token() or not group:
         return False
-
-    group = _group_id()
     url = _api_url("sendMessage")
     payload = {
         "chat_id": group,
@@ -280,22 +327,24 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None)
             if r.status_code == 400 and "message thread not found" in data.get("description", "") and telefono:
                 print(f"[TELEGRAM] Topic {topic_id} no encontrado — recreando para {telefono}", flush=True)
                 await _borrar_topic_db(telefono, topic_id)
-                nuevo_topic_id = await _crear_topic_api(f"📱 {telefono}")
+                nuevo_topic_id = await _crear_topic_api(f"📱 {telefono}", group_override=group)
                 if nuevo_topic_id:
                     async with async_session() as session:
                         # Upsert: puede que otra coroutine ya haya recreado el topic
                         result2 = await session.execute(
                             select(TopicTelegram).where(TopicTelegram.telefono == telefono)
                         )
-                        existente = result2.scalar_one_or_none()
+                        existente = result2.scalars().first()
                         if existente:
                             existente.topic_id = nuevo_topic_id
+                            existente.group_id = group
                             existente.nombre = f"📱 {telefono}"
                         else:
                             session.add(TopicTelegram(
                                 telefono=telefono,
                                 topic_id=nuevo_topic_id,
                                 nombre=f"📱 {telefono}",
+                                group_id=group,
                             ))
                         await session.commit()
                     print(f"[TELEGRAM] Topic recreado: {nuevo_topic_id} — reintentando envío", flush=True)

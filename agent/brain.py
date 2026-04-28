@@ -18,7 +18,16 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Clients separados: Ivan (leads) y Aurora (familias)
+_key_ivan = os.getenv("ANTHROPIC_API_KEY")
+_key_aurora = os.getenv("ANTHROPIC_API_KEY_AURORA") or _key_ivan  # fallback a la misma si no hay
+client_ivan = AsyncAnthropic(api_key=_key_ivan)
+client_aurora = AsyncAnthropic(api_key=_key_aurora)
+
+
+def _client_para(agent_actual: str) -> AsyncAnthropic:
+    """Retorna el client de Anthropic según el agente."""
+    return client_aurora if agent_actual == "aurora" else client_ivan
 
 
 def cargar_config_prompts() -> dict:
@@ -155,7 +164,8 @@ async def generar_respuesta(
     _MAX_REINTENTOS = 3
     for _intento in range(_MAX_REINTENTOS):
         try:
-            response = await client.messages.create(
+            _client = _client_para(agent_actual)
+            response = await _client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=1024,
                 system=[
@@ -265,7 +275,7 @@ Historial:
 """ + historial_texto
 
     try:
-        response = await client.messages.create(
+        response = await client_ivan.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt_extraccion}],
@@ -326,7 +336,7 @@ Conversación:
 """ + historial_texto
 
     try:
-        response = await client.messages.create(
+        response = await client_ivan.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],

@@ -83,13 +83,14 @@ class ConversacionAB(Base):
 
 
 class TopicTelegram(Base):
-    """Mapea cada número de WhatsApp a su topic en el grupo de Telegram."""
+    """Mapea cada número de WhatsApp a su topic en un grupo de Telegram."""
     __tablename__ = "topics_telegram"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    topic_id: Mapped[int] = mapped_column(Integer, unique=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    topic_id: Mapped[int] = mapped_column(Integer)
     nombre: Mapped[str] = mapped_column(String(200))
+    group_id: Mapped[int] = mapped_column(Integer, default=0)  # 0 = grupo leads (default)
     agente_silenciado: Mapped[bool] = mapped_column(Boolean, default=False)
     ultimo_mensaje_ivan: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -214,6 +215,7 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "ventana_3_mensajes",  "INTEGER DEFAULT 0"),
         ("conversaciones_ab", "calendar_event_id",   "VARCHAR(200)"),
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
+        ("topics_telegram",   "group_id",             "INTEGER DEFAULT 0"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:

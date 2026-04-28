@@ -51,6 +51,7 @@ from agent.telegram_bridge import (
     configurar_webhook, obtener_info_webhook,
     notificar_agenda_telegram, notificar_llamada_urgente,
     notificar_pago_telegram,
+    group_id_para_agente,
 )
 from agent.pagos import (
     es_posible_comprobante, detectar_tipo_pago,
@@ -1091,7 +1092,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _t in _ACK_WORDS:
                 await guardar_mensaje(telefono, "user", texto)
                 if topic_id:
-                    await enviar_a_topic(topic_id, f"👤 {texto} (esperando diagnóstico)", telefono=telefono)
+                    await enviar_a_topic(topic_id, f"👤 {texto} (esperando diagnóstico)", telefono=telefono, group_override=_tg_group)
                 logger.info(f"[DIAG] Padre dijo '{texto}' — ignorando, diagnóstico pendiente")
                 return
 
@@ -1109,6 +1110,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"Error transcribiendo audio: {e}")
 
+
+        # ── Determinar grupo de Telegram según agente (leads vs familias) ──
+        _agent_pre, _ = await obtener_agent_actual(telefono)
+        _tg_group = group_id_para_agente(_agent_pre or "ivan")
 
         # ── Espejo en Telegram (con nombre de Airtable si existe) ─────────
         _topic_nombre = f"📱 {telefono}"
@@ -1134,9 +1139,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _topic_nombre = f"📱 {_nombre_lead}"
         except Exception:
             pass
-        topic_id = await obtener_o_crear_topic(telefono, _topic_nombre)
+        topic_id = await obtener_o_crear_topic(telefono, _topic_nombre, group_override=_tg_group)
         if topic_id:
-            await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono)
+            await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
 
         # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
         if not await dorita_esta_activa(telefono):
@@ -1146,7 +1151,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Detección de comprobante de pago ───────���─────────────────────
         historial_pago = await obtener_historial(telefono)
         if es_posible_comprobante(texto, historial_pago):
-            await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id)
+            await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
             return
 
         # ── Pedido de llamada → dos escenarios ─────────────────────────────
@@ -1207,7 +1212,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _alertar_pedido_llamada(telefono, historial_previo, texto)
             # Espejar en Telegram del lead (datos ya están en la alerta)
             if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono)
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono, group_override=_tg_group)
             logger.info(f"[LLAMADA] Pedido de llamada detectado de {telefono}")
             return
 
@@ -1323,7 +1328,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await _delay_humano(msg_espera)
                 await proveedor.enviar_mensaje(telefono, msg_espera)
                 if topic_id:
-                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_espera}", telefono=telefono)
+                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_espera}", telefono=telefono, group_override=_tg_group)
 
                 # Programar diagnóstico diferido
                 async def _enviar_diagnostico_diferido(tel, hist, ctx_extra, tid):
@@ -1342,7 +1347,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     await _delay_humano(respuesta_diag)
                     await proveedor.enviar_mensaje(tel, respuesta_diag)
                     if tid:
-                        await enviar_a_topic(tid, f"👨‍🏫 IVAN: {respuesta_diag}", telefono=tel)
+                        await enviar_a_topic(tid, f"👨‍🏫 IVAN: {respuesta_diag}", telefono=tel, group_override=_tg_group)
                     logger.info(f"[DIAG] Diagnóstico enviado a {tel}")
                     _diagnostico_pendiente.pop(tel, None)
 
@@ -1638,7 +1643,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Espejo respuesta en Telegram ──────────────────────────────────
         agente_label = "🌟 AURORA" if agent_actual == "aurora" else "👨‍🏫 IVAN"
         if topic_id:
-            await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono)
+            await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono, group_override=_tg_group)
 
         # ── Enviar afiche cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
         _ivan_dice_afiche = (
@@ -1904,7 +1909,7 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         await guardar_mensaje(telefono, "assistant", followup)
 
         if topic_id:
-            await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono)
+            await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono, group_override=_tg_group)
 
         logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
@@ -1922,6 +1927,7 @@ async def _procesar_comprobante(
     media_id: str | None,
     historial: list[dict],
     topic_id: int | None,
+    group_override: int = 0,
 ):
     """
     Procesa un posible comprobante de pago:
@@ -1943,7 +1949,7 @@ async def _procesar_comprobante(
 
     # Espejar en Telegram
     if topic_id:
-        await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono)
+        await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono, group_override=group_override)
 
     # Calcular monto correcto (multi-hijo)
     if tipo == "prueba":
@@ -2041,9 +2047,11 @@ async def _procesar_boton_pago(btn_titulo: str):
             logger.error(f"[PAGOS] Error actualizando conversión: {e}")
 
         # Notificar en Telegram
-        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}")
+        _ag_pago, _ = await obtener_agent_actual(tel_lead)
+        _grp_pago = group_id_para_agente(_ag_pago or "ivan")
+        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}", group_override=_grp_pago)
         if topic_id:
-            await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=tel_lead)
+            await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=tel_lead, group_override=_grp_pago)
 
         try:
             historial = await obtener_historial(tel_lead)
@@ -2073,7 +2081,7 @@ async def _procesar_boton_pago(btn_titulo: str):
             await _delay_humano(respuesta_ivan)
             await proveedor.enviar_mensaje(tel_lead, respuesta_ivan)
             if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=tel_lead)
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=tel_lead, group_override=_grp_pago)
         except Exception as e:
             logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
 
@@ -2089,8 +2097,11 @@ async def _procesar_boton_pago(btn_titulo: str):
         await proveedor.enviar_mensaje(tel_lead, msg_lead)
         await guardar_mensaje(tel_lead, "assistant", msg_lead)
 
-        # Notificar en Telegram
-        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}")
+        # Notificar en Telegram (reusar _grp_pago si existe, sino resolver)
+        if not topic_id:
+            _ag_r, _ = await obtener_agent_actual(tel_lead)
+            _grp_r = group_id_para_agente(_ag_r or "ivan")
+            topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}", group_override=_grp_r)
         if topic_id:
             await enviar_a_topic(topic_id, f"❌ PAGO RECHAZADO — {tipo_label}", telefono=tel_lead)
 
@@ -2114,7 +2125,7 @@ async def _procesar_boton_pago(btn_titulo: str):
 _MONTOS_AGENDA = {"90mil": 90_000, "120mil": 120_000, "150mil": 150_000}
 
 
-async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int):
+async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int, group_override: int = 0):
     """
     /agenda 90mil Carolina   → 1 hijo, 90k
     /agenda 120mil Carolina  → 2 hijos, 120k
@@ -2130,6 +2141,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             thread_id,
             "⚠️ Uso: /agenda 90mil|120mil|150mil nombre\nEj: /agenda 90mil Carolina",
             telefono=telefono,
+            group_override=group_override,
         )
         return
 
@@ -2225,12 +2237,13 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             f"📲 Mensaje enviado a {nombre_padre} con formulario + datos bancarios\n"
             f"🔊 Agente reactivado (esperando comprobante)",
             telefono=telefono,
+            group_override=group_override,
         )
         logger.info(f"[AGENDA] {telefono}: {creados} registros, {monto_label}, msg enviado a {nombre_padre}")
 
     except Exception as e:
         logger.error(f"[CERRAR_AGENDA] Error: {e}")
-        await enviar_a_topic(thread_id, f"❌ Error cerrando agenda: {e}", telefono=telefono)
+        await enviar_a_topic(thread_id, f"❌ Error cerrando agenda: {e}", telefono=telefono, group_override=group_override)
 
 
 # ── Telegram webhook (admin → WhatsApp) ──────────────────────────────────────
@@ -2263,20 +2276,23 @@ async def telegram_webhook(request: Request):
         if not telefono:
             return {"status": "ok"}
 
+        # El chat_id del mensaje nos dice desde qué grupo escribe Ivan
+        _tg_grp = chat_id
+
         # Comandos de control
         if texto_tg.strip() == "/silenciar":
             await silenciar_dorita(telefono)
-            await enviar_a_topic(thread_id, "🔇 Agente IA silenciado. Ivan activo.", telefono=telefono)
+            await enviar_a_topic(thread_id, "🔇 Agente IA silenciado. Ivan activo.", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         if texto_tg.strip() in ("/reactivar", "/fenix"):
             await reactivar_dorita(telefono)
-            await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono)
+            await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         # /agenda [monto] [nombre] — Ivan cierra agenda tras llamada telefónica
         if texto_tg.strip().startswith("/agenda"):
-            await _cerrar_agenda_desde_telegram(telefono, texto_tg, thread_id)
+            await _cerrar_agenda_desde_telegram(telefono, texto_tg, thread_id, group_override=_tg_grp)
             return {"status": "ok"}
 
         # Reenviar mensaje de Ivan al WhatsApp del lead
