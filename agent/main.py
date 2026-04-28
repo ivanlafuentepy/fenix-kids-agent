@@ -1060,6 +1060,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
             await limpiar_estado_completo(telefono)
+            # Pre-setear Aurora + cliente_inscripto para que el router no lo mande a Ivan
+            await asignar_variante(telefono)  # crea la fila en ConversacionAB
+            await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
             await proveedor.enviar_mensaje(
                 telefono,
                 "Modo alumno ✅\nConversación limpia, Airtable intacto.\nEscribí como si fueras un padre inscripto."

@@ -48,6 +48,52 @@ _CONTENIDO = "CONTENIDO FENIX"
 _REDES     = "REDES FENIX"
 
 
+# ── Deducción de género por nombre ────────────────────────────────────────────
+
+# Nombres que terminan en 'a' suelen ser femeninos, pero hay excepciones
+_NOMBRES_MASCULINOS_EN_A = {
+    "josua", "joshua", "luca", "nikita", "elia", "garcia", "borja", "sasha",
+}
+# Nombres que terminan en 'o/e/consonante' pero son femeninos
+_NOMBRES_FEMENINOS_EXCEPCION = {
+    "rocio", "carmen", "pilar", "ines", "dolores", "mercedes", "marisol",
+    "rosario", "soledad", "flor", "mar", "iris", "luz", "paz", "noor",
+    "miriam", "judith", "raquel", "esther", "ester", "nairim", "karen",
+}
+
+
+def deducir_genero(nombre: str) -> str | None:
+    """
+    Deduce HOMBRE/MUJER a partir del primer nombre.
+    Retorna None si no puede determinar con confianza.
+    """
+    if not nombre:
+        return None
+    # Tomar solo el primer nombre, normalizar
+    primer = nombre.strip().split()[0].lower()
+    primer = unicodedata.normalize("NFD", primer)
+    primer = "".join(c for c in primer if unicodedata.category(c) != "Mn")  # quitar tildes
+
+    if primer in _NOMBRES_MASCULINOS_EN_A:
+        return "HOMBRE"
+    if primer in _NOMBRES_FEMENINOS_EXCEPCION:
+        return "MUJER"
+
+    # Heurística por terminación
+    if primer.endswith("a"):
+        return "MUJER"
+    if primer.endswith(("o", "os")):
+        return "HOMBRE"
+    # Terminaciones comunes masculinas
+    if primer.endswith(("el", "an", "on", "io", "iel", "uel")):
+        return "HOMBRE"
+    # Terminaciones comunes femeninas
+    if primer.endswith(("is", "es", "iz")):
+        return "MUJER"
+
+    return None
+
+
 # ── Helpers de bajo nivel ──────────────────────────────────────────────────────
 
 def _headers() -> dict:
@@ -470,6 +516,11 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
             campos["SEXO"] = "HOMBRE"
         elif sexo in ("F", "MUJER", "FEMENINO", "GIRL"):
             campos["SEXO"] = "MUJER"
+    elif datos_nino.get("nombre"):
+        # Deducir género del nombre si no vino explícito
+        genero = deducir_genero(datos_nino["nombre"])
+        if genero:
+            campos["SEXO"] = genero
     if datos_nino.get("talla_remera"):
         campos["TALLA REMERA"] = str(datos_nino["talla_remera"]).strip()
 
