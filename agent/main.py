@@ -2383,7 +2383,9 @@ async def telegram_webhook(request: Request):
 
         # /registro — verificar datos o registrar familia desde Telegram
         if texto_tg.strip() == "/registro":
+            logger.info(f"[/registro] telefono={telefono} thread_id={thread_id} chat_id={chat_id}")
             familia = await buscar_familia_por_telefono(telefono)
+            logger.info(f"[/registro] familia={'ENCONTRADA: '+familia.get('fields',{}).get('FAMILIA','') if familia else 'NO ENCONTRADA'}")
             # Preparar Aurora para manejar las respuestas
             _registro_ya_iniciado.discard(telefono)
             await asignar_variante(telefono)
