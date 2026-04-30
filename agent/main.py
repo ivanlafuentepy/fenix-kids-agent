@@ -1133,14 +1133,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"Error transcribiendo audio: {e}")
 
 
-        # ── Determinar grupo de Telegram según agente (leads vs familias) ──
-        _agent_pre, _ = await obtener_agent_actual(telefono)
-        _tg_group = group_id_para_agente(_agent_pre or "ivan")
-
-        # ── Espejo en Telegram (con nombre de Airtable si existe) ─────────
+        # ── Preparar nombre para Telegram (se usa después del router) ─────
         _topic_nombre = f"📱 {telefono}"
         try:
-            # Buscar nombre en FAMILIAS o LEADS
             _fam_tg = await buscar_familia_por_telefono(telefono)
             if _fam_tg:
                 _campos_tg = _fam_tg.get("fields", {})
@@ -1161,6 +1156,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _topic_nombre = f"📱 {_nombre_lead}"
         except Exception:
             pass
+        # Determinar grupo Telegram por teléfono ANTES del router (familia = Aurora, sino Ivan)
+        _tg_group = group_id_para_agente("aurora") if _fam_tg else group_id_para_agente("ivan")
         # Telegram es best-effort: si falla, el agente sigue respondiendo
         topic_id = None
         try:
@@ -1308,18 +1305,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await guardar_airtable_record_id(telefono, record_id)
             await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
 
-        # ── Migrar topic de Telegram si el router cambió el agente ────────
+        # ── Migrar topic si el router cambió el grupo (ej: registro nuevo → Aurora) ──
         _tg_group_post = group_id_para_agente(agent_actual or "ivan")
-        if _tg_group_post != _tg_group and topic_id:
+        if _tg_group_post != _tg_group:
             _tg_group = _tg_group_post
             try:
                 nuevo_topic = await obtener_o_crear_topic(telefono, _topic_nombre, group_override=_tg_group)
                 if nuevo_topic:
                     topic_id = nuevo_topic
-                    # Re-enviar el mensaje del padre al grupo correcto
-                    await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
             except Exception as e:
-                logger.error(f"[TELEGRAM] Error migrando topic post-routing: {e}")
+                logger.error(f"[TELEGRAM] Error migrando topic: {e}")
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
