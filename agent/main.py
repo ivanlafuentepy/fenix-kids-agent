@@ -62,7 +62,7 @@ from agent.pagos import (
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
     actualizar_conversion_lead, actualizar_agent_lead,
-    marcar_formulario_lead, crear_familia_completa, crear_nino,
+    marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
     obtener_ninos_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     eliminar_lead, eliminar_todo_de_telefono,
@@ -465,6 +465,17 @@ _CLAVES_AURORA = [
     "quiero reservar con nixi", "quiero agendar con nixi",
     "hablar con aurora", "reservar con aurora", "agendar con aurora",
 ]
+
+# Teléfonos que ya pasaron por el flujo de registro/verificación (una vez por número)
+_registro_ya_iniciado: set[str] = set()
+
+
+def _detectar_registro(texto: str, telefono: str = "") -> bool:
+    """El padre quiere registrarse. Basta con que mencione 'aurora'. Una vez por número."""
+    if telefono and telefono in _registro_ya_iniciado:
+        return False
+    t = texto.lower()
+    return "aurora" in t or "registr" in t
 
 
 def _detectar_activacion_aurora(texto: str) -> bool:
@@ -894,7 +905,11 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         es_genero = "padre/madre"
 
     # Datos de quien escribe
-    datos_quien_escribe = f"Nombre: {quien_escribe}, género: {es_genero}"
+    nombre_desconocido = not quien_escribe
+    if nombre_desconocido:
+        datos_quien_escribe = "Nombre: (no registrado todavía — PEDIRLO PRIMERO), género: desconocido"
+    else:
+        datos_quien_escribe = f"Nombre: {quien_escribe}, género: {es_genero}"
 
     # Datos del padre
     datos_padre = []
@@ -1255,11 +1270,27 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Router: si el teléfono ya está en FAMILIAS (inscripto) → Aurora.
             # Si no → Ivan (lead de anuncios / nuevo).
             familia_inscripta = await buscar_familia_por_telefono(telefono)
+            _quiere_registro = _detectar_registro(texto, telefono)
             if familia_inscripta:
                 agent_actual = "aurora"
                 modo_nixie = "cliente_inscripto"
                 await actualizar_agent_actual(telefono, "aurora", modo_nixie)
-                logger.info(f"[ROUTER] {telefono} es inscripto → Aurora")
+                if _quiere_registro:
+                    _registro_ya_iniciado.add(telefono)
+                    logger.info(f"[ROUTER] {telefono} es inscripto + registro → Aurora verificación")
+                else:
+                    logger.info(f"[ROUTER] {telefono} es inscripto → Aurora")
+            elif _quiere_registro:
+                # Padre no inscripto quiere registrarse → crear FAMILIA mínima + Aurora
+                _registro_ya_iniciado.add(telefono)
+                logger.info(f"[ROUTER] {telefono} quiere registrarse → creando FAMILIA + Aurora")
+                familia_id = await crear_familia({"padre": {"telefono": telefono}})
+                if familia_id:
+                    await guardar_familia_id(telefono, familia_id)
+                    logger.info(f"[ROUTER] FAMILIA creada: {familia_id}")
+                agent_actual = "aurora"
+                modo_nixie = "cliente_inscripto"
+                await actualizar_agent_actual(telefono, "aurora", modo_nixie)
             else:
                 agent_actual = "ivan"
                 modo_nixie = None
@@ -1269,6 +1300,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if record_id:
                 await guardar_airtable_record_id(telefono, record_id)
             await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
+
+        # ── Migrar topic de Telegram si el router cambió el agente ────────
+        _tg_group_post = group_id_para_agente(agent_actual or "ivan")
+        if _tg_group_post != _tg_group and topic_id:
+            _tg_group = _tg_group_post
+            try:
+                nuevo_topic = await obtener_o_crear_topic(telefono, _topic_nombre, group_override=_tg_group)
+                if nuevo_topic:
+                    topic_id = nuevo_topic
+                    # Re-enviar el mensaje del padre al grupo correcto
+                    await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
+            except Exception as e:
+                logger.error(f"[TELEGRAM] Error migrando topic post-routing: {e}")
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
@@ -1582,6 +1626,33 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     )
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
+
+        # ── Detectar registro de nombre del padre por Aurora ────────────
+        if agent_actual == "aurora" and "REGISTRO PADRE:" in respuesta:
+            try:
+                reg_padre = re.search(r'REGISTRO PADRE:\s*(.+?)(?:\n|$)', respuesta)
+                if reg_padre:
+                    nombre_completo = reg_padre.group(1).strip()
+                    partes_nombre = nombre_completo.split(maxsplit=1)
+                    nombre_p = partes_nombre[0].title() if partes_nombre else ""
+                    apellido_p = partes_nombre[1].title() if len(partes_nombre) > 1 else ""
+
+                    # Actualizar FAMILIA en Airtable
+                    fam_id = await obtener_familia_id(telefono)
+                    if not fam_id:
+                        fam = await buscar_familia_por_telefono(telefono)
+                        if fam:
+                            fam_id = fam["id"]
+                            await guardar_familia_id(telefono, fam_id)
+                    if fam_id:
+                        from agent.airtable_client import _patch, _FAMILIAS
+                        campos_padre = {"NOMBRE PADRE": nombre_p}
+                        if apellido_p:
+                            campos_padre["APELLIDO PADRE"] = apellido_p
+                        await _patch(_FAMILIAS, fam_id, campos_padre)
+                        logger.info(f"[REGISTRO] Padre actualizado: {nombre_p} {apellido_p} → familia {fam_id}")
+            except Exception as e:
+                logger.error(f"[REGISTRO] Error actualizando nombre padre: {e}")
 
         # ── Detectar registro de hijos por Aurora ─────────────────────────
         if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta:
