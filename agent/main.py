@@ -2375,9 +2375,20 @@ async def telegram_webhook(request: Request):
             await enviar_a_topic(thread_id, "🔇 Agente IA silenciado. Ivan activo.", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
-        if texto_tg.strip() in ("/reactivar", "/fenix"):
+        if texto_tg.strip() == "/reactivar":
             await reactivar_dorita(telefono)
             await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono, group_override=_tg_grp)
+            return {"status": "ok"}
+
+        if texto_tg.strip() == "/fenix":
+            # Reset conversación + reactivar (Airtable intacto)
+            cancelar_seguimiento(telefono)
+            cancelar_recordatorios(telefono)
+            _cancelar_diagnostico_pendiente(telefono)
+            await limpiar_estado_completo(telefono)
+            _registro_ya_iniciado.discard(telefono)
+            await reactivar_dorita(telefono)
+            await enviar_a_topic(thread_id, "🔄 Conversación reseteada + agente activado.\nUsá /registro para iniciar registro.", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         # /registro — verificar datos o registrar familia desde Telegram
