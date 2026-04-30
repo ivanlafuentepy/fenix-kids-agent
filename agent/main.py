@@ -1273,20 +1273,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     await marcar_noche_pendiente(telefono)
                     return
 
-        # ── Estado de la conversación ─────────────────────────────────────
-        agent_actual, modo_nixie = await obtener_agent_actual(telefono)
-
         # ── Obtener historial (40 msgs para no perder contexto en charlas largas)
         historial = await obtener_historial(telefono, limite=40)
+
+        # ── Asignar variante (crea fila en ConversacionAB si no existe) ───
+        _, es_nuevo = await asignar_variante(telefono)
+
+        # ── Estado de la conversación ─────────────────────────────────────
+        agent_actual, modo_nixie = await obtener_agent_actual(telefono)
 
         # ── "Hola Aurora" fuerza Aurora (una vez por número) ──────────────
         _quiere_registro = _detectar_registro(texto, telefono)
         if _quiere_registro and agent_actual != "aurora":
-            # Forzar switch a Aurora sin importar si es_nuevo o no
             _registro_ya_iniciado.add(telefono)
             familia_reg = await buscar_familia_por_telefono(telefono)
             if not familia_reg:
-                # No está en FAMILIAS → crear mínima
                 fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
                 if fam_id_nuevo:
                     await guardar_familia_id(telefono, fam_id_nuevo)
@@ -1296,11 +1297,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await actualizar_agent_actual(telefono, "aurora", modo_nixie)
             logger.info(f"[REGISTRO] {telefono} → Aurora (forzado por 'Hola Aurora')")
 
-        # ── Lead nuevo: primer contacto + router Ivan/Aurora por teléfono ──
-        _, es_nuevo = await asignar_variante(telefono)
+        # ── Lead nuevo: router Ivan/Aurora por teléfono ───────────────────
         if es_nuevo:
             if agent_actual != "aurora":
-                # Router normal: familia inscripta → Aurora, sino → Ivan
                 familia_inscripta = await buscar_familia_por_telefono(telefono)
                 if familia_inscripta:
                     agent_actual = "aurora"
@@ -1311,22 +1310,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     agent_actual = "ivan"
                     modo_nixie = None
                     logger.info(f"[ROUTER] {telefono} no inscripto → Ivan")
-            # Crear lead en Airtable con el agente correcto
             record_id = await crear_lead(telefono, rompehielos="A")
             if record_id:
                 await guardar_airtable_record_id(telefono, record_id)
             await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
 
-        # ── Migrar topic si el router cambió el grupo (ej: registro nuevo → Aurora) ──
-        _tg_group_post = group_id_para_agente(agent_actual or "ivan")
-        if _tg_group_post != _tg_group:
-            _tg_group = _tg_group_post
-            try:
-                nuevo_topic = await obtener_o_crear_topic(telefono, _topic_nombre, group_override=_tg_group)
-                if nuevo_topic:
-                    topic_id = nuevo_topic
-            except Exception as e:
-                logger.error(f"[TELEGRAM] Error migrando topic: {e}")
+        # ── Actualizar grupo Telegram si el router cambió el agente ──────
+        _tg_group = group_id_para_agente(agent_actual or "ivan")
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
