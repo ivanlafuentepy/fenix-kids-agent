@@ -897,17 +897,27 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     """Arma el contexto completo de una familia para inyectar en Aurora."""
     campos = familia.get("fields", {})
 
-    # Detectar quién escribe por teléfono
-    if telefono and campos.get("CELL PADRE") == telefono:
-        quien_escribe = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
+    def _primer_nombre(nombre: str) -> str:
+        """Retorna solo el primer nombre (sin apellido ni segundo nombre)."""
+        return nombre.strip().split()[0] if nombre and nombre.strip() else ""
+
+    # Detectar quién escribe por teléfono — apodo primero, sino solo primer nombre
+    _es_padre = telefono and (
+        campos.get("CELL PADRE") == telefono or campos.get("CELL LIMPIO PADRE") == telefono
+    )
+    _es_madre = telefono and (
+        campos.get("CELL MADRE") == telefono or campos.get("CELL LIMPIO MADRE") == telefono
+    )
+    if _es_padre:
+        quien_escribe = campos.get("APODO PADRE", "").strip() or _primer_nombre(campos.get("NOMBRE PADRE", ""))
         es_genero = "papá"
-    elif telefono and campos.get("CELL MADRE") == telefono:
-        quien_escribe = campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+    elif _es_madre:
+        quien_escribe = campos.get("APODO MADRE", "").strip() or _primer_nombre(campos.get("NOMBRE MADRE", ""))
         es_genero = "mamá"
     else:
         quien_escribe = (
-            campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "")
-            or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+            campos.get("APODO PADRE", "").strip() or _primer_nombre(campos.get("NOMBRE PADRE", ""))
+            or campos.get("APODO MADRE", "").strip() or _primer_nombre(campos.get("NOMBRE MADRE", ""))
         )
         es_genero = "padre/madre"
 
