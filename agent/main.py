@@ -2445,11 +2445,8 @@ async def telegram_webhook(request: Request):
                 await proveedor.enviar_mensaje(telefono, msg_wa)
                 await guardar_mensaje(telefono, "assistant", msg_wa)
 
-                # Info en Telegram
-                info = f"✅ REGISTRADO — mensaje enviado a {_nombre_wa or telefono}"
-                if not hijos:
-                    info += " (sin hijos, Aurora pedirá datos)"
-                await enviar_a_topic(thread_id, info, telefono=telefono, group_override=_tg_grp)
+                # Mostrar en Telegram el mensaje exacto que se envió
+                await enviar_a_topic(thread_id, f"🌟 AURORA: {msg_wa}", telefono=telefono, group_override=_tg_grp)
             else:
                 # No registrado → crear FAMILIA mínima + mandar formulario
                 fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
@@ -2462,8 +2459,7 @@ async def telegram_webhook(request: Request):
                 )
                 await proveedor.enviar_mensaje(telefono, msg_registro)
                 await guardar_mensaje(telefono, "assistant", msg_registro)
-                await reactivar_dorita(telefono)
-                await enviar_a_topic(thread_id, "📋 REGISTRO iniciado — Aurora le envió el formulario por WhatsApp", telefono=telefono, group_override=_tg_grp)
+                await enviar_a_topic(thread_id, f"🌟 AURORA: {msg_registro}", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         # /agenda [monto] [nombre] — Ivan cierra agenda tras llamada telefónica
