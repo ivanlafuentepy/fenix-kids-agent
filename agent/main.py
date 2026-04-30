@@ -1166,8 +1166,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _topic_nombre = f"📱 {_nombre_lead}"
         except Exception:
             pass
-        # Determinar grupo Telegram por teléfono ANTES del router (familia = Aurora, sino Ivan)
-        _tg_group = group_id_para_agente("aurora") if _fam_tg else group_id_para_agente("ivan")
+        # Determinar grupo Telegram: familia o "Hola Aurora" → FLIAS, sino → LEADS
+        _quiere_aurora = "aurora" in texto.lower() or "registr" in texto.lower()
+        _tg_group = group_id_para_agente("aurora") if (_fam_tg or _quiere_aurora) else group_id_para_agente("ivan")
         # Telegram es best-effort: si falla, el agente sigue respondiendo
         topic_id = None
         try:
@@ -1278,37 +1279,38 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Obtener historial (40 msgs para no perder contexto en charlas largas)
         historial = await obtener_historial(telefono, limite=40)
 
+        # ── "Hola Aurora" fuerza Aurora (una vez por número) ──────────────
+        _quiere_registro = _detectar_registro(texto, telefono)
+        if _quiere_registro and agent_actual != "aurora":
+            # Forzar switch a Aurora sin importar si es_nuevo o no
+            _registro_ya_iniciado.add(telefono)
+            familia_reg = await buscar_familia_por_telefono(telefono)
+            if not familia_reg:
+                # No está en FAMILIAS → crear mínima
+                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
+                if fam_id_nuevo:
+                    await guardar_familia_id(telefono, fam_id_nuevo)
+                    logger.info(f"[REGISTRO] FAMILIA creada: {fam_id_nuevo}")
+            agent_actual = "aurora"
+            modo_nixie = "cliente_inscripto"
+            await actualizar_agent_actual(telefono, "aurora", modo_nixie)
+            logger.info(f"[REGISTRO] {telefono} → Aurora (forzado por 'Hola Aurora')")
+
         # ── Lead nuevo: primer contacto + router Ivan/Aurora por teléfono ──
         _, es_nuevo = await asignar_variante(telefono)
         if es_nuevo:
-            # Router: si el teléfono ya está en FAMILIAS (inscripto) → Aurora.
-            # Si no → Ivan (lead de anuncios / nuevo).
-            familia_inscripta = await buscar_familia_por_telefono(telefono)
-            _quiere_registro = _detectar_registro(texto, telefono)
-            if familia_inscripta:
-                agent_actual = "aurora"
-                modo_nixie = "cliente_inscripto"
-                await actualizar_agent_actual(telefono, "aurora", modo_nixie)
-                if _quiere_registro:
-                    _registro_ya_iniciado.add(telefono)
-                    logger.info(f"[ROUTER] {telefono} es inscripto + registro → Aurora verificación")
-                else:
+            if agent_actual != "aurora":
+                # Router normal: familia inscripta → Aurora, sino → Ivan
+                familia_inscripta = await buscar_familia_por_telefono(telefono)
+                if familia_inscripta:
+                    agent_actual = "aurora"
+                    modo_nixie = "cliente_inscripto"
+                    await actualizar_agent_actual(telefono, "aurora", modo_nixie)
                     logger.info(f"[ROUTER] {telefono} es inscripto → Aurora")
-            elif _quiere_registro:
-                # Padre no inscripto quiere registrarse → crear FAMILIA mínima + Aurora
-                _registro_ya_iniciado.add(telefono)
-                logger.info(f"[ROUTER] {telefono} quiere registrarse → creando FAMILIA + Aurora")
-                familia_id = await crear_familia({"padre": {"telefono": telefono}})
-                if familia_id:
-                    await guardar_familia_id(telefono, familia_id)
-                    logger.info(f"[ROUTER] FAMILIA creada: {familia_id}")
-                agent_actual = "aurora"
-                modo_nixie = "cliente_inscripto"
-                await actualizar_agent_actual(telefono, "aurora", modo_nixie)
-            else:
-                agent_actual = "ivan"
-                modo_nixie = None
-                logger.info(f"[ROUTER] {telefono} no inscripto → Ivan")
+                else:
+                    agent_actual = "ivan"
+                    modo_nixie = None
+                    logger.info(f"[ROUTER] {telefono} no inscripto → Ivan")
             # Crear lead en Airtable con el agente correcto
             record_id = await crear_lead(telefono, rompehielos="A")
             if record_id:
@@ -2376,6 +2378,56 @@ async def telegram_webhook(request: Request):
         if texto_tg.strip() in ("/reactivar", "/fenix"):
             await reactivar_dorita(telefono)
             await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono, group_override=_tg_grp)
+            return {"status": "ok"}
+
+        # /registro — verificar datos o registrar familia desde Telegram
+        if texto_tg.strip() == "/registro":
+            familia = await buscar_familia_por_telefono(telefono)
+            if familia:
+                campos = familia.get("fields", {})
+                # Mostrar datos actuales
+                info = f"✅ FAMILIA REGISTRADA\n\n"
+                if campos.get("NOMBRE PADRE"):
+                    info += f"👨 Padre: {campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}\n"
+                    info += f"   Cell: {campos.get('CELL PADRE', '')}\n"
+                if campos.get("NOMBRE MADRE"):
+                    info += f"👩 Madre: {campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}\n"
+                    info += f"   Cell: {campos.get('CELL MADRE', '')}\n"
+                hijos = await obtener_ninos_de_familia(familia["id"])
+                if hijos:
+                    info += f"\n👧 Hijos ({len(hijos)}):\n"
+                    for h in hijos:
+                        info += f"   - {h['nombre']} {h['apellido']}"
+                        if h.get('fecha_nacimiento'):
+                            info += f", nac: {h['fecha_nacimiento']}"
+                        if h.get('ci'):
+                            info += f", CI: {h['ci']}"
+                        if h.get('talla_remera'):
+                            info += f", talla: {h['talla_remera']}"
+                        info += "\n"
+                else:
+                    info += "\n⚠️ Sin hijos registrados"
+                info += f"\n📱 CONTROL DATOS: {'✅' if campos.get('CONTROL DATOS') else '❌'}"
+                await enviar_a_topic(thread_id, info, telefono=telefono, group_override=_tg_grp)
+            else:
+                # No registrado → forzar Aurora para que registre
+                _registro_ya_iniciado.discard(telefono)  # permitir re-registro
+                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
+                if fam_id_nuevo:
+                    await guardar_familia_id(telefono, fam_id_nuevo)
+                await limpiar_estado_completo(telefono)
+                await asignar_variante(telefono)
+                await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+                # Enviar mensaje de Aurora por WhatsApp
+                msg_registro = (
+                    "Hola! 🤗 Soy Aurora 🌟, asistente IA de Fenix Kids.\n"
+                    "Bienvenido/a a la familia Fenix! 🌳 Necesito registrar tus datos.\n"
+                    "¿Con quién tengo el gusto? (nombre y apellido)"
+                )
+                await proveedor.enviar_mensaje(telefono, msg_registro)
+                await guardar_mensaje(telefono, "assistant", msg_registro)
+                await reactivar_dorita(telefono)
+                await enviar_a_topic(thread_id, "📋 REGISTRO iniciado — Aurora le envió el formulario por WhatsApp", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         # /agenda [monto] [nombre] — Ivan cierra agenda tras llamada telefónica
