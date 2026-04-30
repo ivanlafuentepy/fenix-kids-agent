@@ -2394,42 +2394,67 @@ async def telegram_webhook(request: Request):
         # /registro — verificar datos o registrar familia desde Telegram
         if texto_tg.strip() == "/registro":
             familia = await buscar_familia_por_telefono(telefono)
+            # Preparar Aurora para manejar las respuestas
+            _registro_ya_iniciado.discard(telefono)
+            await asignar_variante(telefono)
+            await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+            await reactivar_dorita(telefono)
+
             if familia:
                 campos = familia.get("fields", {})
-                # Mostrar datos actuales
-                info = f"✅ FAMILIA REGISTRADA\n\n"
-                if campos.get("NOMBRE PADRE"):
-                    info += f"👨 Padre: {campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}\n"
-                    info += f"   Cell: {campos.get('CELL PADRE', '')}\n"
-                if campos.get("NOMBRE MADRE"):
-                    info += f"👩 Madre: {campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}\n"
-                    info += f"   Cell: {campos.get('CELL MADRE', '')}\n"
-                hijos = await obtener_ninos_de_familia(familia["id"])
-                if hijos:
-                    info += f"\n👧 Hijos ({len(hijos)}):\n"
-                    for h in hijos:
-                        info += f"   - {h['nombre']} {h['apellido']}"
-                        if h.get('fecha_nacimiento'):
-                            info += f", nac: {h['fecha_nacimiento']}"
-                        if h.get('ci'):
-                            info += f", CI: {h['ci']}"
-                        if h.get('talla_remera'):
-                            info += f", talla: {h['talla_remera']}"
-                        info += "\n"
+                await guardar_familia_id(telefono, familia["id"])
+
+                # Nombre para saludar (apodo o primer nombre)
+                _es_padre = campos.get("CELL PADRE") == telefono or campos.get("CELL LIMPIO PADRE") == telefono
+                _es_madre = campos.get("CELL MADRE") == telefono or campos.get("CELL LIMPIO MADRE") == telefono
+                if _es_padre:
+                    _nombre_wa = campos.get("APODO PADRE", "").strip() or (campos.get("NOMBRE PADRE", "").strip().split()[0] if campos.get("NOMBRE PADRE") else "")
+                elif _es_madre:
+                    _nombre_wa = campos.get("APODO MADRE", "").strip() or (campos.get("NOMBRE MADRE", "").strip().split()[0] if campos.get("NOMBRE MADRE") else "")
                 else:
-                    info += "\n⚠️ Sin hijos registrados"
-                info += f"\n📱 CONTROL DATOS: {'✅' if campos.get('CONTROL DATOS') else '❌'}"
+                    _nombre_wa = campos.get("NOMBRE PADRE", "").strip().split()[0] if campos.get("NOMBRE PADRE") else ""
+
+                # Armar resumen de datos para WhatsApp
+                hijos = await obtener_ninos_de_familia(familia["id"])
+                datos_hijos = ""
+                for h in hijos:
+                    datos_hijos += f"\n👧 {h['nombre']} {h['apellido']}"
+                    if h.get('fecha_nacimiento'):
+                        datos_hijos += f", nac: {h['fecha_nacimiento']}"
+                    if h.get('ci'):
+                        datos_hijos += f", CI: {h['ci']}"
+                    if h.get('talla_remera'):
+                        datos_hijos += f", talla: {h['talla_remera']}"
+
+                if _nombre_wa:
+                    msg_wa = (
+                        f"Hola {_nombre_wa}! 🤗 Soy Aurora 🌟 de Fenix Kids.\n"
+                        f"Necesito corroborar que tus datos estén bien 😊\n"
+                    )
+                    if datos_hijos:
+                        msg_wa += f"\nTus hijos registrados:{datos_hijos}\n\n¿Está todo bien o hay algo que corregir?"
+                    else:
+                        msg_wa += f"\nNo tengo hijos registrados todavía. ¿Cuántos hijos tenés en Fenix?"
+                else:
+                    msg_wa = (
+                        "Hola! 🤗 Soy Aurora 🌟 de Fenix Kids.\n"
+                        "Necesito corroborar tus datos 😊\n"
+                        "¿Con quién tengo el gusto? (nombre y apellido)"
+                    )
+
+                await proveedor.enviar_mensaje(telefono, msg_wa)
+                await guardar_mensaje(telefono, "assistant", msg_wa)
+
+                # Info en Telegram
+                info = f"✅ REGISTRADO — mensaje enviado a {_nombre_wa or telefono}"
+                if not hijos:
+                    info += " (sin hijos, Aurora pedirá datos)"
                 await enviar_a_topic(thread_id, info, telefono=telefono, group_override=_tg_grp)
             else:
-                # No registrado → forzar Aurora para que registre
-                _registro_ya_iniciado.discard(telefono)  # permitir re-registro
+                # No registrado → crear FAMILIA mínima + mandar formulario
                 fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
                 if fam_id_nuevo:
                     await guardar_familia_id(telefono, fam_id_nuevo)
-                await limpiar_estado_completo(telefono)
-                await asignar_variante(telefono)
-                await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
-                # Enviar mensaje de Aurora por WhatsApp
                 msg_registro = (
                     "Hola! 🤗 Soy Aurora 🌟, asistente IA de Fenix Kids.\n"
                     "Bienvenido/a a la familia Fenix! 🌳 Necesito registrar tus datos.\n"
