@@ -845,6 +845,10 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+# ── KILL SWITCH — poner en True para frenar TODAS las respuestas ──────────────
+AGENTE_PAUSADO = os.getenv("AGENTE_PAUSADO", "false").lower() == "true"
+
+
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
@@ -852,6 +856,9 @@ async def webhook_handler(request: Request):
     Meta espera respuesta en < 20s — el procesamiento real puede tardar minutos
     (delays por números del rompehielos, Claude API, etc.) así que va en background.
     """
+    if AGENTE_PAUSADO:
+        logger.warning("[KILL SWITCH] Agente pausado — ignorando webhook")
+        return {"status": "ok"}
     try:
         mensajes = await proveedor.parsear_webhook(request)
 
