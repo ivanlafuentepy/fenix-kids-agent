@@ -198,6 +198,17 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
             print(f"[TELEGRAM] No se pudo crear topic en grupo nuevo, usando el existente", flush=True)
             return topic.topic_id
 
+        # Cerrar el topic viejo en el grupo anterior (best-effort)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    _api_url("closeForumTopic"),
+                    json={"chat_id": topic_group, "message_thread_id": topic.topic_id},
+                )
+            print(f"[TELEGRAM] Topic viejo cerrado: {topic.topic_id} en grupo {topic_group}", flush=True)
+        except Exception:
+            pass
+
         # Actualizar el registro (un solo topic por teléfono)
         async with async_session() as session:
             result = await session.execute(
