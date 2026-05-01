@@ -2418,19 +2418,29 @@ async def telegram_webhook(request: Request):
                     if h.get('talla_remera'):
                         datos_hijos += f", talla: {h['talla_remera']}"
 
-                if _nombre_wa:
+                if _nombre_wa and datos_hijos:
+                    # Registrado con hijos → saludo normal + menú
                     msg_wa = (
                         f"Hola {_nombre_wa}! 🤗 Soy Aurora 🌟 de Fenix Kids.\n"
-                        f"Necesito corroborar que tus datos estén bien 😊\n"
+                        f"¿En qué te puedo ayudar?\n"
+                        f"1️⃣ Agendar clase\n"
+                        f"2️⃣ Ver lista de niños agendados por clase\n"
+                        f"3️⃣ Ver Fotos Fenix (próximamente)\n"
+                        f"4️⃣ Ver Videos Fenix (próximamente)\n"
+                        f"5️⃣ Redes Sociales"
                     )
-                    if datos_hijos:
-                        msg_wa += f"\nTus hijos registrados:{datos_hijos}\n\n¿Está todo bien o hay algo que corregir?"
-                    else:
-                        msg_wa += f"\nNo tengo hijos registrados todavía. ¿Cuántos hijos tenés en Fenix?"
+                elif _nombre_wa:
+                    # Registrado sin hijos → pedir formulario
+                    msg_wa = (
+                        f"Hola {_nombre_wa}! 🤗 Soy Aurora 🌟 de Fenix Kids.\n"
+                        f"No tengo registrados los datos de tu familia todavía 😊\n"
+                        f"¿Cuántos hijos tenés en Fenix?"
+                    )
                 else:
+                    # Sin nombre → pedir nombre
                     msg_wa = (
                         "Hola! 🤗 Soy Aurora 🌟 de Fenix Kids.\n"
-                        "Necesito corroborar tus datos 😊\n"
+                        "No tengo registrado tu número todavía 😊\n"
                         "¿Con quién tengo el gusto? (nombre y apellido)"
                     )
 
