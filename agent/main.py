@@ -1288,7 +1288,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _registro_ya_iniciado.add(telefono)
             familia_reg = await buscar_familia_por_telefono(telefono)
             if not familia_reg:
-                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
+                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}, "madre": {"telefono": telefono}})
                 if fam_id_nuevo:
                     await guardar_familia_id(telefono, fam_id_nuevo)
                     logger.info(f"[REGISTRO] FAMILIA creada: {fam_id_nuevo}")
@@ -1631,7 +1631,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
 
-        # ── Detectar registro de nombre del padre por Aurora ────────────
+        # ── Detectar registro de nombre del padre/madre por Aurora ─────
         if agent_actual == "aurora" and "REGISTRO PADRE:" in respuesta:
             try:
                 reg_padre = re.search(r'REGISTRO PADRE:\s*(.+?)(?:\n|$)', respuesta)
@@ -1640,6 +1640,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     partes_nombre = nombre_completo.split(maxsplit=1)
                     nombre_p = partes_nombre[0].title() if partes_nombre else ""
                     apellido_p = partes_nombre[1].title() if len(partes_nombre) > 1 else ""
+
+                    # Deducir si es papá o mamá por el nombre
+                    from agent.airtable_client import deducir_genero
+                    genero = deducir_genero(nombre_p)
+                    es_madre = genero == "MUJER"
 
                     # Actualizar FAMILIA en Airtable
                     fam_id = await obtener_familia_id(telefono)
@@ -1650,13 +1655,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             await guardar_familia_id(telefono, fam_id)
                     if fam_id:
                         from agent.airtable_client import _patch, _FAMILIAS
-                        campos_padre = {"NOMBRE PADRE": nombre_p}
-                        if apellido_p:
-                            campos_padre["APELLIDO PADRE"] = apellido_p
-                        await _patch(_FAMILIAS, fam_id, campos_padre)
-                        logger.info(f"[REGISTRO] Padre actualizado: {nombre_p} {apellido_p} → familia {fam_id}")
+                        if es_madre:
+                            campos_fam = {
+                                "NOMBRE MADRE": nombre_p, "CELL MADRE": telefono,
+                                "CELL PADRE": "",  # limpiar el temporal
+                            }
+                            if apellido_p:
+                                campos_fam["APELLIDO MADRE"] = apellido_p
+                            rol = "MADRE"
+                        else:
+                            campos_fam = {
+                                "NOMBRE PADRE": nombre_p, "CELL PADRE": telefono,
+                                "CELL MADRE": "",  # limpiar el temporal
+                            }
+                            if apellido_p:
+                                campos_fam["APELLIDO PADRE"] = apellido_p
+                            rol = "PADRE"
+                        await _patch(_FAMILIAS, fam_id, campos_fam)
+                        logger.info(f"[REGISTRO] {rol} actualizado: {nombre_p} {apellido_p} → familia {fam_id}")
             except Exception as e:
-                logger.error(f"[REGISTRO] Error actualizando nombre padre: {e}")
+                logger.error(f"[REGISTRO] Error actualizando nombre padre/madre: {e}")
 
         # ── Detectar registro de hijos por Aurora ─────────────────────────
         if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta:
@@ -2452,7 +2470,7 @@ async def telegram_webhook(request: Request):
                 await enviar_a_topic(thread_id, f"🌟 AURORA: {msg_wa}", telefono=telefono, group_override=_tg_grp)
             else:
                 # No registrado → crear FAMILIA mínima + mandar formulario
-                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}})
+                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}, "madre": {"telefono": telefono}})
                 if fam_id_nuevo:
                     await guardar_familia_id(telefono, fam_id_nuevo)
                 msg_registro = (
