@@ -509,7 +509,20 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
     if datos_nino.get("ci"):
         campos["CI"] = str(datos_nino["ci"]).strip()
     if datos_nino.get("fecha_nacimiento"):
-        campos["FECHA NACIMIENTO"] = datos_nino["fecha_nacimiento"]
+        # Convertir dd/mm/yyyy o d/m/yyyy a yyyy-mm-dd (Airtable espera ISO)
+        _fn = datos_nino["fecha_nacimiento"].strip()
+        try:
+            from datetime import datetime as _dt
+            for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d"):
+                try:
+                    _parsed = _dt.strptime(_fn, fmt)
+                    _fn = _parsed.strftime("%Y-%m-%d")
+                    break
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+        campos["FECHA NACIMIENTO"] = _fn
     if datos_nino.get("sexo"):
         sexo = datos_nino["sexo"].upper()
         if sexo in ("H", "HOMBRE", "MASCULINO", "M", "BOY"):
