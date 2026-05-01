@@ -1739,14 +1739,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _afiche_enviado.add(telefono)
             await _enviar_afiche_y_followup(telefono, topic_id)
 
-        # ── Programar seguimiento si es lead nuevo sin respuesta ──────────
-        if es_nuevo:
-            programar_seguimiento_inicial(
-                telefono=telefono,
-                proveedor=proveedor,
-                guardar_fn=_guardar_mensaje,
-                formulario_check_fn=esta_convertido,
-            )
+        # ── Seguimiento desactivado temporalmente ─────────────────────────
+        # TODO: reactivar cuando se arme el follow up
+        # if es_nuevo:
+        #     programar_seguimiento_inicial(
+        #         telefono=telefono,
+        #         proveedor=proveedor,
+        #         guardar_fn=_guardar_mensaje,
+        #         formulario_check_fn=esta_convertido,
+        #     )
 
     except Exception as e:
         logger.error(f"[WEBHOOK-TASK] Error procesando mensaje de {telefono}: {e}", exc_info=True)
