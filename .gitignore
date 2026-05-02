@@ -32,3 +32,4 @@ Thumbs.db
 
 # Claude Code (configuración local — nunca subir)
 .claude/
+logs/
