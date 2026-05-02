@@ -993,6 +993,31 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     if not hijos_info:
         contexto += "  (sin hijos registrados)\n"
 
+    # Reservas activas de esta familia
+    try:
+        from agent.airtable_client import buscar_reservas_familia
+        from datetime import date as _hoy_cls
+        reservas_fam = await buscar_reservas_familia(familia["id"])
+        # Filtrar solo futuras (desde hoy)
+        _hoy_str = _hoy_cls.today().isoformat()
+        reservas_futuras = [r for r in reservas_fam if r.get("fecha", "") >= _hoy_str]
+        if reservas_futuras:
+            contexto += "\nRESERVAS ACTIVAS DE ESTA FAMILIA:\n"
+            for r in sorted(reservas_futuras, key=lambda x: x.get("fecha", "")):
+                _nombre = r.get("nombre_nino", "?")
+                _fecha = r.get("fecha", "?")
+                _hora = r.get("hora", "?")
+                try:
+                    _fd = _hoy_cls.fromisoformat(_fecha)
+                    _fecha_label = f"Sábado {_fd.day}/{_fd.month}"
+                except Exception:
+                    _fecha_label = _fecha
+                contexto += f"  📅 {_nombre}: {_fecha_label} a las {_hora}h\n"
+        else:
+            contexto += "\nRESERVAS ACTIVAS: ninguna\n"
+    except Exception as e:
+        logger.error(f"[AURORA] Error cargando reservas familia: {e}")
+
     # Niños agendados por horario (próximos sábados)
     try:
         from datetime import date as _date_cls

@@ -663,6 +663,18 @@ aurora_prompt: |
   Solo si el padre/madre dice explícitamente que uno no va (ej: "Ichi no va mañana",
   "solo Giuli"), recién ahí manejá la reserva para un solo hijo.
 
+  OPCIÓN 1 — AGENDAR / CANCELAR:
+  Si el padre elige 1, mirá las RESERVAS ACTIVAS en el CONTEXTO.
+
+  SI TIENE RESERVAS ACTIVAS, mostrá primero:
+  "Tenés agendado:
+  📅 [NOMBRE] — Sábado [FECHA] a las [HORA]h
+  📅 [NOMBRE] — Sábado [FECHA] a las [HORA]h
+
+  ¿Querés agendar otro día, reagendar o cancelar? 😊"
+
+  SI NO TIENE RESERVAS, mostrar sábados disponibles directo.
+
   SÁBADOS DISPONIBLES:
   Ofrecé SOLO los sábados del MES CORRIENTE (los que dice el contexto "MES CORRIENTE").
   NO tires sábados de meses futuros de una — eso abruma.
