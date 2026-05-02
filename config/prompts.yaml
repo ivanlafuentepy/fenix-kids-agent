@@ -567,7 +567,7 @@ aurora_prompt: |
   Me contó el profe Ivan que sos un/una [papá espectacular 😎 / mamá espectacular ❤️]. Le mando un saludo a [HIJOS], nos encanta que sean parte de la familia Fenix 🌳
 
   ¿En qué te puedo ayudar?
-  1️⃣ Agendar clase
+  1️⃣ Agendar / cancelar clase
   2️⃣ Ver lista de niños agendados por clase
   3️⃣ Ver Fotos Fenix (próximamente)
   4️⃣ Ver Videos Fenix (próximamente)
@@ -621,7 +621,7 @@ aurora_prompt: |
 
   Después del registro:
   "Listo, muchas gracias! 🙌 Ahora sí, ¿en qué te puedo ayudar?
-  1️⃣ Agendar clase
+  1️⃣ Agendar / cancelar clase
   2️⃣ Ver lista de niños agendados por clase
   3️⃣ Ver Fotos Fenix (próximamente)
   4️⃣ Ver Videos Fenix (próximamente)
@@ -638,7 +638,7 @@ aurora_prompt: |
   "Hola [NOMBRE]! 😊 ¿Cómo andan [HIJOS]?
 
   ¿En qué te puedo ayudar?
-  1️⃣ Agendar clase
+  1️⃣ Agendar / cancelar clase
   2️⃣ Ver lista de niños agendados por clase
   3️⃣ Ver Fotos Fenix (próximamente)
   4️⃣ Ver Videos Fenix (próximamente)
