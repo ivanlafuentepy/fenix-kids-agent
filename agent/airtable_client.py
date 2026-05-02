@@ -789,6 +789,39 @@ async def eliminar_reserva(reserva_id: str) -> bool:
     return await _delete(_RESERVAS, reserva_id)
 
 
+async def buscar_reservas_familia(familia_id: str) -> list[dict]:
+    """Busca todas las RESERVAS de una familia. Retorna lista con id, nino, fecha, hora."""
+    formula = f"FIND('{familia_id}', ARRAYJOIN({{FAMILIAS}}))"
+    records = await _get_records(_RESERVAS, formula=formula, max_records=50)
+    reservas = []
+    for r in records:
+        f = r.get("fields", {})
+        reservas.append({
+            "id": r["id"],
+            "nombre_nino": f.get("NOMBRE COMPLETO", [""])[0] if isinstance(f.get("NOMBRE COMPLETO"), list) else f.get("NOMBRE COMPLETO", ""),
+            "fecha": f.get("FECHA", [""])[0] if isinstance(f.get("FECHA"), list) else f.get("FECHA", ""),
+            "hora": f.get("HORA", [""])[0] if isinstance(f.get("HORA"), list) else f.get("HORA", ""),
+        })
+    return reservas
+
+
+async def cancelar_reservas_familia_fecha(familia_id: str, fecha: str, hora: str = "") -> int:
+    """
+    Cancela (borra) todas las reservas de una familia para una fecha y hora.
+    Si hora está vacío, borra todas las de ese día.
+    Retorna cantidad de reservas borradas.
+    """
+    reservas = await buscar_reservas_familia(familia_id)
+    borradas = 0
+    for res in reservas:
+        if res["fecha"] == fecha:
+            if not hora or res["hora"] == hora:
+                if await eliminar_reserva(res["id"]):
+                    borradas += 1
+                    logger.info(f"Reserva cancelada: {res['id']} ({res['nombre_nino']} {res['fecha']} {res['hora']})")
+    return borradas
+
+
 # ── Flujo completo: crear familia + niños desde datos del formulario ──────────
 
 async def crear_familia_completa(

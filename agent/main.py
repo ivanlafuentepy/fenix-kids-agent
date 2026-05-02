@@ -71,6 +71,7 @@ from agent.airtable_client import (
     actualizar_reserva_lead, marcar_control_datos,
     obtener_ninos_por_horario, formatear_lista_ninos,
     obtener_horarios_disponibles, obtener_redes,
+    cancelar_reservas_familia_fecha,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -1711,6 +1712,38 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 logger.info(f"[AURORA] Niño creado: {datos_nino.get('nombre')} para familia {familia_id}")
             except Exception as e:
                 logger.error(f"[AURORA] Error creando niño: {e}")
+
+        # ── Detectar cancelación de reserva por Aurora ─────────────────────
+        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower():
+            try:
+                # Extraer fecha de "cancelé la reserva de X del sábado 2 de mayo a las 11:00h"
+                _m_cancel = re.search(
+                    r'cancelé la reserva.*?s[aá]bado\s+(\d{1,2})\s+de\s+(\w+)(?:\s+a\s+las?\s+(\d{1,2}[:.]\d{2}))?',
+                    respuesta.lower()
+                )
+                if _m_cancel:
+                    _dia = int(_m_cancel.group(1))
+                    _mes_nombre = _m_cancel.group(2)
+                    _hora_cancel = _m_cancel.group(3) or ""
+                    if _hora_cancel:
+                        _hora_cancel = _hora_cancel.replace(".", ":")
+                    _meses = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
+                              "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
+                    _mes = _meses.get(_mes_nombre, 0)
+                    if _mes:
+                        from datetime import date as _date_cls
+                        _year = _date_cls.today().year
+                        _fecha_iso = f"{_year}-{_mes:02d}-{_dia:02d}"
+                        fam_id_cancel = await obtener_familia_id(telefono)
+                        if not fam_id_cancel:
+                            _fam_c = await buscar_familia_por_telefono(telefono)
+                            if _fam_c:
+                                fam_id_cancel = _fam_c["id"]
+                        if fam_id_cancel:
+                            borradas = await cancelar_reservas_familia_fecha(fam_id_cancel, _fecha_iso, _hora_cancel)
+                            logger.info(f"[CANCELAR] {borradas} reservas canceladas para {telefono} el {_fecha_iso} {_hora_cancel}")
+            except Exception as e:
+                logger.error(f"[CANCELAR] Error cancelando reserva: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmaciones = _detectar_confirmacion_aurora(respuesta)

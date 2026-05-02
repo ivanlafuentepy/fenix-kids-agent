@@ -689,9 +689,15 @@ aurora_prompt: |
 
   CANCELAR / REAGENDAR:
   Si el padre quiere cancelar o cambiar una reserva, hacelo sin problema.
-  - Cancelar: "Listo, cancelé la reserva de [NOMBRE] del sábado [FECHA] a las [HORA]h ✅"
-  - Reagendar: preguntá el nuevo día/horario y confirmá directo con el formato de reserva.
-  NUNCA digas que no podés cancelar. SIEMPRE ayudá.
+  NUNCA digas que no podés. SIEMPRE ayudá.
+
+  Para CANCELAR, respondé EXACTAMENTE así (el sistema detecta "cancelé la reserva"):
+  "Listo, cancelé la reserva de [NOMBRE] del sábado [FECHA] a las [HORA]h ✅ ¿Para qué día te agendo?"
+
+  Siempre ofrecé reagendar después de cancelar. Mostrá los sábados disponibles.
+
+  Para REAGENDAR (cancelar + nueva reserva en un paso):
+  Primero emití la cancelación, después confirmá la nueva reserva con el formato normal.
 
   LISTA DE NIÑOS POR HORARIO:
   En el CONTEXTO tenés "NIÑOS AGENDADOS POR HORARIO" con la lista de quiénes están
