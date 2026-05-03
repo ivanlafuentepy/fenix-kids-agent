@@ -2047,6 +2047,41 @@ async def _procesar_confirmacion_reserva(
         nombre=nombre_display if ninos else None,
     )
 
+    # ── Link wa.me al admin con mensaje pre-cargado de agradecimiento ─────
+    try:
+        from urllib.parse import quote
+        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        # Buscar nombre del padre en Airtable o historial
+        _nombre_padre_link = ""
+        try:
+            from agent.airtable_client import _get_records, _LEADS
+            _lr_link = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            if _lr_link:
+                _nombre_padre_link = _lr_link[0].get("fields", {}).get("NOMBRE RESPONSABLE", "") or ""
+        except Exception:
+            pass
+        if not _nombre_padre_link:
+            historial_link = await obtener_historial(telefono, limite=20)
+            _nombre_padre_link = _extraer_nombre_del_historial(historial_link) or ""
+        primer_nombre_padre = _nombre_padre_link.split()[0] if _nombre_padre_link else "papá/mamá"
+
+        # Armar fecha display
+        fecha_display = fecha_str or "el sábado"
+        hora_display = hora_str or ""
+        msg_wa = f"Muchas gracias {primer_nombre_padre}, te saluda el profe Ivan, recibí tu reserva para {fecha_display}{' a las ' + hora_display if hora_display else ''}. Te esperamos en Fenix Kids Academy 🌳"
+        wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
+
+        alerta_admin = (
+            f"📅 RESERVA CONFIRMADA\n\n"
+            f"👦 {nombre_display}\n"
+            f"📆 {fecha_display} {hora_display}\n"
+            f"👤 Acompañante: {primer_nombre_padre}\n\n"
+            f"📲 {wa_link}"
+        )
+        await proveedor.enviar_mensaje(admin_phone, alerta_admin)
+    except Exception as e:
+        logger.error(f"[RESERVA] Error enviando link wa.me al admin: {e}")
+
     # Programar recordatorio persistente para el día de la clase (07:00 PY)
     if fecha_iso:
         try:
