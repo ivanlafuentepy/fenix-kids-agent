@@ -499,11 +499,11 @@ _registro_ya_iniciado: set[str] = set()
 
 
 def _detectar_registro(texto: str, telefono: str = "") -> bool:
-    """El padre quiere registrarse. Basta con que mencione 'aurora'. Una vez por número."""
+    """El padre quiere registrarse. Solo si menciona 'aurora' explícitamente. Una vez por número."""
     if telefono and telefono in _registro_ya_iniciado:
         return False
     t = texto.lower()
-    return "aurora" in t or "registr" in t
+    return "aurora" in t
 
 
 def _detectar_activacion_aurora(texto: str) -> bool:
@@ -1276,7 +1276,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         except Exception:
             pass
         # Determinar grupo Telegram: familia o "Hola Aurora" → FLIAS, sino → LEADS
-        _quiere_aurora = "aurora" in texto.lower() or "registr" in texto.lower()
+        _quiere_aurora = "aurora" in texto.lower()
         _tg_group = group_id_para_agente("aurora") if (_fam_tg or _quiere_aurora) else group_id_para_agente("ivan")
         # Telegram es best-effort: si falla, el agente sigue respondiendo
         topic_id = None
