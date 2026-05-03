@@ -964,7 +964,8 @@ async def webhook_handler(request: Request):
                     _dedup_cache.popitem(last=False)
                 if await mensaje_ya_procesado(msg.mensaje_id):
                     continue
-                await registrar_mensaje_procesado(msg.mensaje_id)
+                # NO registrar como procesado acá — se registra AL FINAL del procesamiento
+                # Así si el server se cae durante el processing, Meta reintenta y funciona
 
             # Rate limit por teléfono
             if _check_rate_limit(msg.telefono):
@@ -1861,8 +1862,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         #         formulario_check_fn=esta_convertido,
         #     )
 
+        # ── Dedup: marcar como procesado SOLO si todo salió bien ──────────
+        if msg.mensaje_id:
+            await registrar_mensaje_procesado(msg.mensaje_id)
+
     except Exception as e:
         logger.error(f"[WEBHOOK-TASK] Error procesando mensaje de {telefono}: {e}", exc_info=True)
+        # NO registrar dedup en error → Meta reintenta y el mensaje se procesa la próxima vez
 
 
 async def _procesar_confirmacion_reserva(
