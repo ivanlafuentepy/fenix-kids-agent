@@ -1598,11 +1598,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _nh2 = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
                 _tenemos_nombre = _nh2 and _nh2 != "no mencionó"
             if not _tenemos_edad:
-                # Buscar edad en respuestas del usuario (no en rompehielos)
+                # Buscar edad en respuestas del usuario (múltiples patrones)
                 for _m2 in reversed(historial + [{"role": "user", "content": texto}]):
                     if _m2.get("role") == "user":
                         _c2 = _m2.get("content", "").strip()
+                        # Número solo: "8"
                         if re.fullmatch(r'\d{1,2}', _c2) and 2 <= int(_c2) <= 15:
+                            _tenemos_edad = True
+                            break
+                        # "tiene X años", "de X años", "X años", "X añitos"
+                        if re.search(r'\b(\d{1,2})\s*(?:años|añitos|a[ñn]os)', _c2, re.IGNORECASE):
+                            _tenemos_edad = True
+                            break
+                        # "de 8 y 11 años" (multi-hijo)
+                        if re.search(r'\b\d{1,2}\s+y\s+\d{1,2}\s*(?:años|añitos)', _c2, re.IGNORECASE):
                             _tenemos_edad = True
                             break
 
