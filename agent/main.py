@@ -315,10 +315,16 @@ async def _keepalive_admin_loop():
         "Sistema OK, ventana activa 👍",
     ]
     admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    # Primer envío inmediato al arrancar (abrir ventana desde el deploy)
+    try:
+        await asyncio.sleep(30)  # esperar 30s a que el proveedor se inicialice
+        if not es_horario_nocturno():
+            await proveedor.enviar_mensaje(admin_phone, "Sistema Fenix Kids reiniciado ✅ Ventana activa.")
+            logger.info("[KEEPALIVE] Primer mensaje enviado al arrancar")
+    except Exception as e:
+        logger.error(f"[KEEPALIVE] Error en primer envío: {e}")
     while True:
-        # Esperar 6 horas
         await asyncio.sleep(6 * 3600)
-        # Solo mandar entre 08:00 y 22:00 PY
         if not es_horario_nocturno():
             try:
                 msg = random.choice(_mensajes)
@@ -1838,6 +1844,51 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono, group_override=_tg_group)
 
+        # ── Link wa.me al admin cuando Ivan cierra con "los esperamos" post-formulario ──
+        _resp_lower_link = respuesta.lower()
+        _es_cierre_formulario = (
+            agent_actual == "ivan"
+            and ("los esperamos" in _resp_lower_link or "listo" in _resp_lower_link)
+            and any("reserva confirmada" in m.get("content", "").lower() for m in historial if m.get("role") == "assistant")
+        )
+        if _es_cierre_formulario:
+            try:
+                from urllib.parse import quote
+                admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+                historial_completo = await obtener_historial(telefono, limite=30)
+                # Nombre padre del historial
+                _np = _extraer_nombre_del_historial(historial_completo) or ""
+                primer_nombre = _np.split()[0] if _np else ""
+                # Nombre hijo
+                _nh = _extraer_nombre_hijo_historial(historial_completo)
+                _hijo = _nh if _nh and _nh != "no mencionó" else ""
+                # Fecha/hora de la reserva confirmada
+                _fecha_res = ""
+                _hora_res = ""
+                for _m_res in reversed(historial_completo):
+                    if _m_res.get("role") == "assistant" and "reserva confirmada" in _m_res.get("content", "").lower():
+                        _match_fecha = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_res["content"].lower())
+                        if _match_fecha:
+                            _fecha_res = _match_fecha.group(1)
+                            _hora_res = _match_fecha.group(2)
+                        break
+                fecha_hora = f"el sábado {_fecha_res} a las {_hora_res}" if _fecha_res else "el sábado"
+                _con_hijo = f", te espero con {_hijo}" if _hijo else ""
+                _saludo = f"Que tal {primer_nombre}" if primer_nombre else "Que tal"
+                msg_wa = f"{_saludo}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
+                wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
+                alerta_admin = (
+                    f"📅 RESERVA COMPLETA\n\n"
+                    f"👤 {_np or 'Lead'}\n"
+                    f"👦 {_hijo or 'hijo/a'}\n"
+                    f"📆 {fecha_hora}\n\n"
+                    f"📲 {wa_link}"
+                )
+                await proveedor.enviar_mensaje(admin_phone, alerta_admin)
+                logger.info(f"[RESERVA] Link wa.me enviado al admin para {telefono}")
+            except Exception as e:
+                logger.error(f"[RESERVA] Error enviando link wa.me: {e}")
+
         # ── Enviar afiche cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
         _ivan_dice_afiche = (
             agent_actual == "ivan"
@@ -2053,46 +2104,8 @@ async def _procesar_confirmacion_reserva(
         nombre=nombre_display if ninos else None,
     )
 
-    # ── Link wa.me al admin con mensaje pre-cargado de agradecimiento ─────
-    try:
-        from urllib.parse import quote
-        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
-        # Buscar nombre del padre en Airtable o historial
-        _nombre_padre_link = ""
-        try:
-            from agent.airtable_client import _get_records, _LEADS
-            _lr_link = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-            if _lr_link:
-                _nombre_padre_link = _lr_link[0].get("fields", {}).get("NOMBRE RESPONSABLE", "") or ""
-        except Exception:
-            pass
-        if not _nombre_padre_link:
-            historial_link = await obtener_historial(telefono, limite=20)
-            _nombre_padre_link = _extraer_nombre_del_historial(historial_link) or ""
-        primer_nombre_padre = _nombre_padre_link.split()[0] if _nombre_padre_link else "papá/mamá"
-
-        # Armar fecha display
-        fecha_display = fecha_str or "el sábado"
-        hora_display = hora_str or ""
-        # Nombre del hijo para el mensaje
-        _hijo_display = nombre_display if ninos else _extraer_nombre_hijo_historial(await obtener_historial(telefono, limite=20))
-        if _hijo_display == "no mencionó":
-            _hijo_display = ""
-        _con_hijo = f", te espero con {_hijo_display}" if _hijo_display else ""
-        fecha_hora = f"el {fecha_display} a las {hora_display}" if hora_display else fecha_display
-        msg_wa = f"Que tal {primer_nombre_padre}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
-        wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
-
-        alerta_admin = (
-            f"📅 RESERVA CONFIRMADA\n\n"
-            f"👦 {nombre_display}\n"
-            f"📆 {fecha_display} {hora_display}\n"
-            f"👤 Acompañante: {primer_nombre_padre}\n\n"
-            f"📲 {wa_link}"
-        )
-        await proveedor.enviar_mensaje(admin_phone, alerta_admin)
-    except Exception as e:
-        logger.error(f"[RESERVA] Error enviando link wa.me al admin: {e}")
+    # Link wa.me se envía cuando el padre completa el formulario (no acá)
+    # Ver _detectar_formulario_completo en el flujo principal
 
     # Programar recordatorio persistente para el día de la clase (07:00 PY)
     if fecha_iso:
