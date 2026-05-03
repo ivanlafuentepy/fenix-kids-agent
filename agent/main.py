@@ -304,33 +304,27 @@ async def _enviar_recordatorio(rec):
 
 
 async def _keepalive_admin_loop():
-    """Cada 6h manda un mensaje al admin para mantener ventana WhatsApp abierta."""
-    import random
-    _mensajes = [
-        "Hola profe, todo en orden por acá 👋",
-        "Profe, sistema funcionando normal 🟢",
-        "Fenix Kids activo, sin novedades 🌳",
-        "Todo bien profe, acá andamos 🔥",
-        "Sistema OK, ventana activa 👍",
-    ]
+    """Manda mensaje al admin a las 9:00 y 22:00 PY para mantener ventana WhatsApp."""
+    from datetime import datetime, timezone, timedelta
+    _PY = timezone(timedelta(hours=-4))
     admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
-    # Primer envío inmediato al arrancar (abrir ventana desde el deploy)
-    try:
-        await asyncio.sleep(30)  # esperar 30s a que el proveedor se inicialice
-        if not es_horario_nocturno():
-            await proveedor.enviar_mensaje(admin_phone, "Sistema Fenix Kids reiniciado ✅ Ventana activa.")
-            logger.info("[KEEPALIVE] Primer mensaje enviado al arrancar")
-    except Exception as e:
-        logger.error(f"[KEEPALIVE] Error en primer envío: {e}")
     while True:
-        await asyncio.sleep(6 * 3600)
-        if not es_horario_nocturno():
-            try:
-                msg = random.choice(_mensajes)
-                await proveedor.enviar_mensaje(admin_phone, msg)
-                logger.info(f"[KEEPALIVE] Enviado a admin: {msg}")
-            except Exception as e:
-                logger.error(f"[KEEPALIVE] Error: {e}")
+        ahora = datetime.now(_PY)
+        # Calcular próximo envío: 9:00 o 22:00
+        hoy_9 = ahora.replace(hour=9, minute=0, second=0, microsecond=0)
+        hoy_22 = ahora.replace(hour=22, minute=0, second=0, microsecond=0)
+        manana_9 = hoy_9 + timedelta(days=1)
+        proximos = [t for t in [hoy_9, hoy_22, manana_9] if t > ahora]
+        proximo = min(proximos)
+        espera = (proximo - ahora).total_seconds()
+        logger.info(f"[KEEPALIVE] Próximo envío en {espera/3600:.1f}h ({proximo.strftime('%H:%M')} PY)")
+        await asyncio.sleep(espera)
+        try:
+            hora_label = datetime.now(_PY).strftime("%H:%M")
+            await proveedor.enviar_mensaje(admin_phone, f"Fenix Kids activo {hora_label} PY 🟢")
+            logger.info(f"[KEEPALIVE] Enviado a admin")
+        except Exception as e:
+            logger.error(f"[KEEPALIVE] Error: {e}")
 
 
 async def _recordatorios_loop():
