@@ -2068,7 +2068,13 @@ async def _procesar_confirmacion_reserva(
         # Armar fecha display
         fecha_display = fecha_str or "el sábado"
         hora_display = hora_str or ""
-        msg_wa = f"Muchas gracias {primer_nombre_padre}, te saluda el profe Ivan, recibí tu reserva para {fecha_display}{' a las ' + hora_display if hora_display else ''}. Te esperamos en Fenix Kids Academy 🌳"
+        # Nombre del hijo para el mensaje
+        _hijo_display = nombre_display if ninos else _extraer_nombre_hijo_historial(await obtener_historial(telefono, limite=20))
+        if _hijo_display == "no mencionó":
+            _hijo_display = ""
+        _con_hijo = f", te espero con {_hijo_display}" if _hijo_display else ""
+        fecha_hora = f"el {fecha_display} a las {hora_display}" if hora_display else fecha_display
+        msg_wa = f"Que tal {primer_nombre_padre}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
         wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
 
         alerta_admin = (
