@@ -146,7 +146,8 @@ def _check_rate_limit(telefono: str) -> bool:
     return False
 
 
-# (dedup ahora es solo PostgreSQL, procesamiento síncrono como Dorita)
+# Guard: PRUEBA FENIX ya creada para este lead (evita duplicados)
+_prueba_creada: set[str] = set()
 
 
 async def _delay_humano(texto: str):
@@ -1847,12 +1848,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Link wa.me al admin cuando Ivan cierra con "los esperamos" post-formulario ──
         _resp_lower_link = respuesta.lower()
+        # Detectar cierre de formulario: Ivan dice "los esperamos" después de reserva confirmada
+        # "listo" es demasiado genérico, solo usar "los esperamos" o "esperamos el sábado"
         _es_cierre_formulario = (
             agent_actual == "ivan"
-            and ("los esperamos" in _resp_lower_link or "listo" in _resp_lower_link)
+            and ("los esperamos" in _resp_lower_link or "esperamos el" in _resp_lower_link)
             and any("reserva confirmada" in m.get("content", "").lower() for m in historial if m.get("role") == "assistant")
+            and telefono not in _prueba_creada  # solo una vez por lead
         )
         if _es_cierre_formulario:
+            _prueba_creada.add(telefono)
             try:
                 from urllib.parse import quote
                 admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
@@ -1994,8 +1999,8 @@ async def _procesar_confirmacion_reserva(
 
     logger.info(f"Confirmación Aurora detectada: {fecha_str} {hora_str} para {telefono}")
 
-    # Actualizar LEADS con conversión + datos de reserva
-    await actualizar_conversion_lead(telefono, "AGENDA")
+    # Actualizar LEADS con conversión + datos de reserva (PAGO porque ya pagaron)
+    await actualizar_conversion_lead(telefono, "PAGO")
     await actualizar_reserva_lead(telefono, fecha_str, hora_str)
 
     # Calcular fecha ISO para Airtable
