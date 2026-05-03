@@ -2147,23 +2147,19 @@ async def _procesar_comprobante(
     nombre_hijo = _extraer_nombre_hijo_historial(historial)
     tipo = detectar_tipo_pago(historial)
 
-    # Responder al lead
-    respuesta = "Recibido! Estamos verificando tu comprobante 😊"
-    await guardar_mensaje(telefono, "user", texto)
-    await guardar_mensaje(telefono, "assistant", respuesta)
-    await proveedor.enviar_mensaje(telefono, respuesta)
-
-    # Espejar en Telegram
-    if topic_id:
-        await enviar_a_topic(topic_id, f"💳 Comprobante detectado — esperando confirmación admin", telefono=telefono, group_override=group_override)
-
     # Calcular monto correcto (multi-hijo)
     if tipo == "prueba":
         monto = monto_prueba_por_hijos(historial)
     else:
         monto = 0
 
-    # Registrar pago pendiente
+    monto_fmt = formatear_monto(monto) if monto else ""
+    tipo_label = f"PRUEBA {monto_fmt}" if tipo == "prueba" and monto else "PRUEBA" if tipo == "prueba" else "INSCRIPCIÓN"
+
+    # ── Auto-confirmar pago (sin esperar botones del admin) ──────────────
+    await guardar_mensaje(telefono, "user", texto)
+
+    # Confirmar pago directo
     await registrar_pago_pendiente(
         telefono=telefono,
         tipo=tipo,
@@ -2171,7 +2167,28 @@ async def _procesar_comprobante(
         monto=monto,
         media_id=media_id,
     )
+    await confirmar_pago(telefono)
 
+    # Mensaje al lead: pago confirmado directo
+    msg_lead = "Pago confirmado! 🎉"
+    await guardar_mensaje(telefono, "assistant", msg_lead)
+    await proveedor.enviar_mensaje(telefono, msg_lead)
+
+    # Actualizar conversión en Airtable
+    try:
+        await actualizar_conversion_lead(telefono, "PAGO")
+    except Exception as e:
+        logger.error(f"[PAGOS] Error actualizando conversión: {e}")
+
+    # Notificar al admin (solo informativo, sin botones)
+    msg_admin = (
+        f"💰 PAGO RECIBIDO ✅\n\n"
+        f"👤 Padre: {nombre_padre}\n"
+        f"👦 Hijo/a: {nombre_hijo}\n"
+        f"📱 {telefono}\n"
+        f"💰 Tipo: {tipo_label}\n\n"
+        f"Auto-confirmado. Ivan sigue con el agendamiento."
+    )
     # Reenviar imagen al admin (si hay media_id)
     if media_id:
         try:
@@ -2182,41 +2199,46 @@ async def _procesar_comprobante(
             )
         except Exception as e:
             logger.error(f"[PAGOS] Error reenviando imagen al admin: {e}")
-
-    # Enviar botones al admin
-    monto_fmt = formatear_monto(monto) if monto else ""
-    tipo_label = f"PRUEBA {monto_fmt}" if tipo == "prueba" and monto else "PRUEBA" if tipo == "prueba" else "INSCRIPCIÓN"
-    msg_admin = (
-        f"🔔 Comprobante recibido\n\n"
-        f"👤 Padre: {nombre_padre}\n"
-        f"👦 Hijo/a: {nombre_hijo}\n"
-        f"📱 {telefono}\n"
-        f"💰 Tipo: {tipo_label}\n\n"
-        f"¿Confirmás el pago?"
-    )
-    botones = [
-        {"id": f"pago_ok_{telefono}", "title": "✅ Confirmar"},
-        {"id": f"pago_no_{telefono}", "title": "❌ Rechazar"},
-    ]
     try:
-        await proveedor.enviar_botones(admin_phone, msg_admin, botones)
+        await proveedor.enviar_mensaje(admin_phone, msg_admin)
     except Exception as e:
-        logger.error(f"[PAGOS] Error enviando botones al admin: {e}")
-        # Fallback: mensaje de texto normal
-        await proveedor.enviar_mensaje(admin_phone, msg_admin + "\n\n(Respondé 'confirmar' o 'rechazar')")
+        logger.error(f"[PAGOS] Error notificando admin: {e}")
 
     # Notificar en Telegram
     try:
         await notificar_pago_telegram(
             telefono=telefono,
             nombre=nombre_padre,
-            estado="comprobante_recibido",
+            estado="confirmado",
             tipo=tipo_label,
+            monto=monto,
         )
     except Exception as e:
         logger.error(f"[PAGOS] Error notificando Telegram: {e}")
 
-    logger.info(f"[PAGOS] Comprobante procesado para {telefono} tipo={tipo}")
+    # Espejar en Telegram del lead
+    if topic_id:
+        await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=telefono, group_override=group_override)
+
+    logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo}")
+
+    # ── Ivan sigue automáticamente: pregunta sábado y horario ─────────
+    try:
+        await asyncio.sleep(3)  # pausa natural
+        historial_post = await obtener_historial(telefono, limite=40)
+        agent_pago, _ = await obtener_agent_actual(telefono)
+        respuesta_ivan = await generar_respuesta(
+            mensaje="[SISTEMA: pago confirmado, continuar con agendamiento]",
+            historial=historial_post,
+            agent_actual=agent_pago or "ivan",
+        )
+        await guardar_mensaje(telefono, "assistant", respuesta_ivan)
+        await _delay_humano(respuesta_ivan)
+        await proveedor.enviar_mensaje(telefono, respuesta_ivan)
+        if topic_id:
+            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=telefono, group_override=group_override)
+    except Exception as e:
+        logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
 
 
 async def _procesar_boton_pago(btn_titulo: str):
