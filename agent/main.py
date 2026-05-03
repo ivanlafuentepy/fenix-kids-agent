@@ -16,7 +16,7 @@ import re
 import asyncio
 import random
 import logging
-from collections import OrderedDict
+# OrderedDict eliminado — ya no se usa cache de dedup en memoria
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import PlainTextResponse
@@ -146,9 +146,8 @@ def _check_rate_limit(telefono: str) -> bool:
     return False
 
 
-# Cache local rápido para dedup (complementa PostgreSQL)
-_dedup_cache: OrderedDict = OrderedDict()
-_MAX_DEDUP_CACHE = 500
+# Set de mensajes en procesamiento (evita doble procesamiento sin bloquear reintentos)
+_procesando_ahora: set[str] = set()
 
 
 async def _delay_humano(texto: str):
@@ -961,17 +960,18 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación: cache local rápido + PostgreSQL persistente
+            # Deduplicación: PostgreSQL persistente + guard en memoria
+            # NO usamos cache persistente en memoria: causaba pérdida de mensajes
+            # en deploys (server viejo cacheaba, moría, msg se perdía).
+            # Solo usamos un set temporal para evitar doble procesamiento simultáneo.
             if msg.mensaje_id:
-                if msg.mensaje_id in _dedup_cache:
+                if msg.mensaje_id in _procesando_ahora:
                     continue
-                _dedup_cache[msg.mensaje_id] = True
-                while len(_dedup_cache) > _MAX_DEDUP_CACHE:
-                    _dedup_cache.popitem(last=False)
                 if await mensaje_ya_procesado(msg.mensaje_id):
                     continue
-                # NO registrar como procesado acá — se registra AL FINAL del procesamiento
-                # Así si el server se cae durante el processing, Meta reintenta y funciona
+                _procesando_ahora.add(msg.mensaje_id)
+                # Se registra en PostgreSQL AL FINAL del procesamiento exitoso
+                # Se saca de _procesando_ahora también al final
 
             # Rate limit por teléfono
             if _check_rate_limit(msg.telefono):
@@ -1976,10 +1976,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Dedup: marcar como procesado SOLO si todo salió bien ──────────
         if msg.mensaje_id:
             await registrar_mensaje_procesado(msg.mensaje_id)
+            _procesando_ahora.discard(msg.mensaje_id)
 
     except Exception as e:
         logger.error(f"[WEBHOOK-TASK] Error procesando mensaje de {telefono}: {e}", exc_info=True)
-        # NO registrar dedup en error → Meta reintenta y el mensaje se procesa la próxima vez
+        # Sacar del guard para que Meta pueda reintentar
+        if msg.mensaje_id:
+            _procesando_ahora.discard(msg.mensaje_id)
 
 
 async def _procesar_confirmacion_reserva(
