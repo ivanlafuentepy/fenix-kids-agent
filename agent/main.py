@@ -2174,8 +2174,11 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         await proveedor.enviar_mensaje(telefono, followup)
         await guardar_mensaje(telefono, "assistant", followup)
 
+        # Espejar TODO en Telegram
         if topic_id:
-            await enviar_a_topic(topic_id, f"📋 Afiche enviado + follow-up", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=_tg_group)
 
         logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
