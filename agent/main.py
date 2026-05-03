@@ -1816,7 +1816,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
         confirmaciones = _detectar_confirmacion_aurora(respuesta)
         for confirmacion in confirmaciones:
-            await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta)
+            await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta, agent_actual)
 
         # ── Detectar llamada programada ("te llamo a las X") ──────────────
         if agent_actual == "ivan":
@@ -1926,15 +1926,12 @@ async def _procesar_confirmacion_reserva(
     telefono: str,
     confirmacion: dict,
     respuesta_aurora: str,
+    agent_actual: str = "aurora",
 ):
     """
-    Cuando Aurora confirma una reserva:
-    1. Actualizar CONVERSION=AGENDA en LEADS
-    2. Obtener/crear HORARIO en Airtable
-    3. Crear RESERVA(s) en Airtable — una por cada niño de la familia
-    4. Enviar lista de niños agendados para ese horario
-    5. Notificar en Telegram
-    6. Programar recordatorio 07:00 PY del día de la clase
+    Cuando se confirma una reserva:
+    - Aurora (inscriptos): crear RESERVA en RESERVAS FENIX
+    - Ivan (leads): crear registro en PRUEBA FENIX (NO en RESERVAS FENIX)
     """
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")
@@ -2005,8 +2002,8 @@ async def _procesar_confirmacion_reserva(
     else:
         nombre_display = telefono
 
-    # ── Crear RESERVA en Airtable por cada niño ─────────────────────────────────
-    if fecha_iso and ninos:
+    # ── Crear RESERVA en Airtable — SOLO para inscriptos (Aurora) ───────────────
+    if agent_actual == "aurora" and fecha_iso and ninos:
         fecha_airtable = fecha_iso
         try:
             horario_id = await obtener_o_crear_horario(fecha_airtable, hora_str)
@@ -2020,67 +2017,68 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"Error creando RESERVA para {telefono}: {e}")
 
-    # ── Crear registro en PRUEBA FENIX ──────────────────────────────────────────
-    try:
-        historial_completo = await obtener_historial(telefono, limite=40)
+    # ── Crear registro en PRUEBA FENIX — SOLO para leads (Ivan) ───────────────
+    if agent_actual == "ivan":
+        try:
+            historial_completo = await obtener_historial(telefono, limite=40)
 
-        # Obtener diagnóstico y lead_id
-        from agent.airtable_client import _get_records, _LEADS
-        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-        lead_record_id = lead_records[0]["id"] if lead_records else None
-        diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
+            # Obtener diagnóstico y lead_id
+            from agent.airtable_client import _get_records, _LEADS
+            lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            lead_record_id = lead_records[0]["id"] if lead_records else None
+            diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
 
-        # Usar Haiku para extraer TODOS los datos del historial de forma confiable
-        datos_form = await extraer_datos_formulario(historial_completo)
-        padre_data = datos_form.get("padre") or {}
-        nombre_resp = padre_data.get("nombre", "") or ""
-        apellido_resp = padre_data.get("apellido", "") or ""
-        ninos_form = datos_form.get("ninos", [])
+            # Usar Haiku para extraer TODOS los datos del historial de forma confiable
+            datos_form = await extraer_datos_formulario(historial_completo)
+            padre_data = datos_form.get("padre") or {}
+            nombre_resp = padre_data.get("nombre", "") or ""
+            apellido_resp = padre_data.get("apellido", "") or ""
+            ninos_form = datos_form.get("ninos", [])
 
-        # Calcular monto correcto según cantidad de hijos
-        _monto_prueba = monto_prueba_por_hijos(historial_completo)
+            # Calcular monto correcto según cantidad de hijos
+            _monto_prueba = monto_prueba_por_hijos(historial_completo)
 
-        # Crear un registro PRUEBA FENIX por cada niño (monto solo en el primero)
-        if ninos_form:
-            for i, n in enumerate(ninos_form):
+            # Crear un registro PRUEBA FENIX por cada niño (monto solo en el primero)
+            if ninos_form:
+                for i, n in enumerate(ninos_form):
+                    await crear_prueba_fenix(
+                        telefono=telefono,
+                        nombre_responsable=nombre_resp,
+                        apellido_responsable=apellido_resp,
+                        nombre_hijo=n.get("nombre", ""),
+                        apellido_hijo=n.get("apellido", ""),
+                        edad_hijo="",
+                        fecha_reserva=fecha_str,
+                        hora=hora_str,
+                        fecha_nacimiento=n.get("fecha_nacimiento", ""),
+                        monto=_monto_prueba if i == 0 else 0,
+                        diagnostico_ids=diagnostico_ids,
+                        lead_record_id=lead_record_id,
+                    )
+            else:
+                # Fallback: extraer nombre del hijo del historial
+                nh = _extraer_nombre_hijo_historial(historial_completo)
+                nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
+                apellido_responsable = ""
+                if nombre_responsable and " " in nombre_responsable:
+                    partes = nombre_responsable.split(" ", 1)
+                    nombre_responsable = partes[0]
+                    apellido_responsable = partes[1]
                 await crear_prueba_fenix(
                     telefono=telefono,
-                    nombre_responsable=nombre_resp,
-                    apellido_responsable=apellido_resp,
-                    nombre_hijo=n.get("nombre", ""),
-                    apellido_hijo=n.get("apellido", ""),
+                    nombre_responsable=nombre_responsable,
+                    apellido_responsable=apellido_responsable,
+                    nombre_hijo=nh if nh != "no mencionó" else "",
+                    apellido_hijo="",
                     edad_hijo="",
                     fecha_reserva=fecha_str,
                     hora=hora_str,
-                    fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                    monto=_monto_prueba if i == 0 else 0,
+                    monto=_monto_prueba,
                     diagnostico_ids=diagnostico_ids,
                     lead_record_id=lead_record_id,
                 )
-        else:
-            # Fallback: extraer nombre del hijo del historial
-            nh = _extraer_nombre_hijo_historial(historial_completo)
-            nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
-            apellido_responsable = ""
-            if nombre_responsable and " " in nombre_responsable:
-                partes = nombre_responsable.split(" ", 1)
-                nombre_responsable = partes[0]
-                apellido_responsable = partes[1]
-            await crear_prueba_fenix(
-                telefono=telefono,
-                nombre_responsable=nombre_responsable,
-                apellido_responsable=apellido_responsable,
-                nombre_hijo=nh if nh != "no mencionó" else "",
-                apellido_hijo="",
-                edad_hijo="",
-                fecha_reserva=fecha_str,
-                hora=hora_str,
-                monto=_monto_prueba,
-                diagnostico_ids=diagnostico_ids,
-                lead_record_id=lead_record_id,
-            )
-    except Exception as e:
-        logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
+        except Exception as e:
+            logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
 
     # ── Enviar lista de niños agendados para ese horario ─────────────────────
     if fecha_iso:
