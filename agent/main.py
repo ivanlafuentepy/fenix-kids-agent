@@ -1846,15 +1846,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono, group_override=_tg_group)
 
-        # ── Link wa.me al admin cuando Ivan cierra con "los esperamos" post-formulario ──
+        # ── Crear PRUEBA + link wa.me DESPUÉS de que el padre completó el formulario ──
         _resp_lower_link = respuesta.lower()
-        # Detectar cierre de formulario: Ivan dice "los esperamos" después de reserva confirmada
-        # "listo" es demasiado genérico, solo usar "los esperamos" o "esperamos el sábado"
+        # Detectar: Ivan responde al formulario completo del padre.
+        # Condiciones: (1) Ivan dice "los esperamos" o "esperamos el" o "listo"
+        #              (2) hay "reserva confirmada" en historial
+        #              (3) el PADRE (no Ivan) mandó datos en su ÚLTIMO mensaje (nombre/fecha)
+        #              (4) Ivan NO está pidiendo datos en esta respuesta (no dice "pasame" ni "📋")
+        #              (5) no se creó ya
+        _padre_mando_datos = len(texto) > 10 and ("/" in texto or any(c.isdigit() for c in texto))
+        _ivan_no_pide_datos = "pasame" not in _resp_lower_link and "📋" not in respuesta
         _es_cierre_formulario = (
             agent_actual == "ivan"
-            and ("los esperamos" in _resp_lower_link or "esperamos el" in _resp_lower_link)
+            and ("los esperamos" in _resp_lower_link or "esperamos el" in _resp_lower_link or "listo" in _resp_lower_link)
+            and _ivan_no_pide_datos
             and any("reserva confirmada" in m.get("content", "").lower() for m in historial if m.get("role") == "assistant")
-            and telefono not in _prueba_creada  # solo una vez por lead
+            and telefono not in _prueba_creada
         )
         if _es_cierre_formulario:
             _prueba_creada.add(telefono)
