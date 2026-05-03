@@ -1465,71 +1465,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
                 await asyncio.sleep(delay_s)
 
-        # ── Diagnóstico diferido: si el padre responde la edad y eligió 2+ números,
-        #    enviar "dame unos minutitos" y programar el diagnóstico con delay.
-        #    PERO si el padre ya pidió precios (afiche enviado), NO hacer delay:
-        #    dejar que Claude responda directo con pitch corto + oferta prueba ──────
+        # ── Diagnóstico INMEDIATO: si el padre responde la edad y eligió 2+ números,
+        #    NO hacemos delay ni "dame unos minutitos". Claude responde directo.
+        #    El prompt ya instruye respuesta corta (3 mensajes, no 5 párrafos).
         if agent_actual == "ivan" and _detectar_respuesta_edad(texto, historial) and not _padre_ya_pidio_precios(historial):
             cant_romp, nums_romp = _contar_numeros_rompehielos_historial(historial)
             if cant_romp >= 2:
-                # Buscar nombre del hijo en Airtable
-                _nombre_hijo_diag = ""
-                try:
-                    from agent.airtable_client import _get_records, _LEADS
-                    _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                    if _lr:
-                        _nombre_hijo_diag = _lr[0].get("fields", {}).get("NOMBRE NIÑO", "") or ""
-                except Exception:
-                    pass
-                if not _nombre_hijo_diag:
-                    _nombre_hijo_diag = _extraer_nombre_hijo_historial(historial)
-                    if _nombre_hijo_diag == "no mencionó":
-                        _nombre_hijo_diag = ""
-
-                nums_str = ", ".join(str(n) for n in sorted(set(nums_romp)))
-                sobre = f" sobre {_nombre_hijo_diag}" if _nombre_hijo_diag else ""
-                msg_espera = f"Genial, dame unos minutitos y te respondo bien sobre los temas {nums_str} que me comentaste{sobre} 🙌"
-
-                await guardar_mensaje(telefono, "user", texto)
-                await guardar_mensaje(telefono, "assistant", msg_espera)
-                await _delay_humano(msg_espera)
-                await proveedor.enviar_mensaje(telefono, msg_espera)
-                if topic_id:
-                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_espera}", telefono=telefono, group_override=_tg_group)
-
-                # Programar diagnóstico diferido
-                async def _enviar_diagnostico_diferido(tel, hist, ctx_extra, tid):
-                    delay = _DELAY_DIAGNOSTICO if tel not in _PHONES_SIN_DELAY else 5
-                    logger.info(f"[DIAG] Diagnóstico diferido para {tel} en {delay}s")
-                    await asyncio.sleep(delay)
-                    # Re-obtener historial (puede haber nuevos msgs intermedios)
-                    hist_actual = await obtener_historial(tel, limite=40)
-                    respuesta_diag = await generar_respuesta(
-                        mensaje="(continuar con el diagnóstico completo que prometí)",
-                        historial=hist_actual,
-                        agent_actual="ivan",
-                        contexto_extra=ctx_extra,
-                    )
-                    await guardar_mensaje(tel, "assistant", respuesta_diag)
-                    await _delay_humano(respuesta_diag)
-                    await proveedor.enviar_mensaje(tel, respuesta_diag)
-                    if tid:
-                        await enviar_a_topic(tid, f"👨‍🏫 IVAN: {respuesta_diag}", telefono=tel, group_override=_tg_group)
-                    logger.info(f"[DIAG] Diagnóstico enviado a {tel}")
-                    _diagnostico_pendiente.pop(tel, None)
-
-                _cancelar_diagnostico_pendiente(telefono)
-                task = _fire_and_forget(_enviar_diagnostico_diferido(telefono, historial, contexto_extra, topic_id))
-                _diagnostico_pendiente[telefono] = task
-
-                # Actualizar datos del lead (edad)
+                # Actualizar datos del lead (edad) antes de responder
                 try:
                     await actualizar_datos_lead(telefono, edad=texto.strip())
                 except Exception:
                     pass
-
-                logger.info(f"[DIAG] Esperando {_DELAY_DIAGNOSTICO}s para diagnóstico de {telefono} ({cant_romp} números)")
-                return
+                # NO hay delay, NO hay "dame unos minutitos". Claude responde directo.
+                # El flujo continúa abajo con la llamada normal a generar_respuesta()
 
         # ── Inyectar instrucción de pitch si tenemos nombre+edad y padre pidió precios ──
         if agent_actual == "ivan" and _padre_ya_pidio_precios(historial):
