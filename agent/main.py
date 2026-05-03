@@ -304,6 +304,30 @@ async def _enviar_recordatorio(rec):
     return ok
 
 
+async def _keepalive_admin_loop():
+    """Cada 6h manda un mensaje al admin para mantener ventana WhatsApp abierta."""
+    import random
+    _mensajes = [
+        "Hola profe, todo en orden por acá 👋",
+        "Profe, sistema funcionando normal 🟢",
+        "Fenix Kids activo, sin novedades 🌳",
+        "Todo bien profe, acá andamos 🔥",
+        "Sistema OK, ventana activa 👍",
+    ]
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    while True:
+        # Esperar 6 horas
+        await asyncio.sleep(6 * 3600)
+        # Solo mandar entre 08:00 y 22:00 PY
+        if not es_horario_nocturno():
+            try:
+                msg = random.choice(_mensajes)
+                await proveedor.enviar_mensaje(admin_phone, msg)
+                logger.info(f"[KEEPALIVE] Enviado a admin: {msg}")
+            except Exception as e:
+                logger.error(f"[KEEPALIVE] Error: {e}")
+
+
 async def _recordatorios_loop():
     """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía."""
     _ciclo = 0
@@ -364,6 +388,9 @@ async def lifespan(app: FastAPI):
             logger.error(f"[STARTUP] Error procesando pendientes nocturnos: {e}")
     _noche_task = _fire_and_forget(_noche_wakeup_loop(_procesar_pendientes_noche))
 
+    # Keepalive: mantener ventana WhatsApp del admin abierta (cada 6h)
+    _keepalive_task = _fire_and_forget(_keepalive_admin_loop())
+
     # Contenido social: polling CONTENIDO FENIX + calendario diario
     from agent.contenido_social import iniciar_contenido_social
     iniciar_contenido_social(proveedor)
@@ -378,6 +405,7 @@ async def lifespan(app: FastAPI):
     yield
     _recordatorios_task.cancel()
     _noche_task.cancel()
+    _keepalive_task.cancel()
 
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
