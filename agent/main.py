@@ -2136,7 +2136,7 @@ async def _armar_followup_afiche(telefono: str) -> str:
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
-    """Envía el afiche de precios y después de 3s el mensaje de follow-up."""
+    """Envía el afiche de precios + precios escritos + promo trimestral + CTA."""
     try:
         with open(_AFICHE_PATH, "rb") as f:
             image_bytes = f.read()
@@ -2147,10 +2147,29 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         else:
             logger.error(f"[AFICHE] Error enviando imagen a {telefono}")
 
-        # Delay de 3 segundos antes del follow-up
+        # Delay antes del mensaje de precios
         await asyncio.sleep(3)
 
-        # Follow-up dinámico con nombre del hijo (desde Airtable)
+        # Mensaje con precios escritos + promo trimestral
+        msg_precios = (
+            "📋 *Precios:*\n\n"
+            "🏷️ Clase de prueba: 90.000 Gs (se descuenta si te inscribís)\n\n"
+            "📅 Plan QUINCENAL (2 sábados/mes): 250.000/mes + matrícula 200.000\n"
+            "📅 Plan SEMANAL (todos los sábados): 350.000/mes + matrícula 200.000\n\n"
+            "🔥 *PROMO TRIMESTRAL — Ahorrá mucho más:*\n"
+            "📅 Quincenal: 150.000/mes + matrícula 140.000\n"
+            "   ➡️ Ahorrás 360.000 Gs en 3 meses (100mil/mes + 60mil matrícula)\n"
+            "📅 Semanal: 230.000/mes + matrícula 140.000\n"
+            "   ➡️ Ahorrás 420.000 Gs en 3 meses (120mil/mes + 60mil matrícula)\n\n"
+            "¿Te gustaría aprovechar el descuento trimestral? 😊"
+        )
+        await proveedor.enviar_mensaje(telefono, msg_precios)
+        await guardar_mensaje(telefono, "assistant", msg_precios)
+
+        # Delay antes del CTA
+        await asyncio.sleep(3)
+
+        # Follow-up dinámico con CTA
         followup = await _armar_followup_afiche(telefono)
         await proveedor.enviar_mensaje(telefono, followup)
         await guardar_mensaje(telefono, "assistant", followup)
