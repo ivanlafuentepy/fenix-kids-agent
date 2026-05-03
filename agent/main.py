@@ -653,6 +653,47 @@ _REGEX_NOMBRE_HIJO = re.compile(
 )
 
 
+# Palabras que NUNCA son nombre de hijo (falsos positivos reales de producción)
+_NO_NOMBRE_HIJO = {
+    "tiene", "entre", "bueno", "bien", "hola", "gracias", "dale", "super",
+    "perfecto", "excelente", "genial", "claro", "okay", "listo", "soy",
+    "tdah", "tea", "asi", "así", "todo", "nada", "algo", "mucho",
+    "siempre", "nunca", "ahora", "después", "despues", "mejor", "peor",
+    "donde", "cuando", "como", "porque", "quien", "cual", "cuanto",
+    "tu", "el", "la", "su", "mi", "me", "se", "le", "lo", "si", "no",
+    "que", "con", "por", "para", "los", "las", "una", "uno", "este",
+    "esta", "ese", "esa", "del", "al", "pero", "mas", "más", "muy",
+    "sin", "sobre", "entre", "hasta", "desde", "hay", "fue", "son",
+    "era", "ser", "ver", "dar", "van", "voy", "vez", "año", "años",
+    "mes", "dia", "día", "hoy", "ayer", "sábado", "sabado", "lunes",
+    "ok", "okey", "okk", "sii", "siii", "gracias", "thanks",
+    "precio", "costo", "horario", "info", "información", "ubicación",
+    "semana", "meses", "prueba", "clase", "entrenamiento", "deporte",
+    "diagnostico", "diagnóstico", "hiperactividad", "ansiedad",
+    "fenix", "kids", "academy", "profe", "ivan", "aurora",
+}
+
+
+def _es_nombre_hijo_valido(nombre: str) -> bool:
+    """Valida que un candidato a nombre de hijo sea realmente un nombre."""
+    if not nombre:
+        return False
+    n_lower = nombre.lower().strip()
+    # Rechazar si está en la blacklist
+    if n_lower in _NO_NOMBRE_HIJO:
+        return False
+    # Rechazar si es muy corto (1-2 chars) excepto algunos nombres reales
+    if len(n_lower) <= 2:
+        return False
+    # Rechazar si contiene números
+    if any(c.isdigit() for c in nombre):
+        return False
+    # Rechazar si tiene más de 3 palabras (probablemente una frase, no un nombre)
+    if len(nombre.split()) > 3:
+        return False
+    return True
+
+
 def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
     """Busca nombre del hijo en mensajes del padre y respuestas del agente."""
     # Buscar en mensajes del padre primero (regex explícito)
@@ -660,7 +701,9 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
         if m.get("role") == "user":
             match = _REGEX_NOMBRE_HIJO.search(m.get("content", ""))
             if match:
-                return match.group(1).strip().title()
+                candidato = match.group(1).strip().title()
+                if _es_nombre_hijo_valido(candidato):
+                    return candidato
 
     # Buscar cuando Ivan preguntó "cómo se llama tu hijo" y el padre respondió
     for i, m in enumerate(historial):
@@ -675,7 +718,9 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
                     _resp_lower = resp.lower()
                     _skip_words = ["precio", "costo", "como funciona", "horario",
                                    "ubicación", "ubicacion", "donde", "cuanto",
-                                   "cuánto", "?", "info", "información"]
+                                   "cuánto", "?", "info", "información",
+                                   "tiene tdah", "tiene tea", "hiperactividad",
+                                   "entre semana", "el monto"]
                     if any(sw in _resp_lower for sw in _skip_words):
                         break
                     # Puede ser "Maria", "se llama Maria", "Ivan, Maria", etc.
@@ -684,12 +729,15 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
                         partes = [p.strip() for p in resp.split(",")]
                         # Tomar la última parte que parece nombre
                         for p in reversed(partes):
-                            if p and p[0].isupper() and not any(c.isdigit() for c in p):
-                                return p.split()[0].title()
+                            candidato = p.split()[0]
+                            if _es_nombre_hijo_valido(candidato):
+                                return candidato.title()
                     # Si es un nombre solo o "se llama X"
                     m_nombre = re.search(r"(?:se\s+llama\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", resp, re.IGNORECASE)
                     if m_nombre:
-                        return m_nombre.group(1).strip().title()
+                        candidato = m_nombre.group(1).strip()
+                        if _es_nombre_hijo_valido(candidato):
+                            return candidato.title()
                     break
 
     # Buscar cuando Ivan usó el nombre del hijo en su respuesta ("cuántos años tiene Maria")
@@ -701,8 +749,7 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
             )
             if match_edad:
                 nombre = match_edad.group(1).strip().title()
-                # Excluir palabras genéricas
-                if nombre.lower() not in ("tu", "el", "la", "su"):
+                if _es_nombre_hijo_valido(nombre):
                     return nombre
 
     # Buscar en respuestas del agente (ej: "Reserva confirmada ✅ Mateo...")
@@ -711,7 +758,9 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
             contenido = m.get("content", "")
             match_conf = re.search(r"reserva confirmada[!✅\s]*\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", contenido, re.IGNORECASE)
             if match_conf:
-                return match_conf.group(1).strip().title()
+                candidato = match_conf.group(1).strip().title()
+                if _es_nombre_hijo_valido(candidato):
+                    return candidato
     return "no mencionó"
 
 
@@ -1485,9 +1534,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Anti-repetición: quitar preguntas que ya se hicieron ──────────
         if agent_actual == "ivan" and historial:
-            # Juntar los últimos mensajes del assistant para buscar preguntas previas
+            # Juntar TODOS los mensajes del assistant (no solo últimos 6)
             _msgs_fenix = " ".join(
-                m.get("content", "").lower() for m in historial[-6:]
+                m.get("content", "").lower() for m in historial[-12:]
                 if m.get("role") == "assistant"
             )
             _ya_nombre_padre = any(p in _msgs_fenix for p in [
@@ -2025,7 +2074,7 @@ async def _procesar_confirmacion_reserva(
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
 
 async def _armar_followup_afiche(telefono: str) -> str:
-    """Arma el follow-up del afiche con nombre del hijo desde Airtable."""
+    """Arma el follow-up del afiche con nombre del hijo desde Airtable o historial."""
     nombre_hijo = ""
     try:
         from agent.airtable_client import _get_records, _LEADS
@@ -2034,15 +2083,28 @@ async def _armar_followup_afiche(telefono: str) -> str:
             nombre_hijo = records[0].get("fields", {}).get("NOMBRE NIÑO", "") or ""
     except Exception:
         pass
-    if nombre_hijo:
+    # Si Airtable no lo tiene, buscar en historial
+    if not nombre_hijo:
+        try:
+            historial = await obtener_historial(telefono, limite=30)
+            _nh = _extraer_nombre_hijo_historial(historial)
+            if _nh and _nh != "no mencionó":
+                nombre_hijo = _nh
+        except Exception:
+            pass
+    if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría que {nombre_hijo} sea parte de Fenix Kids?\n\n"
-            "Te puedo agendar una clase de prueba por acá, o te gustaría que te llame "
-            "un rato así te explico todo? 😊"
+            f"¿Te gustaría agendar una clase de prueba para {nombre_hijo}?\n\n"
+            "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
+            "así te explico todo 😊"
         )
     else:
-        # Sin nombre del hijo → preguntar de forma amable
-        return "Y contame, ¿cómo se llama tu hijo/a? 😊"
+        # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
+        return (
+            "¿Te gustaría agendar una clase de prueba?\n\n"
+            "Te puedo reservar un sábado por acá, o si preferís te llamo "
+            "un rato así te explico todo 😊"
+        )
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
