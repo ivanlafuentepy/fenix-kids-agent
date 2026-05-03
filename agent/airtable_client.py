@@ -878,7 +878,7 @@ async def crear_prueba_fenix(
     fecha_reserva: str,
     hora: str,
     fecha_nacimiento: str = "",
-    conversion: str = "AGENDA",
+    conversion: str = "PAGO",
     monto: int = 90_000,
     diagnostico_ids: list[str] | None = None,
     lead_record_id: str | None = None,
