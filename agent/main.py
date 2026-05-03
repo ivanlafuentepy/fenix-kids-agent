@@ -146,8 +146,7 @@ def _check_rate_limit(telefono: str) -> bool:
     return False
 
 
-# Set de mensajes en procesamiento (evita doble procesamiento sin bloquear reintentos)
-_procesando_ahora: set[str] = set()
+# (dedup ahora es solo PostgreSQL, procesamiento síncrono como Dorita)
 
 
 async def _delay_humano(texto: str):
@@ -954,32 +953,27 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación: PostgreSQL persistente + guard en memoria
-            # Dedup: registrar ANTES en PostgreSQL (como Dorita).
-            # Si el procesamiento falla, se BORRA la dedup para permitir reintento.
-            # El graceful shutdown de uvicorn (120s) da tiempo a terminar los tasks.
+            # Deduplicación: PostgreSQL persistente
             if msg.mensaje_id:
-                if msg.mensaje_id in _procesando_ahora:
-                    continue
                 if await mensaje_ya_procesado(msg.mensaje_id):
                     continue
-                _procesando_ahora.add(msg.mensaje_id)
-                await registrar_mensaje_procesado(msg.mensaje_id)
 
             # Rate limit por teléfono
             if _check_rate_limit(msg.telefono):
                 logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
                 continue
 
-            # Lanzar procesamiento en background — no bloquear el webhook
-            _fire_and_forget(_procesar_mensaje_webhook(msg))
+            # Procesamiento SÍNCRONO (como Dorita).
+            # Meta recibe 200 SOLO cuando el mensaje se procesó completo.
+            # Si el server muere mid-proceso, Meta NO recibió 200 → reintenta.
+            # Esto NUNCA pierde mensajes.
+            await _procesar_mensaje_webhook(msg)
 
         return {"status": "ok"}
 
     except Exception as e:
-        logger.error(f"Error parseando webhook: {e}", exc_info=True)
-        # Retornar 200 igualmente para que Meta no reintente por errores de parsing
-        return {"status": "error"}
+        logger.error(f"Error en webhook: {e}", exc_info=True)
+        raise
 
 
 async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
@@ -1975,17 +1969,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         #         formulario_check_fn=esta_convertido,
         #     )
 
-        # Procesamiento exitoso — limpiar guard
+        # Procesamiento exitoso — registrar dedup
         if msg.mensaje_id:
-            _procesando_ahora.discard(msg.mensaje_id)
+            await registrar_mensaje_procesado(msg.mensaje_id)
 
     except Exception as e:
-        logger.error(f"[WEBHOOK-TASK] Error procesando mensaje de {telefono}: {e}", exc_info=True)
-        # BORRAR dedup para que Meta pueda reintentar
-        if msg.mensaje_id:
-            _procesando_ahora.discard(msg.mensaje_id)
-            await borrar_mensaje_procesado(msg.mensaje_id)
-            logger.info(f"[DEDUP] Borrado {msg.mensaje_id} para permitir reintento")
+        logger.error(f"[WEBHOOK] Error procesando {telefono}: {e}", exc_info=True)
+        # NO registrar dedup → Meta reintenta (nunca recibió 200 porque es síncrono)
 
 
 async def _procesar_confirmacion_reserva(
