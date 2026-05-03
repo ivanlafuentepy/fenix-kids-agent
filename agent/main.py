@@ -1955,7 +1955,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         )
         if telefono not in _afiche_enviado and (_ivan_dice_afiche or _interes_post_diag):
             _afiche_enviado.add(telefono)
-            await _enviar_afiche_y_followup(telefono, topic_id)
+            await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
 
         # ── Seguimiento desactivado temporalmente ─────────────────────────
         # TODO: reactivar cuando se arme el follow up
@@ -2149,7 +2149,7 @@ async def _armar_followup_afiche(telefono: str) -> str:
         )
 
 
-async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
+async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
     """Envía el afiche de precios + precios escritos + promo trimestral + CTA."""
     try:
         with open(_AFICHE_PATH, "rb") as f:
@@ -2192,13 +2192,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         _tid_afiche = topic_id
         if not _tid_afiche:
             try:
-                _tid_afiche = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_tg_group)
+                _tid_afiche = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=tg_group)
             except Exception:
                 pass
         if _tid_afiche:
-            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=_tg_group)
-            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=_tg_group)
-            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=tg_group)
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=tg_group)
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=tg_group)
 
         logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
