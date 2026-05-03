@@ -160,23 +160,24 @@ async def generar_respuesta(
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
     mensajes.append({"role": "user", "content": mensaje})
 
-    # Retry con backoff exponencial (3 intentos)
+    # Retry con backoff exponencial (3 intentos) + timeout 25s
     _MAX_REINTENTOS = 3
     for _intento in range(_MAX_REINTENTOS):
         try:
             _client = _client_para(agent_actual)
-            response = await _client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=1024,
-                system=[
-                    {
-                        "type": "text",
-                        "text": system_prompt,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=mensajes,
-            )
+            async with asyncio.timeout(25):
+                response = await _client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1024,
+                    system=[
+                        {
+                            "type": "text",
+                            "text": system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    messages=mensajes,
+                )
             respuesta = response.content[0].text
             logger.info(
                 f"[{agent_actual.upper()}] Respuesta generada "
@@ -275,11 +276,12 @@ Historial:
 """ + historial_texto
 
     try:
-        response = await client_ivan.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt_extraccion}],
-        )
+        async with asyncio.timeout(15):
+            response = await client_ivan.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=800,
+                messages=[{"role": "user", "content": prompt_extraccion}],
+            )
         texto = response.content[0].text.strip()
         # Limpiar posibles bloques de código markdown
         if texto.startswith("```"):
@@ -336,10 +338,11 @@ Conversación:
 """ + historial_texto
 
     try:
-        response = await client_ivan.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt}],
+        async with asyncio.timeout(15):
+            response = await client_ivan.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=800,
+                messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text.strip()
     except Exception as e:

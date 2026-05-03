@@ -27,7 +27,7 @@ from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
     marcar_recordatorio_enviado, cancelar_recordatorios_por_telefono,
-    mensaje_ya_procesado, registrar_mensaje_procesado,
+    mensaje_ya_procesado, registrar_mensaje_procesado, borrar_mensaje_procesado,
     limpiar_mensajes_procesados_antiguos,
 )
 from agent.providers import obtener_proveedor
@@ -955,17 +955,16 @@ async def webhook_handler(request: Request):
                 continue
 
             # Deduplicación: PostgreSQL persistente + guard en memoria
-            # NO usamos cache persistente en memoria: causaba pérdida de mensajes
-            # en deploys (server viejo cacheaba, moría, msg se perdía).
-            # Solo usamos un set temporal para evitar doble procesamiento simultáneo.
+            # Dedup: registrar ANTES en PostgreSQL (como Dorita).
+            # Si el procesamiento falla, se BORRA la dedup para permitir reintento.
+            # El graceful shutdown de uvicorn (120s) da tiempo a terminar los tasks.
             if msg.mensaje_id:
                 if msg.mensaje_id in _procesando_ahora:
                     continue
                 if await mensaje_ya_procesado(msg.mensaje_id):
                     continue
                 _procesando_ahora.add(msg.mensaje_id)
-                # Se registra en PostgreSQL AL FINAL del procesamiento exitoso
-                # Se saca de _procesando_ahora también al final
+                await registrar_mensaje_procesado(msg.mensaje_id)
 
             # Rate limit por teléfono
             if _check_rate_limit(msg.telefono):
@@ -1976,16 +1975,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         #         formulario_check_fn=esta_convertido,
         #     )
 
-        # ── Dedup: marcar como procesado SOLO si todo salió bien ──────────
+        # Procesamiento exitoso — limpiar guard
         if msg.mensaje_id:
-            await registrar_mensaje_procesado(msg.mensaje_id)
             _procesando_ahora.discard(msg.mensaje_id)
 
     except Exception as e:
         logger.error(f"[WEBHOOK-TASK] Error procesando mensaje de {telefono}: {e}", exc_info=True)
-        # Sacar del guard para que Meta pueda reintentar
+        # BORRAR dedup para que Meta pueda reintentar
         if msg.mensaje_id:
             _procesando_ahora.discard(msg.mensaje_id)
+            await borrar_mensaje_procesado(msg.mensaje_id)
+            logger.info(f"[DEDUP] Borrado {msg.mensaje_id} para permitir reintento")
 
 
 async def _procesar_confirmacion_reserva(

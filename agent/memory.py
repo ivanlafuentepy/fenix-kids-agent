@@ -358,6 +358,18 @@ async def registrar_mensaje_procesado(mensaje_id: str):
             await session.rollback()  # duplicado — OK, ya estaba
 
 
+async def borrar_mensaje_procesado(mensaje_id: str):
+    """Borra un mensaje de la dedup (permite reintento si el procesamiento falló)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(MensajeProcesado).where(MensajeProcesado.mensaje_id == mensaje_id)
+        )
+        msg = result.scalar_one_or_none()
+        if msg:
+            await session.delete(msg)
+            await session.commit()
+
+
 async def limpiar_mensajes_procesados_antiguos():
     """Limpia mensajes procesados de más de 24h (evitar que la tabla crezca infinito)."""
     from datetime import timedelta
