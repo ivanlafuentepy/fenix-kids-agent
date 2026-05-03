@@ -1443,35 +1443,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if familia_existente:
                 contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
 
-        # ── Delay de análisis (respuesta a números del rompehielos) ────────
-        cant_numeros = _contar_numeros_rompehielos(texto)
-        if agent_actual == "ivan" and cant_numeros > 0:
-            # Guardar diagnóstico en Airtable
-            _texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
-            numeros_elegidos = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _texto_norm)]
-            if numeros_elegidos:
-                try:
-                    await actualizar_diagnostico_lead(telefono, list(set(numeros_elegidos)))
-                except Exception as e:
-                    logger.error(f"[DIAGNOSTICO] Error guardando para {telefono}: {e}")
-            # Delay solo para leads reales (no admin)
-            if not es_nuevo and telefono not in _PHONES_SIN_DELAY:
-                delay_s = _delay_por_numeros(cant_numeros)
-                logger.info(f"Delay análisis: {cant_numeros} números → {delay_s}s para {telefono}")
-                await asyncio.sleep(delay_s)
-
-        # ── Diagnóstico INMEDIATO: si el padre responde la edad y eligió 2+ números,
-        #    NO hacemos delay ni "dame unos minutitos". Claude responde directo.
-        #    El prompt ya instruye respuesta corta (3 mensajes, no 5 párrafos).
-        if agent_actual == "ivan" and _detectar_respuesta_edad(texto, historial) and not _padre_ya_pidio_precios(historial):
-            cant_romp, nums_romp = _contar_numeros_rompehielos_historial(historial)
-            if cant_romp >= 2:
-                # Actualizar datos del lead (edad) antes de responder
-                try:
-                    await actualizar_datos_lead(telefono, edad=texto.strip())
-                except Exception:
-                    pass
-                # NO hay delay, NO hay "dame unos minutitos". Claude responde directo.
+        # ── Sin delays artificiales — Claude responde directo ────────────
                 # El flujo continúa abajo con la llamada normal a generar_respuesta()
 
         # ── Inyectar instrucción de pitch si tenemos nombre+edad y padre pidió precios ──
