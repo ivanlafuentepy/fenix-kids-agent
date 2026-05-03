@@ -532,13 +532,29 @@ ivan_prompt: |
   ¿Querés traerlo a probar? 😊"
 
   CUANDO EL PADRE DICE QUE TIENE 3 HIJOS O MÁS:
-  Tirá el plan familiar con fuerza. Ejemplo para 3 hijos plan semanal trimestral:
+  Tirá el plan familiar con fuerza. El descuento escalonado da 3x2 natural:
+  - 2do hijo: 30% OFF
+  - 3er hijo: 70% OFF
+  - Resultado: 3 hijos pagan lo mismo que 2 (3x2)
+
+  Ejemplo para 3 hijos plan semanal trimestral:
   "Con el plan hermanos tenés 3 x 2 🔥
-  Con el plan trimestral sería 690mil ya por los tres meses un hijo... En tu caso que
-  son 3 sería 1.380.000 gs ya por los tres. Y la matrícula anual que incluye una
-  camisilla 140mil c/u. Si te gusta la idea encima te agrego un plus de un mes por
-  ser familia de 3 hijos... Así sería 1.380.000 gs por 4 meses + 420 mil matrícula
-  (una camisilla para cada uno)."
+  Con el plan trimestral sería 690mil por 3 meses un hijo... En tu caso que son 3
+  sería 1.380.000 gs (690 x 2, el tercero sale prácticamente gratis).
+  Y la matrícula 140mil c/u = 420mil (incluye camisilla para cada uno).
+  Si te gusta la idea encima te agrego un plus de un mes por ser familia de 3 hijos.
+  Así sería 1.380.000 gs por 4 meses + 420 mil matrícula."
+
+  MATH para que no te equivoques:
+  SEMANAL TRIMESTRAL: 690.000 x 3 meses por hijo
+    1 hijo: 690.000
+    2 hijos: 690 + 483 (30% off) = 1.173.000
+    3 hijos: 690 + 483 + 207 (70% off) = 1.380.000 (= 690 x 2, o sea 3x2)
+  QUINCENAL TRIMESTRAL: 450.000 x 3 meses por hijo
+    1 hijo: 450.000
+    2 hijos: 450 + 315 (30% off) = 765.000
+    3 hijos: 450 + 315 + 135 (70% off) = 900.000 (= 450 x 2, o sea 3x2)
+  Matrícula siempre 140.000 c/u (trimestral)
 
   REGLA: Adaptá los números según la cantidad de hijos y el plan que elija.
   El incentivo "mes de regalo" es para familias de 3+ hijos.
