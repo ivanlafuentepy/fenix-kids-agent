@@ -954,27 +954,27 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación: PostgreSQL persistente
+            # Deduplicación: registrar ANTES en PostgreSQL + procesar en background
+            # Si el procesamiento falla, se borra la dedup para permitir reintento.
+            # IMPORTANTE: responder 200 rápido (<5s) para que Meta no reintente.
             if msg.mensaje_id:
                 if await mensaje_ya_procesado(msg.mensaje_id):
                     continue
+                await registrar_mensaje_procesado(msg.mensaje_id)
 
             # Rate limit por teléfono
             if _check_rate_limit(msg.telefono):
                 logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
                 continue
 
-            # Procesamiento SÍNCRONO (como Dorita).
-            # Meta recibe 200 SOLO cuando el mensaje se procesó completo.
-            # Si el server muere mid-proceso, Meta NO recibió 200 → reintenta.
-            # Esto NUNCA pierde mensajes.
-            await _procesar_mensaje_webhook(msg)
+            # Procesamiento en background — responder 200 rápido a Meta
+            _fire_and_forget(_procesar_mensaje_webhook(msg))
 
         return {"status": "ok"}
 
     except Exception as e:
         logger.error(f"Error en webhook: {e}", exc_info=True)
-        raise
+        return {"status": "error"}
 
 
 async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
@@ -1981,13 +1981,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         #         formulario_check_fn=esta_convertido,
         #     )
 
-        # Procesamiento exitoso — registrar dedup
-        if msg.mensaje_id:
-            await registrar_mensaje_procesado(msg.mensaje_id)
+        # Procesamiento exitoso (dedup ya registrada en webhook handler)
+        pass
 
     except Exception as e:
         logger.error(f"[WEBHOOK] Error procesando {telefono}: {e}", exc_info=True)
-        # NO registrar dedup → Meta reintenta (nunca recibió 200 porque es síncrono)
+        # Borrar dedup para que si el padre reenvía, se procese
+        if msg.mensaje_id:
+            await borrar_mensaje_procesado(msg.mensaje_id)
 
 
 async def _procesar_confirmacion_reserva(
