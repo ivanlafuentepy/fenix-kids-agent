@@ -645,6 +645,10 @@ _REGEX_NOMBRE_PRESENTACION = re.compile(
 _PALABRAS_NO_NOMBRE = {
     "el", "la", "un", "una", "mi", "la mama", "la mamá", "el papa", "el papá",
     "papa", "papá", "mama", "mamá", "mami", "papi", "de",
+    # Frases que el regex captura como nombre pero no lo son
+    "gracias", "graciss", "genial", "perfecto", "super", "dale", "buenas",
+    "hola", "entiendo", "ok", "okey", "si", "no", "bien", "todo",
+    "yo", "su", "te", "se", "me", "le", "lo", "es", "muy",
 }
 
 
@@ -696,8 +700,11 @@ _NO_NOMBRE_HIJO = {
     "ok", "okey", "okk", "sii", "siii", "gracias", "thanks",
     "precio", "costo", "horario", "info", "información", "ubicación",
     "semana", "meses", "prueba", "clase", "entrenamiento", "deporte",
-    "diagnostico", "diagnóstico", "hiperactividad", "ansiedad",
+    "diagnostico", "diagnóstico", "diagnosticaron", "dianosticaron",
+    "hiperactividad", "ansiedad",
     "fenix", "kids", "academy", "profe", "ivan", "aurora",
+    "graciss", "gracias", "genial", "perfecto", "super", "dale",
+    "entiendo", "okey", "buenas", "disculpe", "disculpa",
 }
 
 
@@ -714,6 +721,10 @@ def _es_nombre_hijo_valido(nombre: str) -> bool:
         return False
     # Rechazar si contiene números
     if any(c.isdigit() for c in nombre):
+        return False
+    # Rechazar si la PRIMERA palabra está en la blacklist (ej: "De Dianosticaron", "Es Muy")
+    primera = n_lower.split()[0]
+    if primera in _NO_NOMBRE_HIJO:
         return False
     # Rechazar si tiene más de 3 palabras (probablemente una frase, no un nombre)
     if len(nombre.split()) > 3:
