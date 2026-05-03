@@ -843,19 +843,30 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         f"📲 {wa_link}"
     )
 
-    # Canal 1: WhatsApp al admin
+    # Canal 1: WhatsApp al admin (puede fallar si ventana 24h cerrada)
     admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    wa_ok = False
     try:
-        ok = await proveedor.enviar_mensaje(admin_phone, alerta)
-        logger.info(f"[LLAMADA] Alerta WhatsApp al admin {admin_phone}: {'OK' if ok else 'FAIL'}")
+        wa_ok = await proveedor.enviar_mensaje(admin_phone, alerta)
+        if wa_ok:
+            logger.info(f"[LLAMADA] Alerta WhatsApp al admin {admin_phone}: OK")
+        else:
+            logger.warning(f"[LLAMADA] Alerta WhatsApp al admin FALLÓ (ventana 24h cerrada?)")
     except Exception as e:
         logger.error(f"[LLAMADA] Error WhatsApp admin: {e}")
 
-    # Canal 2: Telegram grupo (respaldo)
+    # Canal 2: Telegram grupo (SIEMPRE se manda, es el respaldo principal)
+    tg_ok = False
     try:
         await notificar_llamada_urgente(telefono, nombre_padre, wa_link)
+        tg_ok = True
+        logger.info(f"[LLAMADA] Alerta Telegram enviada OK")
     except Exception as e:
         logger.error(f"[LLAMADA] Error Telegram: {e}")
+
+    # Si ambos canales fallaron, loggear crítico
+    if not wa_ok and not tg_ok:
+        logger.critical(f"[LLAMADA] ⚠️ ALERTA NO ENTREGADA a ningún canal para {telefono}")
 
 
 def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
