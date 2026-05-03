@@ -80,7 +80,14 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     """
     # Condición 1: parece un pago
     es_media = texto in ("[imagen]", "[documento]")
-    tiene_keyword = any(k in texto.lower() for k in _KEYWORDS_PAGO)
+    texto_lower = texto.lower()
+    tiene_keyword = any(k in texto_lower for k in _KEYWORDS_PAGO)
+
+    # Excluir si habla en futuro ("mañana", "después", "luego", "voy a")
+    _futuro = any(f in texto_lower for f in ["mañana", "manana", "después", "despues", "luego", "voy a", "estaré", "estare", "te paso el", "te mando el"])
+    if tiene_keyword and _futuro and not es_media:
+        return False  # está diciendo que VA a pagar, no que ya pagó
+
     parece_pago = es_media or tiene_keyword
 
     if not parece_pago:
