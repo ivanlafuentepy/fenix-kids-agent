@@ -1855,7 +1855,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             try:
                 from urllib.parse import quote
                 admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
-                historial_completo = await obtener_historial(telefono, limite=30)
+                historial_completo = await obtener_historial(telefono, limite=40)
                 # Nombre padre del historial
                 _np = _extraer_nombre_del_historial(historial_completo) or ""
                 primer_nombre = _np.split()[0] if _np else ""
@@ -1873,6 +1873,61 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             _hora_res = _match_fecha.group(2)
                         break
                 fecha_hora = f"el sábado {_fecha_res} a las {_hora_res}" if _fecha_res else "el sábado"
+
+                # ── Crear PRUEBA FENIX con datos completos (Opción A) ─────────
+                try:
+                    from agent.airtable_client import _get_records, _LEADS
+                    # Obtener lead_id y diagnóstico
+                    _lr_pf = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                    _lead_id = _lr_pf[0]["id"] if _lr_pf else None
+                    _diag_ids = _lr_pf[0].get("fields", {}).get("DIAGNOSTICO", []) if _lr_pf else []
+
+                    # Usar Haiku para extraer datos completos del historial
+                    datos_form = await extraer_datos_formulario(historial_completo)
+                    padre_data = datos_form.get("padre") or {}
+                    nombre_resp = padre_data.get("nombre", "") or _np.split()[0] if _np else ""
+                    apellido_resp = padre_data.get("apellido", "") or (_np.split()[1] if _np and " " in _np else "")
+                    ninos_form = datos_form.get("ninos", [])
+                    _monto = monto_prueba_por_hijos(historial_completo)
+
+                    if ninos_form:
+                        for i, n in enumerate(ninos_form):
+                            await crear_prueba_fenix(
+                                telefono=telefono,
+                                nombre_responsable=nombre_resp,
+                                apellido_responsable=apellido_resp,
+                                nombre_hijo=n.get("nombre", ""),
+                                apellido_hijo=n.get("apellido", ""),
+                                edad_hijo="",
+                                fecha_reserva=_fecha_res,
+                                hora=_hora_res,
+                                fecha_nacimiento=n.get("fecha_nacimiento", ""),
+                                monto=_monto if i == 0 else 0,
+                                diagnostico_ids=_diag_ids,
+                                lead_record_id=_lead_id,
+                            )
+                    else:
+                        # Fallback con datos del historial
+                        await crear_prueba_fenix(
+                            telefono=telefono,
+                            nombre_responsable=primer_nombre,
+                            apellido_responsable="",
+                            nombre_hijo=_hijo,
+                            apellido_hijo="",
+                            edad_hijo="",
+                            fecha_reserva=_fecha_res,
+                            hora=_hora_res,
+                            monto=_monto,
+                            diagnostico_ids=_diag_ids,
+                            lead_record_id=_lead_id,
+                        )
+                    # Actualizar LEADS a PAGO
+                    await actualizar_conversion_lead(telefono, "PAGO")
+                    logger.info(f"[PRUEBA FENIX] Creado post-formulario para {telefono}")
+                except Exception as e:
+                    logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
+
+                # ── Link wa.me al admin ───────────────────────────────────────
                 _con_hijo = f", te espero con {_hijo}" if _hijo else ""
                 _saludo = f"Que tal {primer_nombre}" if primer_nombre else "Que tal"
                 msg_wa = f"{_saludo}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
@@ -1887,7 +1942,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(admin_phone, alerta_admin)
                 logger.info(f"[RESERVA] Link wa.me enviado al admin para {telefono}")
             except Exception as e:
-                logger.error(f"[RESERVA] Error enviando link wa.me: {e}")
+                logger.error(f"[RESERVA] Error en cierre formulario: {e}")
 
         # ── Enviar afiche cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
         _ivan_dice_afiche = (
@@ -2017,68 +2072,8 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"Error creando RESERVA para {telefono}: {e}")
 
-    # ── Crear registro en PRUEBA FENIX — SOLO para leads (Ivan) ───────────────
-    if agent_actual == "ivan":
-        try:
-            historial_completo = await obtener_historial(telefono, limite=40)
-
-            # Obtener diagnóstico y lead_id
-            from agent.airtable_client import _get_records, _LEADS
-            lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-            lead_record_id = lead_records[0]["id"] if lead_records else None
-            diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
-
-            # Usar Haiku para extraer TODOS los datos del historial de forma confiable
-            datos_form = await extraer_datos_formulario(historial_completo)
-            padre_data = datos_form.get("padre") or {}
-            nombre_resp = padre_data.get("nombre", "") or ""
-            apellido_resp = padre_data.get("apellido", "") or ""
-            ninos_form = datos_form.get("ninos", [])
-
-            # Calcular monto correcto según cantidad de hijos
-            _monto_prueba = monto_prueba_por_hijos(historial_completo)
-
-            # Crear un registro PRUEBA FENIX por cada niño (monto solo en el primero)
-            if ninos_form:
-                for i, n in enumerate(ninos_form):
-                    await crear_prueba_fenix(
-                        telefono=telefono,
-                        nombre_responsable=nombre_resp,
-                        apellido_responsable=apellido_resp,
-                        nombre_hijo=n.get("nombre", ""),
-                        apellido_hijo=n.get("apellido", ""),
-                        edad_hijo="",
-                        fecha_reserva=fecha_str,
-                        hora=hora_str,
-                        fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                        monto=_monto_prueba if i == 0 else 0,
-                        diagnostico_ids=diagnostico_ids,
-                        lead_record_id=lead_record_id,
-                    )
-            else:
-                # Fallback: extraer nombre del hijo del historial
-                nh = _extraer_nombre_hijo_historial(historial_completo)
-                nombre_responsable = _extraer_nombre_del_historial(historial_completo) or ""
-                apellido_responsable = ""
-                if nombre_responsable and " " in nombre_responsable:
-                    partes = nombre_responsable.split(" ", 1)
-                    nombre_responsable = partes[0]
-                    apellido_responsable = partes[1]
-                await crear_prueba_fenix(
-                    telefono=telefono,
-                    nombre_responsable=nombre_responsable,
-                    apellido_responsable=apellido_responsable,
-                    nombre_hijo=nh if nh != "no mencionó" else "",
-                    apellido_hijo="",
-                    edad_hijo="",
-                    fecha_reserva=fecha_str,
-                    hora=hora_str,
-                    monto=_monto_prueba,
-                    diagnostico_ids=diagnostico_ids,
-                    lead_record_id=lead_record_id,
-                )
-        except Exception as e:
-            logger.error(f"[PRUEBA FENIX] Error creando registro: {e}")
+    # PRUEBA FENIX se crea post-formulario (cuando Ivan dice "los esperamos")
+    # Ver bloque _es_cierre_formulario en el flujo principal
 
     # ── Enviar lista de niños agendados para ese horario ─────────────────────
     if fecha_iso:
