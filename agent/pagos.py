@@ -51,13 +51,7 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
         return 150_000
     if re.search(r"(dos|2)\s*(hijos|hermanos|chicos|nenes)", texto_completo):
         return 120_000
-    # Buscar "150.000" o "120.000" en mensajes del agente (ya dijo el precio)
-    for m in reversed(historial):
-        if m.get("role") == "assistant":
-            if "150.000" in m["content"] or "150000" in m["content"]:
-                return 150_000
-            if "120.000" in m["content"] or "120000" in m["content"]:
-                return 120_000
+    # Default: 1 hijo = 90mil
     return 90_000
 
 # ── Detección de comprobante ─────────────────────────────────────────────────
