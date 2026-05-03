@@ -2487,7 +2487,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
 
         # Actualizar conversión a AGENDA
-        await actualizar_conversion_lead(telefono, "AGENDA")
+        await actualizar_conversion_lead(telefono, "PAGO")
 
         # Crear PRUEBA FENIX por cada niño (monto solo en primero)
         creados = 0
