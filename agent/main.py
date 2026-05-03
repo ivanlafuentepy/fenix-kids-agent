@@ -642,14 +642,7 @@ _REGEX_NOMBRE_PRESENTACION = re.compile(
     r"\b(?:soy|me llamo|mi nombre es)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)",
     re.IGNORECASE,
 )
-_PALABRAS_NO_NOMBRE = {
-    "el", "la", "un", "una", "mi", "la mama", "la mamá", "el papa", "el papá",
-    "papa", "papá", "mama", "mamá", "mami", "papi", "de",
-    # Frases que el regex captura como nombre pero no lo son
-    "gracias", "graciss", "genial", "perfecto", "super", "dale", "buenas",
-    "hola", "entiendo", "ok", "okey", "si", "no", "bien", "todo",
-    "yo", "su", "te", "se", "me", "le", "lo", "es", "muy",
-}
+from agent.validar_nombre import es_nombre_valido as _validar_nombre_positivo
 
 
 def _detectar_pedido_llamada(texto: str) -> bool:
@@ -660,21 +653,15 @@ def _detectar_pedido_llamada(texto: str) -> bool:
 
 def _extraer_nombre_del_historial(historial: list[dict], texto_nuevo: str = "") -> str | None:
     """Busca el nombre del padre en mensajes 'soy X', 'me llamo X', etc."""
-    # Empezar por el mensaje nuevo, después historial de más reciente a más viejo
     textos = [texto_nuevo] if texto_nuevo else []
     textos += [m.get("content", "") for m in reversed(historial) if m.get("role") == "user"]
     for t in textos:
         m = _REGEX_NOMBRE_PRESENTACION.search(t)
         if not m:
             continue
-        cand = m.group(1).strip()
-        if cand.lower() in _PALABRAS_NO_NOMBRE:
-            continue
-        # Evitar capturas tipo "la mamá de Juan"
-        primera = cand.split()[0].lower()
-        if primera in _PALABRAS_NO_NOMBRE:
-            continue
-        return cand.title()
+        cand = m.group(1).strip().title()
+        if _validar_nombre_positivo(cand):
+            return cand
     return None
 
 
@@ -684,52 +671,12 @@ _REGEX_NOMBRE_HIJO = re.compile(
 )
 
 
-# Palabras que NUNCA son nombre de hijo (falsos positivos reales de producción)
-_NO_NOMBRE_HIJO = {
-    "tiene", "entre", "bueno", "bien", "hola", "gracias", "dale", "super",
-    "perfecto", "excelente", "genial", "claro", "okay", "listo", "soy",
-    "tdah", "tea", "asi", "así", "todo", "nada", "algo", "mucho",
-    "siempre", "nunca", "ahora", "después", "despues", "mejor", "peor",
-    "donde", "cuando", "como", "porque", "quien", "cual", "cuanto",
-    "tu", "el", "la", "su", "mi", "me", "se", "le", "lo", "si", "no",
-    "que", "con", "por", "para", "los", "las", "una", "uno", "este",
-    "esta", "ese", "esa", "del", "al", "pero", "mas", "más", "muy",
-    "sin", "sobre", "entre", "hasta", "desde", "hay", "fue", "son",
-    "era", "ser", "ver", "dar", "van", "voy", "vez", "año", "años",
-    "mes", "dia", "día", "hoy", "ayer", "sábado", "sabado", "lunes",
-    "ok", "okey", "okk", "sii", "siii", "gracias", "thanks",
-    "precio", "costo", "horario", "info", "información", "ubicación",
-    "semana", "meses", "prueba", "clase", "entrenamiento", "deporte",
-    "diagnostico", "diagnóstico", "diagnosticaron", "dianosticaron",
-    "hiperactividad", "ansiedad",
-    "fenix", "kids", "academy", "profe", "ivan", "aurora",
-    "graciss", "gracias", "genial", "perfecto", "super", "dale",
-    "entiendo", "okey", "buenas", "disculpe", "disculpa",
-}
+# _NO_NOMBRE_HIJO eliminado — reemplazado por validación positiva en validar_nombre.py
 
 
 def _es_nombre_hijo_valido(nombre: str) -> bool:
-    """Valida que un candidato a nombre de hijo sea realmente un nombre."""
-    if not nombre:
-        return False
-    n_lower = nombre.lower().strip()
-    # Rechazar si está en la blacklist
-    if n_lower in _NO_NOMBRE_HIJO:
-        return False
-    # Rechazar si es muy corto (1-2 chars) excepto algunos nombres reales
-    if len(n_lower) <= 2:
-        return False
-    # Rechazar si contiene números
-    if any(c.isdigit() for c in nombre):
-        return False
-    # Rechazar si la PRIMERA palabra está en la blacklist (ej: "De Dianosticaron", "Es Muy")
-    primera = n_lower.split()[0]
-    if primera in _NO_NOMBRE_HIJO:
-        return False
-    # Rechazar si tiene más de 3 palabras (probablemente una frase, no un nombre)
-    if len(nombre.split()) > 3:
-        return False
-    return True
+    """Valida nombre del hijo usando validación positiva (morfología + lista)."""
+    return _validar_nombre_positivo(nombre)
 
 
 def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
