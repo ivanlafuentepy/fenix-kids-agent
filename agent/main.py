@@ -1619,14 +1619,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "con quién tengo", "con quien tengo", "te gustaría", "te gustaria",
                 "clase de prueba", "a nombre de", "cuál te queda",
             ])
+            # REGLA: NO agregar pregunta de datos si ya se preguntó antes y el padre la esquivó.
+            # Contar cuántas veces se preguntó edad/nombre en todo el historial del assistant
+            _veces_pregunto_edad = sum(1 for m in historial if m.get("role") == "assistant" and "cuántos años" in m.get("content", "").lower())
+            _veces_pregunto_nombre = sum(1 for m in historial if m.get("role") == "assistant" and "cómo se llama" in m.get("content", "").lower())
+
             if not _tiene_pregunta and "te paso un afiche" not in _resp_lower:
-                if not _tenemos_nombre and not _tenemos_edad:
+                if not _tenemos_nombre and not _tenemos_edad and _veces_pregunto_edad < 2:
+                    respuesta += "\n\n¿Cómo se llama tu hijo/a y cuántos años tiene? 😊"
+                elif _tenemos_nombre and not _tenemos_edad and _veces_pregunto_edad < 2:
                     respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
-                elif _tenemos_nombre and not _tenemos_edad:
-                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
-                elif _tenemos_edad and not _tenemos_nombre:
+                elif _tenemos_edad and not _tenemos_nombre and _veces_pregunto_nombre < 2:
                     respuesta += "\n\n¿Cómo se llama tu hijo/a? 😊"
-                # Si ya tenemos ambos → no agregar nada, el pitch debería estar
+                # Si ya preguntamos 2+ veces y no respondió → NO insistir más
             # Limpiar líneas vacías y basura
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
             respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # residuo "a y"
@@ -2186,11 +2191,17 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None):
         await proveedor.enviar_mensaje(telefono, followup)
         await guardar_mensaje(telefono, "assistant", followup)
 
-        # Espejar TODO en Telegram
-        if topic_id:
-            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=_tg_group)
-            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=_tg_group)
-            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=_tg_group)
+        # Espejar TODO en Telegram (con fallback si topic_id es None)
+        _tid_afiche = topic_id
+        if not _tid_afiche:
+            try:
+                _tid_afiche = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_tg_group)
+            except Exception:
+                pass
+        if _tid_afiche:
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=_tg_group)
+            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=_tg_group)
 
         logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
