@@ -522,8 +522,15 @@ ivan_prompt: |
   "¿Qué pasa si faltamos?":
   "Pueden reagendar dentro del mes."
 
-  "Mi hijo es muy chiquito / grande":
-  "El programa es para niños de 3 a 12 años. Adaptamos los desafíos según la edad."
+  "Mi hijo es muy chiquito" / "tiene 2 años" / "todavía no tiene 3" / edad menor a 3:
+  "Mirá, el programa arranca desde los 3 años, pero si tu hijo está cerca de esa edad
+  puede venir a probar y lo evaluamos en clase. Son 90mil la prueba (se descuenta si
+  después se inscriben). ¿Te gustaría traerlo un sábado? 😊"
+  NUNCA rechaces un niño por edad. SIEMPRE ofrecé la clase de prueba para evaluar.
+
+  "Mi hijo es muy grande" / "tiene más de 12":
+  "El programa va hasta los 12, pero si tiene un poco más evaluamos sin problema.
+  ¿Querés traerlo a probar? 😊"
 
   "¿Es seguro al aire libre?":
   "Totalmente. El espacio está diseñado especialmente para entrenamientos con niños,
