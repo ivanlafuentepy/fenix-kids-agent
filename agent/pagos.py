@@ -46,10 +46,24 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
     """Detecta cuántos hijos vienen según el historial y retorna el monto correcto."""
     import re
     texto_completo = " ".join(m.get("content", "").lower() for m in historial)
+    _palabras_hijos = r"(hijos|hijas|hermanos|hermanas|chicos|chicas|nenes|nenas|niños|niñas)"
     # Buscar menciones de cantidad de hijos
-    if re.search(r"(tres|3)\s*(hijos|hermanos|chicos|nenes)", texto_completo):
+    if re.search(rf"(tres|3)\s*{_palabras_hijos}", texto_completo):
         return 150_000
-    if re.search(r"(dos|2)\s*(hijos|hermanos|chicos|nenes)", texto_completo):
+    if re.search(rf"(dos|2)\s*{_palabras_hijos}", texto_completo):
+        return 120_000
+    # Contar nombres de hijos distintos en el historial (ej: "Noa 12 años\nAlisa 6 años")
+    # Buscar patrón: nombre + edad en líneas separadas del mismo mensaje user
+    _nombres_hijos = set()
+    for m in historial:
+        if m.get("role") == "user":
+            lineas = m.get("content", "").strip().split("\n")
+            for linea in lineas:
+                if re.search(r"\d+\s*(años|año|meses)", linea.lower()):
+                    _nombres_hijos.add(linea.strip().lower())
+    if len(_nombres_hijos) >= 3:
+        return 150_000
+    if len(_nombres_hijos) >= 2:
         return 120_000
     # Default: 1 hijo = 90mil
     return 90_000
