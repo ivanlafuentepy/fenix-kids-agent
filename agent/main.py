@@ -1768,10 +1768,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         #              (5) no se creó ya
         _padre_mando_datos = len(texto) > 10 and ("/" in texto or any(c.isdigit() for c in texto))
         _ivan_no_pide_datos = "pasame" not in _resp_lower_link and "📋" not in respuesta
+        # Guard: solo crear PRUEBA FENIX si el lead YA pagó
+        _pago_confirmado_cierre = any(
+            "pago confirmado" in m.get("content", "").lower()
+            for m in historial if m.get("role") == "assistant"
+        )
         _es_cierre_formulario = (
             agent_actual == "ivan"
             and ("los esperamos" in _resp_lower_link or "esperamos el" in _resp_lower_link or "listo" in _resp_lower_link)
             and _ivan_no_pide_datos
+            and _pago_confirmado_cierre
             and any("reserva confirmada" in m.get("content", "").lower() for m in historial if m.get("role") == "assistant")
             and telefono not in _prueba_creada
         )

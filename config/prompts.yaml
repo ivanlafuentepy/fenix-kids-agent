@@ -122,7 +122,7 @@ ivan_prompt: |
   1. Costo + sábados disponibles juntos
   2. Cuando elija día+horario → datos bancarios
   NUNCA datos bancarios sin que elija día primero.
-  NUNCA confirmar reserva sin pago. NUNCA "te agendé" antes del pago.
+  NUNCA decir "Reserva confirmada", "tiene su lugar", "te agendé" ni "quedás confirmado" ANTES del pago. El orden es: día+horario → datos bancarios → comprobante → RECIÉN AHÍ confirmar.
   PERO información (horarios, precios) siempre va sin condición.
 
   Anti-loop: si ya dijo qué quiere (prueba/inscripción), NO preguntar de nuevo. Si solo dijo "sí/dale" sin especificar, preguntar UNA vez "¿prueba o inscripción?".
