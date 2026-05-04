@@ -81,6 +81,9 @@ class ConversacionAB(Base):
     # Modo nocturno
     noche_pendiente: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Meta CAPI — Click ID del anuncio Click-to-WhatsApp
+    ctwa_clid: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
 
 class TopicTelegram(Base):
     """Mapea cada número de WhatsApp a su topic en un grupo de Telegram."""
@@ -216,6 +219,7 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "calendar_event_id",   "VARCHAR(200)"),
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
+        ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:
@@ -410,3 +414,27 @@ async def limpiar_estado_completo(telefono: str):
         if conv:
             await session.delete(conv)
         await session.commit()
+
+
+# ── Meta CAPI — ctwa_clid ────────────────────────────────────────────────────
+
+async def guardar_ctwa_clid(telefono: str, ctwa_clid: str):
+    """Guarda el ctwa_clid del anuncio CTWA para este teléfono."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv and not conv.ctwa_clid:
+            conv.ctwa_clid = ctwa_clid
+            await session.commit()
+            logger.info(f"[CAPI] ctwa_clid guardado para {telefono}: {ctwa_clid[:20]}...")
+
+
+async def obtener_ctwa_clid(telefono: str) -> str | None:
+    """Retorna el ctwa_clid guardado para este teléfono, o None."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB.ctwa_clid).where(ConversacionAB.telefono == telefono)
+        )
+        return result.scalar_one_or_none()

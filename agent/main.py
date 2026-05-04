@@ -53,6 +53,7 @@ from agent.telegram_bridge import (
     notificar_pago_telegram,
     group_id_para_agente,
 )
+from agent.meta_capi import enviar_evento_agenda, enviar_evento_pago
 from agent.pagos import (
     es_posible_comprobante, detectar_tipo_pago,
     registrar_pago_pendiente, tiene_pago_pendiente,
@@ -1128,6 +1129,12 @@ async def _procesar_mensaje_webhook(msg):
 async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
     """Procesamiento real del mensaje, protegido por lock de teléfono."""
     try:
+        # Capturar ctwa_clid del anuncio CTWA (viene en el primer mensaje del lead)
+        if hasattr(msg, 'ctwa_clid') and msg.ctwa_clid:
+            from agent.memory import guardar_ctwa_clid
+            await guardar_ctwa_clid(msg.telefono, msg.ctwa_clid)
+            logger.info(f"[CAPI] ctwa_clid capturado para {msg.telefono}")
+
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
         _reset_phones = {admin_phone, "595982844548"}
@@ -1841,6 +1848,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         )
                     # Actualizar LEADS a PAGO
                     await actualizar_conversion_lead(telefono, "PAGO")
+                    # CAPI: evento LeadSubmitted + Purchase
+                    await enviar_evento_agenda(telefono)
+                    await enviar_evento_pago(telefono)
                     logger.info(f"[PRUEBA FENIX] Creado post-formulario para {telefono}")
                 except Exception as e:
                     logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
@@ -2203,6 +2213,9 @@ async def _procesar_comprobante(
     except Exception as e:
         logger.error(f"[PAGOS] Error actualizando conversión: {e}")
 
+    # CAPI: evento Purchase (comprobante confirmado)
+    await enviar_evento_pago(telefono)
+
     # Notificar al admin (solo informativo, sin botones)
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
@@ -2296,6 +2309,9 @@ async def _procesar_boton_pago(btn_titulo: str):
             await actualizar_conversion_lead(tel_lead, "PAGO")
         except Exception as e:
             logger.error(f"[PAGOS] Error actualizando conversión: {e}")
+
+        # CAPI: evento Purchase (botón admin confirmó)
+        await enviar_evento_pago(tel_lead)
 
         # Notificar en Telegram
         _ag_pago, _ = await obtener_agent_actual(tel_lead)

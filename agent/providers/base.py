@@ -20,6 +20,7 @@ class MensajeEntrante:
     es_propio: bool          # True si lo envió el agente (se ignora)
     media_id: str | None = None   # ID de media (audio, imagen, documento)
     es_boton: bool = False        # True si es respuesta a botón interactivo
+    ctwa_clid: str | None = None   # Click ID del anuncio CTWA (para atribución Meta CAPI)
 
 
 class ProveedorWhatsApp(ABC):
