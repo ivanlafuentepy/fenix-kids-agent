@@ -1539,6 +1539,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             _tenemos_edad = True
                             break
 
+            # También chequear el mensaje ACTUAL del usuario (todavía no está en Airtable)
+            if not _tenemos_nombre:
+                _nh_texto = _extraer_nombre_hijo_historial([{"role": "user", "content": texto}])
+                if _nh_texto and _nh_texto != "no mencionó":
+                    _tenemos_nombre = True
+            if not _tenemos_edad:
+                if re.search(r'\b(\d{1,2})\s*(?:años|añitos|a[ñn]os)', texto, re.IGNORECASE):
+                    _tenemos_edad = True
+                elif re.fullmatch(r'\d{1,2}', texto.strip()) and 2 <= int(texto.strip()) <= 15:
+                    _tenemos_edad = True
+
             # Agregar pregunta SOLO si realmente falta el dato
             _resp_lower = respuesta.lower()
             _tiene_pregunta = any(p in _resp_lower for p in [
