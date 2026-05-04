@@ -1336,6 +1336,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     if not await tiene_noche_pendiente(telefono):
                         await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
                         await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
+                        # Espejar mensaje nocturno a Telegram
+                        if topic_id:
+                            await enviar_a_topic(topic_id, f"🌙 IVAN: {MENSAJE_NOCHE}", telefono=telefono, group_override=_tg_group)
                     await asignar_variante(telefono)
                     await marcar_noche_pendiente(telefono)
                     return

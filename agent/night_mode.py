@@ -19,11 +19,11 @@ logger = logging.getLogger("agentkit")
 _TZ_PARAGUAY = ZoneInfo("America/Asuncion")
 
 _HORA_INICIO_NOCHE = 23
-_HORA_FIN_NOCHE = 7
+_HORA_FIN_NOCHE = 6
 
 MENSAJE_NOCHE = (
-    "Muchas gracias por contactarnos, de 23 a 07 estamos fuera de servicio. "
-    "Mañana a las 07:00 serás el primero en recibir nuestra atención 🥋"
+    "Muchas gracias por contactarnos, de 23 a 06 estamos fuera de servicio. "
+    "Mañana a las 06:00 serás el primero en recibir nuestra atención 🥋"
 )
 
 
