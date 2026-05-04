@@ -1695,7 +1695,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[CANCELAR] Error cancelando reserva: {e}")
 
         # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
+        # Guard: para Ivan, solo procesar si el lead YA pagó (comprobante recibido).
+        # Sin esto, frases pre-pago como "tiene su lugar el sábado X" disparan
+        # notificación de agenda + PAGO en Airtable antes de que el lead pague.
         confirmaciones = _detectar_confirmacion_aurora(respuesta)
+        if confirmaciones and agent_actual == "ivan":
+            _hist_reciente = await obtener_historial(telefono, limite=10)
+            _pago_en_historial = any(
+                "pago confirmado" in m.get("content", "").lower()
+                for m in _hist_reciente
+                if m.get("role") == "assistant"
+            )
+            if not _pago_en_historial:
+                confirmaciones = []
+                logger.info(f"[AGENDA] {telefono}: confirmación detectada pero sin pago previo — ignorada")
         for confirmacion in confirmaciones:
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta, agent_actual)
 

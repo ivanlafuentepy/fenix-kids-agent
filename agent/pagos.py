@@ -89,10 +89,9 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     if not datos_enviados:
         return False
 
-    # Condición 3: si es solo media (sin keyword), verificar que el lead
-    # haya mencionado pago/transferencia/comprobante en mensajes recientes.
-    # Esto evita que una foto del hijo se marque como comprobante.
-    if es_media and not tiene_keyword:
+    # Condición 3: verificar contexto de pago en mensajes recientes.
+    # Esto evita que una foto casual (del hijo, etc.) se marque como comprobante.
+    if es_media:
         _keywords_contexto_pago = [
             "transfer", "pago", "pague", "pagué", "comprobante",
             "mand", "prueba", "90", "inscri", "itaú", "itau",
