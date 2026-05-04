@@ -2021,12 +2021,28 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"[LISTA] Error enviando lista de niños: {e}")
 
-    # Notificar en Telegram
+    # Notificar en Telegram — buscar nombre aunque no haya familia
+    _nombre_notif = nombre_display if ninos else None
+    if not _nombre_notif:
+        try:
+            from agent.airtable_client import _get_records, _LEADS
+            _lr_notif = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            if _lr_notif:
+                _f_notif = _lr_notif[0].get("fields", {})
+                _hijo_notif = _f_notif.get("NOMBRE NIÑO", "")
+                _padre_notif = _f_notif.get("NOMBRE RESPONSABLE", "")
+                _nombre_notif = _hijo_notif or _padre_notif or None
+        except Exception:
+            pass
+    if not _nombre_notif:
+        _nombre_notif = _extraer_nombre_hijo_historial(await obtener_historial(telefono, limite=20))
+        if _nombre_notif == "no mencionó":
+            _nombre_notif = None
     await notificar_agenda_telegram(
         telefono=telefono,
         dia=fecha_str,
         hora=hora_str,
-        nombre=nombre_display if ninos else None,
+        nombre=_nombre_notif,
     )
 
     # Link wa.me se envía cuando el padre completa el formulario (no acá)
