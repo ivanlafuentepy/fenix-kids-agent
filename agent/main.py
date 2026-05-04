@@ -1506,74 +1506,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # "a y" residual
             respuesta = respuesta.strip()
 
-            # Verificar qué datos YA TENEMOS (en Airtable o historial)
-            _tenemos_nombre = False
-            _tenemos_edad = False
-            try:
-                from agent.airtable_client import _get_records, _LEADS
-                _lr2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                if _lr2:
-                    _f2 = _lr2[0].get("fields", {})
-                    _tenemos_nombre = bool(_f2.get("NOMBRE NIÑO"))
-                    _tenemos_edad = bool(_f2.get("EDAD"))
-            except Exception:
-                pass
-            if not _tenemos_nombre:
-                _nh2 = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
-                _tenemos_nombre = _nh2 and _nh2 != "no mencionó"
-            if not _tenemos_edad:
-                # Buscar edad en respuestas del usuario (múltiples patrones)
-                for _m2 in reversed(historial + [{"role": "user", "content": texto}]):
-                    if _m2.get("role") == "user":
-                        _c2 = _m2.get("content", "").strip()
-                        # Número solo: "8"
-                        if re.fullmatch(r'\d{1,2}', _c2) and 2 <= int(_c2) <= 15:
-                            _tenemos_edad = True
-                            break
-                        # "tiene X años", "de X años", "X años", "X añitos"
-                        if re.search(r'\b(\d{1,2})\s*(?:años|añitos|a[ñn]os)', _c2, re.IGNORECASE):
-                            _tenemos_edad = True
-                            break
-                        # "de 8 y 11 años" (multi-hijo)
-                        if re.search(r'\b\d{1,2}\s+y\s+\d{1,2}\s*(?:años|añitos)', _c2, re.IGNORECASE):
-                            _tenemos_edad = True
-                            break
-
-            # También chequear el mensaje ACTUAL del usuario (todavía no está en Airtable)
-            if not _tenemos_nombre:
-                _nh_texto = _extraer_nombre_hijo_historial([{"role": "user", "content": texto}])
-                if _nh_texto and _nh_texto != "no mencionó":
-                    _tenemos_nombre = True
-            if not _tenemos_edad:
-                if re.search(r'\b(\d{1,2})\s*(?:años|añitos|a[ñn]os)', texto, re.IGNORECASE):
-                    _tenemos_edad = True
-                elif re.fullmatch(r'\d{1,2}', texto.strip()) and 2 <= int(texto.strip()) <= 15:
-                    _tenemos_edad = True
-
-            # Agregar pregunta SOLO si realmente falta el dato
-            _resp_lower = respuesta.lower()
-            _tiene_pregunta = any(p in _resp_lower for p in [
-                "cómo se llama", "como se llama", "cuántos años", "cuantos años",
-                "con quién tengo", "con quien tengo", "te gustaría", "te gustaria",
-                "clase de prueba", "a nombre de", "cuál te queda",
-            ])
-            # REGLA: NO agregar pregunta de datos si ya se preguntó antes y el padre la esquivó.
-            # Contar cuántas veces se preguntó edad/nombre en todo el historial del assistant
-            _veces_pregunto_edad = sum(1 for m in historial if m.get("role") == "assistant" and "cuántos años" in m.get("content", "").lower())
-            _veces_pregunto_nombre = sum(1 for m in historial if m.get("role") == "assistant" and "cómo se llama" in m.get("content", "").lower())
-
-            if not _tiene_pregunta and "te paso un afiche" not in _resp_lower:
-                if not _tenemos_nombre and not _tenemos_edad and _veces_pregunto_edad < 2:
-                    respuesta += "\n\n¿Cómo se llama tu hijo/a y cuántos años tiene? 😊"
-                elif _tenemos_nombre and not _tenemos_edad and _veces_pregunto_edad < 2:
-                    respuesta += "\n\n¿Cuántos años tiene tu hijo/a? 😊"
-                elif _tenemos_edad and not _tenemos_nombre and _veces_pregunto_nombre < 2:
-                    respuesta += "\n\n¿Cómo se llama tu hijo/a? 😊"
-                # Si ya preguntamos 2+ veces y no respondió → NO insistir más
-            # Limpiar líneas vacías y basura
-            respuesta = re.sub(r'\n{3,}', '\n\n', respuesta)
-            respuesta = re.sub(r'\ba\s+y\b', '', respuesta)  # residuo "a y"
-            respuesta = respuesta.strip()
+            # Claude maneja las preguntas de nombre/edad desde el prompt.
+            # NO appendar preguntas automáticamente — eso pisaba la respuesta de Claude.
+            respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
 
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
         #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
