@@ -45,7 +45,7 @@ from agent.night_mode import (
     procesar_leads_pendientes as _noche_procesar_pendientes,
 )
 from agent.telegram_bridge import (
-    obtener_o_crear_topic, enviar_a_topic,
+    obtener_o_crear_topic, enviar_a_topic, enviar_media_a_topic,
     dorita_esta_activa, silenciar_dorita, reactivar_dorita,
     obtener_telefono_por_topic,
     configurar_webhook, obtener_info_webhook,
