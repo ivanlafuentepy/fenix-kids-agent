@@ -1871,18 +1871,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
 
                 # ── Link wa.me al admin ───────────────────────────────────────
-                # Re-extraer nombre padre del historial COMPLETO (incluyendo formulario)
-                historial_post_form = await obtener_historial(telefono, limite=40)
-                _np_fresh = _extraer_nombre_del_historial(historial_post_form) or ""
-                # Si el extractor regex no lo encuentra, buscar con Haiku
-                if not _np_fresh and datos_form:
+                # Nombre padre: Haiku ya lo extrajo del formulario
+                _nombre_padre_form = ""
+                if datos_form:
                     padre_d = datos_form.get("padre") or {}
-                    _np_fresh = padre_d.get("nombre", "")
-                    if padre_d.get("apellido"):
-                        _np_fresh = f"{_np_fresh} {padre_d['apellido']}"
-                primer_nombre_fresh = _np_fresh.split()[0] if _np_fresh else ""
+                    _nombre_padre_form = padre_d.get("nombre", "") or ""
+                if not _nombre_padre_form:
+                    _nombre_padre_form = primer_nombre or ""
                 _con_hijo = f", te espero con {_hijo}" if _hijo else ""
-                _saludo = f"Que tal {primer_nombre_fresh}" if primer_nombre_fresh else "Que tal"
+                _saludo = f"Que tal {_nombre_padre_form}" if _nombre_padre_form else "Que tal"
                 msg_wa = f"{_saludo}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
                 wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
                 alerta_admin = (
