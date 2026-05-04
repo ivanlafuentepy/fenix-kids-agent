@@ -1241,9 +1241,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         try:
             topic_id = await obtener_o_crear_topic(telefono, _topic_nombre, group_override=_tg_group)
             if topic_id:
-                await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
+                # Espejo: si es imagen, reenviar la imagen real a Telegram
+                if texto == "[imagen]" and hasattr(msg, "media_id") and msg.media_id:
+                    try:
+                        from agent.transcriber import descargar_audio_whatsapp
+                        img_bytes, _ = await descargar_audio_whatsapp(msg.media_id)
+                        if img_bytes:
+                            await enviar_media_a_topic(topic_id, img_bytes, tipo="imagen", telefono=telefono, group_override=_tg_group)
+                        else:
+                            await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
+                    except Exception:
+                        await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
+                else:
+                    await enviar_a_topic(topic_id, f"👤 {texto}", telefono=telefono, group_override=_tg_group)
         except Exception as e:
             logger.error(f"[TELEGRAM] Error espejo entrante: {e}")
+
+        # ── Guardar mensaje del usuario ANTES de procesar ──────────────
+        # Así nunca se pierde un mensaje aunque algo crashee después.
+        await guardar_mensaje(telefono, "user", texto)
 
         # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
         if not await dorita_esta_activa(telefono):
@@ -1306,7 +1322,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "Ahora mismo no puedo atender llamadas, aguantame un ratito "
                     "y te llamo desde mi línea personal 🤝"
                 )
-            await guardar_mensaje(telefono, "user", texto)
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
@@ -1332,7 +1347,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 historial_noche = await obtener_historial(telefono, limite=5)
                 _tiene_actividad = len(historial_noche) > 0
                 if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
-                    await guardar_mensaje(telefono, "user", texto)
                     if not await tiene_noche_pendiente(telefono):
                         await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
                         await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
@@ -1725,8 +1739,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 except Exception as e:
                     logger.error(f"[LLAMADA] Error programando: {e}")
 
-        # ── Guardar mensajes ──────────────────────────────────────────────
-        await guardar_mensaje(telefono, "user", texto)
+        # ── Guardar respuesta (user ya guardado al inicio) ─────────────
         await guardar_mensaje(telefono, "assistant", respuesta)
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
@@ -1831,6 +1844,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.info(f"[PRUEBA FENIX] Creado post-formulario para {telefono}")
                 except Exception as e:
                     logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
+                    # Alertar a Ivan en Telegram para que no se pierda
+                    try:
+                        if topic_id:
+                            await enviar_a_topic(topic_id, f"⚠️ ERROR: No se pudo crear PRUEBA FENIX — {e}", telefono=telefono, group_override=_tg_group)
+                    except Exception:
+                        pass
 
                 # ── Link wa.me al admin ───────────────────────────────────────
                 # Nombre padre: Haiku ya lo extrajo del formulario
@@ -2145,7 +2164,7 @@ async def _procesar_comprobante(
     tipo_label = f"PRUEBA {monto_fmt}" if tipo == "prueba" and monto else "PRUEBA" if tipo == "prueba" else "INSCRIPCIÓN"
 
     # ── Auto-confirmar pago (sin esperar botones del admin) ──────────────
-    await guardar_mensaje(telefono, "user", texto)
+    # (user message ya guardado al inicio del flujo)
 
     # Confirmar pago directo
     await registrar_pago_pendiente(
