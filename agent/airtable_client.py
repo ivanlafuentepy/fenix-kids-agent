@@ -929,6 +929,7 @@ async def crear_prueba_fenix(
         "CONCEPTO": concepto,
         "METODO DE PAGO": metodo_pago,
         "GENERO": genero,
+        "ORIGEN LEAD": "ANUNCIO",
         "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
     }
     if diagnostico_ids:
