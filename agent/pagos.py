@@ -72,19 +72,11 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     2. Ivan ya envió los datos bancarios (CI 1604338 en mensajes del assistant)
     3. El lead pidió pagar/agendar (evita falso positivo con fotos casuales)
     """
-    # Condición 1: parece un pago
+    # Condición 1: SOLO imagen o documento es comprobante.
+    # Texto NUNCA es comprobante — evita falsos positivos con "transferir",
+    # "comprobante", "en la semana te transfiero", etc.
     es_media = texto in ("[imagen]", "[documento]")
-    texto_lower = texto.lower()
-    tiene_keyword = any(k in texto_lower for k in _KEYWORDS_PAGO)
-
-    # Excluir si habla en futuro ("mañana", "después", "luego", "voy a")
-    _futuro = any(f in texto_lower for f in ["mañana", "manana", "después", "despues", "luego", "voy a", "estaré", "estare", "te paso el", "te mando el"])
-    if tiene_keyword and _futuro and not es_media:
-        return False  # está diciendo que VA a pagar, no que ya pagó
-
-    parece_pago = es_media or tiene_keyword
-
-    if not parece_pago:
+    if not es_media:
         return False
 
     # Condición 2: datos bancarios ya enviados
