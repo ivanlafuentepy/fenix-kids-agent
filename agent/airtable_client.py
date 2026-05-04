@@ -905,11 +905,11 @@ async def crear_prueba_fenix(
     from datetime import datetime, timezone
 
     # Deducir concepto según monto
-    concepto = "PRUEBA 90MIL"
+    concepto = "F. PRUEBA 90MIL"
     if monto == 120_000:
-        concepto = "PRUEBA 120MIL"
+        concepto = "F. PRUEBA 120MIL"
     elif monto == 150_000:
-        concepto = "PRUEBA 150MIL"
+        concepto = "F. PRUEBA 150MIL"
 
     # Deducir género del nombre del hijo
     genero = _deducir_genero(nombre_hijo)
