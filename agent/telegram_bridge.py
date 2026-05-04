@@ -457,6 +457,8 @@ async def notificar_agenda_telegram(
     dia: str | None,
     hora: str | None,
     nombre: str | None = None,
+    nombre_hijos: str | None = None,
+    agente: str = "ivan",
 ) -> bool:
     """
     Envía notificación de nueva agenda al grupo de Telegram de notificaciones.
@@ -476,11 +478,17 @@ async def notificar_agenda_telegram(
     nombre_display = nombre or telefono
     primer_nombre = (nombre or "").split()[0] if nombre else "alumno"
 
-    wa_text_preescrito = (
-        f"Hola {primer_nombre}! Te saluda el Profe Iván de FENIX Kids 🌳 "
-        f"Recibí tu reserva, los esperamos el {dia or ''} a las {hora or ''} 🔥 "
-        f"Nos vemos pronto!"
-    )
+    # Mensaje wa.me personalizado según agente
+    if nombre_hijos:
+        wa_text_preescrito = (
+            f"Hola {primer_nombre}, me contó Aurora que reservaste para el {dia or ''} a las {hora or ''}. "
+            f"Le espero a {nombre_hijos} para descuearle con todo! 🔥🌳"
+        )
+    else:
+        wa_text_preescrito = (
+            f"Hola {primer_nombre}, me contó Aurora que reservaste para el {dia or ''} a las {hora or ''}. "
+            f"Los espero para descuearle con todo! 🔥🌳"
+        )
 
     from urllib.parse import quote
     wa_link = f"https://wa.me/{telefono}?text={quote(wa_text_preescrito)}"

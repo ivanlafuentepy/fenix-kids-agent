@@ -2048,11 +2048,22 @@ async def _procesar_confirmacion_reserva(
         _nombre_notif = _extraer_nombre_hijo_historial(await obtener_historial(telefono, limite=20))
         if _nombre_notif == "no mencionó":
             _nombre_notif = None
+    # Armar nombre de hijos para el link wa.me
+    _hijos_notif = None
+    if ninos:
+        _nombres_hijos = [n.get("apodo") or n.get("nombre") or "" for n in ninos]
+        _nombres_hijos = [n for n in _nombres_hijos if n]
+        if _nombres_hijos:
+            _hijos_notif = " y ".join(_nombres_hijos)
+    if not _hijos_notif and _nombre_notif:
+        _hijos_notif = _nombre_notif  # fallback: usar el mismo nombre
     await notificar_agenda_telegram(
         telefono=telefono,
         dia=fecha_str,
         hora=hora_str,
         nombre=_nombre_notif,
+        nombre_hijos=_hijos_notif,
+        agente=agent_actual,
     )
 
     # Link wa.me se envía cuando el padre completa el formulario (no acá)
