@@ -89,36 +89,10 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     if not datos_enviados:
         return False
 
-    # Condición 3: verificar contexto de pago en mensajes recientes.
-    # Esto evita que una foto casual (del hijo, etc.) se marque como comprobante.
-    if es_media:
-        _keywords_contexto_pago = [
-            "transfer", "pago", "pague", "pagué", "comprobante",
-            "mand", "prueba", "90", "inscri", "itaú", "itau",
-        ]
-        msgs_lead_recientes = [
-            m.get("content", "").lower()
-            for m in historial[-10:]
-            if m.get("role") == "user"
-        ]
-        msgs_agente_recientes = [
-            m.get("content", "").lower()
-            for m in historial[-6:]
-            if m.get("role") == "assistant"
-        ]
-        # El agente mencionó transferencia/comprobante recientemente
-        agente_pidio_pago = any(
-            any(k in msg for k in ["transferencia", "comprobante", CI_BANCARIO])
-            for msg in msgs_agente_recientes
-        )
-        # El lead mencionó algo de pago
-        lead_hablo_pago = any(
-            any(k in msg for k in _keywords_contexto_pago)
-            for msg in msgs_lead_recientes
-        )
-        if not agente_pidio_pago and not lead_hablo_pago:
-            return False
-
+    # Condición 2 ya garantiza que Ivan envió datos bancarios (CI_BANCARIO en historial).
+    # Si los datos bancarios fueron enviados, cualquier imagen es comprobante.
+    # No restringir por ventana de mensajes recientes — el lead puede mandar
+    # la imagen horas después de recibir los datos bancarios.
     return True
 
 
