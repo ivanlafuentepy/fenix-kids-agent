@@ -2086,18 +2086,12 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
             "   ➡️ Ahorrás 360.000 Gs en 3 meses (100mil/mes + 60mil matrícula)\n"
             "📅 Semanal: 230.000/mes + matrícula 140.000\n"
             "   ➡️ Ahorrás 420.000 Gs en 3 meses (120mil/mes + 60mil matrícula)\n\n"
-            "¿Te gustaría aprovechar el descuento trimestral? 😊"
+            "¿Te gustaría agendar una clase de prueba? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
 
-        # Delay antes del CTA
-        await asyncio.sleep(3)
-
-        # Follow-up dinámico con CTA
-        followup = await _armar_followup_afiche(telefono)
-        await proveedor.enviar_mensaje(telefono, followup)
-        await guardar_mensaje(telefono, "assistant", followup)
+        # Follow-up CTA eliminado — la pregunta ya está al final del msg de precios
 
         # Espejar TODO en Telegram (con fallback si topic_id es None)
         _tid_afiche = topic_id

@@ -925,7 +925,6 @@ async def crear_prueba_fenix(
         "HORA": hora,
         "FECHA NACIMIENTO": fecha_nacimiento,
         "CONVERSION": conversion,
-        "MONTO": monto,
         "CONCEPTO": concepto,
         "METODO DE PAGO": metodo_pago,
         "GENERO": genero,
