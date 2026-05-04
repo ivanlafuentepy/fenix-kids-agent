@@ -868,6 +868,23 @@ async def crear_familia_completa(
 
 # ── PRUEBA FENIX (leads que agendan/pagan clase de prueba) ────────────────────
 
+def _deducir_genero(nombre: str) -> str:
+    """Deduce HOMBRE o MUJER por el nombre. Default HOMBRE si no está claro."""
+    if not nombre:
+        return ""
+    n = nombre.lower().strip().split()[0]
+    # Nombres que terminan en 'a' suelen ser mujer (con excepciones)
+    excepciones_masc = {"joshua", "luca", "santana", "isa", "josua", "nikita"}
+    excepciones_fem = {"sol", "flor", "ines", "mercedes", "pilar", "mar", "luz", "paz", "noel"}
+    if n in excepciones_fem:
+        return "MUJER"
+    if n in excepciones_masc:
+        return "HOMBRE"
+    if n.endswith("a") or n.endswith("i"):
+        return "MUJER"
+    return "HOMBRE"
+
+
 async def crear_prueba_fenix(
     telefono: str,
     nombre_responsable: str,
@@ -882,9 +899,21 @@ async def crear_prueba_fenix(
     monto: int = 90_000,
     diagnostico_ids: list[str] | None = None,
     lead_record_id: str | None = None,
+    metodo_pago: str = "TRANSFER",
 ) -> str | None:
-    """Crea un registro en PRUEBA FENIX. Retorna record_id o None."""
+    """Crea un registro en PRUEBA FENIX con todos los campos. Retorna record_id o None."""
     from datetime import datetime, timezone
+
+    # Deducir concepto según monto
+    concepto = "PRUEBA 90MIL"
+    if monto == 120_000:
+        concepto = "PRUEBA 120MIL"
+    elif monto == 150_000:
+        concepto = "PRUEBA 150MIL"
+
+    # Deducir género del nombre del hijo
+    genero = _deducir_genero(nombre_hijo)
+
     campos = {
         "TELEFONO": telefono,
         "NOMBRE RESPONSABLE": nombre_responsable,
@@ -897,6 +926,9 @@ async def crear_prueba_fenix(
         "FECHA NACIMIENTO": fecha_nacimiento,
         "CONVERSION": conversion,
         "MONTO": monto,
+        "CONCEPTO": concepto,
+        "METODO DE PAGO": metodo_pago,
+        "GENERO": genero,
         "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
     }
     if diagnostico_ids:
