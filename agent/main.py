@@ -2032,7 +2032,7 @@ async def _procesar_confirmacion_reserva(
             logger.error(f"[LISTA] Error enviando lista de niños: {e}")
 
     # Notificar en Telegram — buscar nombre aunque no haya familia
-    _nombre_notif = nombre_display if ninos else None
+    _nombre_notif = nombre_display if (ninos and nombre_display != telefono) else None
     if not _nombre_notif:
         try:
             from agent.airtable_client import _get_records, _LEADS
