@@ -33,7 +33,8 @@ Cuando generes el agente, SIEMPRE usa estas tecnologías:
 |-----------|-----------|-------|
 | Runtime | Python 3.11+ | Verificar en Fase 1 |
 | Servidor | FastAPI + Uvicorn | Webhook handler genérico |
-| IA | Anthropic Claude API | Modelo: `claude-sonnet-4-6` |
+| IA (conversacional) | Anthropic Claude API | Modelo: `claude-haiku-4-5-20251001` (cambio 2026-05-04, antes Sonnet) |
+| IA (extracción datos) | Anthropic Claude API | Modelo: `claude-haiku-4-5-20251001` (Haiku para formularios) |
 | WhatsApp | Whapi.cloud / Meta Cloud API / Twilio | El usuario elige durante el setup |
 | Base de datos | SQLite (local) / PostgreSQL (prod) | Via SQLAlchemy |
 | Variables | python-dotenv | NUNCA hardcodear keys |
@@ -100,7 +101,7 @@ Memory (agent/memory.py) — recupera historial de esa conversación
     ↓
 Brain (agent/brain.py) — llama Claude API con: system prompt + historial + mensaje nuevo
     ↓
-Claude API (claude-sonnet-4-6) — genera respuesta inteligente
+Claude API (claude-haiku-4-5-20251001) — genera respuesta inteligente
     ↓
 Tools (agent/tools.py) — si necesita hacer algo (agendar, buscar, etc.)
     ↓
@@ -805,7 +806,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1024,
             system=system_prompt,
             messages=mensajes
@@ -1323,7 +1324,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 
    Lo que se construyó:
    - Servidor FastAPI con webhook de WhatsApp
-   - Cerebro con Claude AI (claude-sonnet-4-6)
+   - Cerebro con Claude AI (claude-haiku-4-5-20251001)
    - Memoria de conversaciones por cliente
    - Herramientas: [LISTA DE HERRAMIENTAS]
    - System prompt personalizado para tu negocio
@@ -1413,6 +1414,15 @@ ENVIRONMENT=development  # development | production
 DATABASE_URL=sqlite+aiosqlite:///./agentkit.db  # local
 # DATABASE_URL=postgresql+asyncpg://...          # producción Railway
 ```
+
+# Cambios recientes (2026-05-04)
+
+1. **Modelo principal: Haiku 4.5** — `brain.py` usa `claude-haiku-4-5-20251001` para `generar_respuesta`. Antes era Sonnet. Motivo: reducir costos API ~95%. Haiku es suficiente para el flujo conversacional.
+2. **Historial reducido a 20 mensajes** — `main.py` usa `obtener_historial(telefono, limite=20)` en vez de 40. Motivo: reducir tokens de input.
+3. **Prompt compactado de 783 a 210 líneas** — `config/prompts.yaml` eliminó texto repetido y ejemplos redundantes. Toda la funcionalidad se preservó (rompehielo 15 opciones, mapeo promesas, personalización por edad, flujo de pago, objeciones, Aurora completa).
+4. **Meta CAPI** — `agent/meta_capi.py` envía eventos `LeadSubmitted` y `Purchase` a Meta para atribución de conversiones de anuncios CTWA.
+5. **Early save** — mensaje del usuario se guarda en DB ANTES de procesar (nunca se pierde aunque crashee algo).
+6. **Espejo imagen real a Telegram** — comprobantes se envían como foto, no solo texto "[imagen]".
 
 # Token Efficient Rules
 
