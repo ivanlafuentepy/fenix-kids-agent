@@ -1364,8 +1364,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     await marcar_noche_pendiente(telefono)
                     return
 
-        # ── Obtener historial (40 msgs para no perder contexto en charlas largas)
-        historial = await obtener_historial(telefono, limite=40)
+        # ── Obtener historial (20 msgs — suficiente para contexto, reduce costos API)
+        historial = await obtener_historial(telefono, limite=20)
 
         # ── Asignar variante (crea fila en ConversacionAB si no existe) ───
         _, es_nuevo = await asignar_variante(telefono)

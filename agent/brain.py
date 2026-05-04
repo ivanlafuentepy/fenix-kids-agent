@@ -167,7 +167,7 @@ async def generar_respuesta(
             _client = _client_para(agent_actual)
             async with asyncio.timeout(25):
                 response = await _client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=1024,
                     system=[
                         {
