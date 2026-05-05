@@ -1848,7 +1848,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     # Usar Haiku para extraer datos completos del historial
                     datos_form = await extraer_datos_formulario(historial_completo)
                     padre_data = datos_form.get("padre") or {}
-                    nombre_resp = padre_data.get("nombre", "") or _np.split()[0] if _np else ""
+                    nombre_resp = padre_data.get("nombre", "") or (_np.split()[0] if _np else "")
                     apellido_resp = padre_data.get("apellido", "") or (_np.split()[1] if _np and " " in _np else "")
                     ninos_form = datos_form.get("ninos", [])
                     _monto = monto_prueba_por_hijos(historial_completo)

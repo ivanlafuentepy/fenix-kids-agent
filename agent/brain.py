@@ -8,6 +8,7 @@ Lee los prompts desde config/prompts.yaml y los selecciona según el agente acti
 """
 
 import os
+import re
 import yaml
 import asyncio
 import logging
@@ -235,9 +236,26 @@ async def extraer_datos_formulario(historial: list[dict]) -> dict:
     """
     import json as _json
 
+    # Filtrar datos bancarios de mensajes del assistant para que Haiku no los confunda
+    _bancario_re = re.compile(
+        r"(?:Banco\s+Itaú|Ivan\s+Lafuente|CI:\s*1604338|Cta\s+cte|1074574|0982790407|transferencia)",
+        re.IGNORECASE,
+    )
+
+    def _limpiar_msg(m: dict) -> str:
+        contenido = m["content"]
+        if m["role"] == "assistant":
+            # Reemplazar líneas con datos bancarios por placeholder
+            lineas = contenido.split("\n")
+            lineas = [
+                "[datos bancarios omitidos]" if _bancario_re.search(l) else l
+                for l in lineas
+            ]
+            contenido = "\n".join(lineas)
+        return f"{'PADRE' if m['role'] == 'user' else 'AURORA'}: {contenido}"
+
     historial_texto = "\n".join(
-        f"{'PADRE' if m['role'] == 'user' else 'AURORA'}: {m['content']}"
-        for m in historial[-15:]
+        _limpiar_msg(m) for m in historial[-15:]
     )
 
     prompt_extraccion = """Analizá este historial de chat y extraé los datos de formulario.
@@ -271,6 +289,8 @@ Reglas:
 - Para fecha_nacimiento: convertí al formato YYYY-MM-DD
 - Si hay múltiples niños, incluí uno por cada uno en el array "ninos"
 - El padre/madre es quien está escribiendo (poné sus datos en "padre", dejá "madre" como null)
+- IGNORÁ cualquier nombre que aparezca en datos bancarios, datos de transferencia o mensajes de AURORA con información de pago. Esos NO son el padre/madre.
+- Los datos del padre/madre están en el mensaje donde el PADRE responde al formulario (nombre completo, fecha de nacimiento del hijo, etc.)
 
 Historial:
 """ + historial_texto
