@@ -919,8 +919,8 @@ async def crear_prueba_fenix(
 
     campos = {
         "TELEFONO": telefono,
-        "NOMBRE RESPONSABLE": nombre_responsable,
-        "APELLIDO RESPONSABLE": apellido_responsable,
+        "NOMBRE": nombre_responsable,
+        "APELLIDO": apellido_responsable,
         "NOMBRE HIJO": nombre_hijo,
         "APELLIDO HIJO": apellido_hijo,
         "EDAD HIJO": edad_hijo,
@@ -929,7 +929,7 @@ async def crear_prueba_fenix(
         "FECHA NACIMIENTO": fecha_nacimiento,
         "CONVERSION": conversion,
         "CONCEPTO": concepto,
-        "METODO DE PAGO": metodo_pago,
+        "METODO DE PAGO": [metodo_pago] if metodo_pago else [],
         "GENERO": genero,
         "ORIGEN LEAD": "ANUNCIO",
         "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
