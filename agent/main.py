@@ -388,6 +388,9 @@ async def lifespan(app: FastAPI):
             logger.error(f"[STARTUP] Error procesando pendientes nocturnos: {e}")
     _noche_task = _fire_and_forget(_noche_wakeup_loop(_procesar_pendientes_noche))
 
+    # Follow-up leads: 9:00 AM PY, recorre leads con datos bancarios sin pago
+    _followup_task = _fire_and_forget(_followup_loop())
+
     # Keepalive: mantener ventana WhatsApp del admin abierta (cada 6h)
     _keepalive_task = _fire_and_forget(_keepalive_admin_loop())
 
@@ -1767,6 +1770,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Guardar respuesta (user ya guardado al inicio) ─────────────
         await guardar_mensaje(telefono, "assistant", respuesta)
 
+        # ── Marcar FOLLOWUP=DATOS_ENVIADOS si Ivan mandó datos bancarios ──
+        if agent_actual == "ivan" and CI_BANCARIO in respuesta:
+            try:
+                await _marcar_followup(telefono, "DATOS_ENVIADOS")
+            except Exception as e:
+                logger.error(f"[FOLLOWUP] Error marcando DATOS_ENVIADOS: {e}")
+
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         await _delay_humano(respuesta)
         await proveedor.enviar_mensaje(telefono, respuesta)
@@ -2102,6 +2112,173 @@ async def _procesar_confirmacion_reserva(
 
 
 
+# ── Follow-up leads (tracking + loop diario) ────────────────────────────────
+
+_FOLLOWUP_ESTADOS = ["DATOS_ENVIADOS", "SEGUIMIENTO_1", "SEGUIMIENTO_2", "SEGUIMIENTO_3", "PAGADO", "DESCARTADO"]
+_FOLLOWUP_SIGUIENTE = {
+    "DATOS_ENVIADOS": "SEGUIMIENTO_1",
+    "SEGUIMIENTO_1": "SEGUIMIENTO_2",
+    "SEGUIMIENTO_2": "SEGUIMIENTO_3",
+    "SEGUIMIENTO_3": "DESCARTADO",
+}
+
+
+async def _marcar_followup(telefono: str, estado: str):
+    """Actualiza FOLLOWUP y FECHA FOLLOWUP en LEADS FENIX."""
+    from agent.airtable_client import obtener_lead_record_id, _patch, _LEADS
+    from datetime import datetime, timezone
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return
+    campos = {"FOLLOWUP": estado, "FECHA FOLLOWUP": datetime.now(timezone.utc).isoformat()}
+    await _patch(_LEADS, record_id, campos)
+    logger.info(f"[FOLLOWUP] {telefono} → {estado}")
+
+
+async def _followup_loop():
+    """Loop diario 9:00 AM PY — follow-up a leads con datos bancarios enviados pero sin pago."""
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, time, timedelta
+
+    _TZ_PY = ZoneInfo("America/Asuncion")
+
+    while True:
+        # Calcular próxima 9:00 AM PY
+        ahora = datetime.now(_TZ_PY)
+        target = ahora.replace(hour=9, minute=0, second=0, microsecond=0)
+        if ahora >= target:
+            target += timedelta(days=1)
+        delay = (target - ahora).total_seconds()
+        logger.info(f"[FOLLOWUP] Próximo ciclo en {delay:.0f}s ({target.strftime('%Y-%m-%d %H:%M')} PY)")
+
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+
+        try:
+            await _ejecutar_followup()
+        except Exception as e:
+            logger.error(f"[FOLLOWUP] Error en ciclo: {e}", exc_info=True)
+
+        await asyncio.sleep(60)  # evitar doble ejecución
+
+
+async def _ejecutar_followup():
+    """Recorre leads con FOLLOWUP pendiente y envía seguimiento."""
+    from agent.airtable_client import _get_records, _LEADS, _patch
+    from datetime import datetime, timezone, timedelta
+    import httpx as _httpx_fu
+
+    ahora = datetime.now(timezone.utc)
+
+    # Buscar leads con FOLLOWUP que NO sea PAGADO ni DESCARTADO ni vacío
+    for estado_actual, estado_siguiente in _FOLLOWUP_SIGUIENTE.items():
+        formula = f"{{FOLLOWUP}}='{estado_actual}'"
+        try:
+            # Paginar
+            all_records = []
+            offset_fu = None
+            base_id = os.getenv("AIRTABLE_BASE_ID")
+            api_key = os.getenv("AIRTABLE_API_KEY")
+            while True:
+                params = f"filterByFormula={formula}&pageSize=100"
+                if offset_fu:
+                    params += f"&offset={offset_fu}"
+                from urllib.parse import quote
+                _url = f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX?{params}"
+                async with _httpx_fu.AsyncClient(timeout=15) as _cl:
+                    _r = await _cl.get(_url, headers={"Authorization": f"Bearer {api_key}"})
+                    _data = _r.json()
+                all_records.extend(_data.get("records", []))
+                offset_fu = _data.get("offset")
+                if not offset_fu:
+                    break
+
+            for rec in all_records:
+                fields = rec.get("fields", {})
+                telefono = fields.get("TELEFONO", "")
+                fecha_fu = fields.get("FECHA FOLLOWUP", "")
+                if not telefono or not fecha_fu:
+                    continue
+
+                # Verificar que pasaron al menos 24h desde el último followup
+                try:
+                    fecha_ultimo = datetime.fromisoformat(fecha_fu.replace("Z", "+00:00"))
+                    horas_desde = (ahora - fecha_ultimo).total_seconds() / 3600
+                    if horas_desde < 24:
+                        continue  # menos de 24h, todavía no
+                except Exception:
+                    continue
+
+                # Generar mensaje de seguimiento con Claude
+                nombre_hijo = fields.get("NOMBRE NIÑO", "") or ""
+                nombre_padre = fields.get("NOMBRE RESPONSABLE", "") or ""
+                primer_nombre = nombre_padre.split()[0] if nombre_padre else ""
+
+                historial = await obtener_historial(telefono, limite=20)
+
+                # Verificar que no pagó entre medio (por si Airtable no se actualizó)
+                pago_en_hist = any(
+                    "pago confirmado" in m.get("content", "").lower()
+                    for m in historial if m.get("role") == "assistant"
+                )
+                if pago_en_hist:
+                    await _marcar_followup(telefono, "PAGADO")
+                    continue
+
+                # Generar follow-up con Claude
+                if estado_actual == "DATOS_ENVIADOS":
+                    instruccion = (
+                        f"[SISTEMA: El padre {primer_nombre} recibió los datos bancarios hace 24h "
+                        f"pero no mandó el comprobante. Mandá un mensaje corto y amable recordándole "
+                        f"que tiene el lugar reservado para {nombre_hijo or 'su hijo/a'} y que te mande "
+                        f"el comprobante cuando pueda. No presiones. Máximo 2 líneas.]"
+                    )
+                elif estado_actual == "SEGUIMIENTO_1":
+                    instruccion = (
+                        f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer. "
+                        f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
+                        f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
+                    )
+                elif estado_actual == "SEGUIMIENTO_2":
+                    instruccion = (
+                        f"[SISTEMA: Tercer y último seguimiento a {primer_nombre}. "
+                        f"Decile que el lugar de {nombre_hijo or 'su hijo/a'} sigue disponible pero que "
+                        f"necesitás confirmar. Si no responde, no se le contacta más. Máximo 2 líneas.]"
+                    )
+                else:
+                    continue
+
+                try:
+                    respuesta_fu = await generar_respuesta(
+                        mensaje=instruccion,
+                        historial=historial,
+                        agent_actual="ivan",
+                    )
+                    await guardar_mensaje(telefono, "assistant", respuesta_fu)
+                    await proveedor.enviar_mensaje(telefono, respuesta_fu)
+                    await _marcar_followup(telefono, estado_siguiente)
+
+                    # Espejar en Telegram
+                    try:
+                        _topic_fu = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                        if _topic_fu:
+                            await enviar_a_topic(_topic_fu, f"🔔 FOLLOWUP ({estado_siguiente}): {respuesta_fu}", telefono=telefono, group_override=group_id_para_agente("ivan"))
+                    except Exception:
+                        pass
+
+                    logger.info(f"[FOLLOWUP] {telefono}: {estado_actual} → {estado_siguiente}")
+                    await asyncio.sleep(3)  # pausa entre leads
+                except Exception as e:
+                    logger.error(f"[FOLLOWUP] Error enviando a {telefono}: {e}")
+
+        except Exception as e:
+            logger.error(f"[FOLLOWUP] Error buscando {estado_actual}: {e}")
+
+    logger.info("[FOLLOWUP] Ciclo completado")
+
+
 # ── Resumen anuncios (comando admin) ─────────────────────────────────────────
 
 _DIAS_SEMANA = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
@@ -2397,6 +2574,12 @@ async def _procesar_comprobante(
         await actualizar_conversion_lead(telefono, "PAGO")
     except Exception as e:
         logger.error(f"[PAGOS] Error actualizando conversión: {e}")
+
+    # Marcar FOLLOWUP=PAGADO
+    try:
+        await _marcar_followup(telefono, "PAGADO")
+    except Exception as e:
+        logger.error(f"[FOLLOWUP] Error marcando PAGADO: {e}")
 
     # CAPI: evento Purchase (comprobante confirmado)
     await enviar_evento_pago(telefono)
