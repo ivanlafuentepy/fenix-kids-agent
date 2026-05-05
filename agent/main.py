@@ -1161,6 +1161,67 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await enviar_a_topic(topic_reset, f"⚙️ RESET — {resumen}", telefono=telefono)
             return
 
+        # ── Comando resumen anuncios (solo admin) ──────────────────────────
+        if texto.lower().replace(" ", "") in ("resumenanuncios", "resumenanuncio") and telefono == admin_phone:
+            try:
+                from agent.airtable_client import _get_records, _PRUEBAS
+                from collections import defaultdict
+                # Paginar todos los registros de PRUEBA FENIX
+                all_records = []
+                offset = None
+                while True:
+                    params = ""
+                    if offset:
+                        params = f"&offset={offset}"
+                    _url_pf = f"https://api.airtable.com/v0/{os.getenv('AIRTABLE_BASE_ID')}/PRUEBA%20FENIX?pageSize=100{params}"
+                    import httpx as _httpx_resumen
+                    async with _httpx_resumen.AsyncClient(timeout=15) as _cl:
+                        _r = await _cl.get(_url_pf, headers={
+                            "Authorization": f"Bearer {os.getenv('AIRTABLE_API_KEY')}",
+                        })
+                        _data = _r.json()
+                    all_records.extend(_data.get("records", []))
+                    offset = _data.get("offset")
+                    if not offset:
+                        break
+
+                # Agrupar por FECHA CREACION (solo fecha, sin hora)
+                por_fecha = defaultdict(lambda: {"cantidad": 0, "monto": 0, "nombres": []})
+                _MONTOS_CONCEPTO = {
+                    "F.PRUEBA 90MIL": 90_000,
+                    "F.PRUEBA 120MIL": 120_000,
+                    "F.PRUEBA 150MIL": 150_000,
+                }
+                for rec in all_records:
+                    f = rec.get("fields", {})
+                    fecha_raw = f.get("FECHA CREACION", "")[:10]
+                    if not fecha_raw:
+                        continue
+                    concepto = f.get("CONCEPTO", "")
+                    monto = _MONTOS_CONCEPTO.get(concepto, 0)
+                    nombre = f.get("NOMBRE HIJO", "") or "sin nombre"
+                    por_fecha[fecha_raw]["cantidad"] += 1
+                    por_fecha[fecha_raw]["monto"] += monto
+                    por_fecha[fecha_raw]["nombres"].append(nombre)
+
+                # Armar resumen
+                total_agendados = len(all_records)
+                total_monto = sum(d["monto"] for d in por_fecha.values())
+                lineas = [f"📊 RESUMEN ANUNCIOS — {total_agendados} agendados, {total_monto:,} Gs total\n"]
+                for fecha in sorted(por_fecha.keys(), reverse=True):
+                    d = por_fecha[fecha]
+                    monto_fmt = f"{d['monto']:,}".replace(",", ".")
+                    nombres_str = ", ".join(d["nombres"])
+                    lineas.append(f"📅 {fecha}: {d['cantidad']} agendados — {monto_fmt} Gs")
+                    lineas.append(f"   {nombres_str}")
+
+                resumen_anuncios = "\n".join(lineas)
+                await proveedor.enviar_mensaje(telefono, resumen_anuncios)
+            except Exception as e:
+                logger.error(f"[RESUMEN] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen: {e}")
+            return
+
         # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
         if texto.lower().replace(" ", "") == "modoalumno" and telefono == admin_phone:
             cancelar_seguimiento(telefono)
