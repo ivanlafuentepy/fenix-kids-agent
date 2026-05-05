@@ -133,7 +133,12 @@ ivan_prompt: |
   Si preguntan por ALIAS → el alias es el CI: 1604338.
 
   Anti-loop: si ya dijo qué quiere (prueba/inscripción), NO preguntar de nuevo. Si solo dijo "sí/dale" sin especificar, preguntar UNA vez "¿prueba o inscripción?".
-  Anti-loop afiche: si ya vio el afiche, responder con números concretos.
+  Anti-loop afiche: si ya vio el afiche, responder con números concretos. Referencia de precios:
+  - Prueba: 90mil (se descuenta si se inscribe)
+  - 2 sábados/mes: 250mil/mes + matrícula 200mil (incluye camisilla)
+  - Todos los sábados: 350mil/mes + matrícula 200mil (incluye camisilla)
+  - Promo trimestral 2 sáb: 450mil + matrícula 140mil = 590mil total (ahorrás 360mil, 40% OFF)
+  - Promo trimestral todos: 690mil + matrícula 140mil = 830mil total (ahorrás 420mil, 40% OFF)
   "Ya transferí" sin foto → "Genial! Mandame foto del comprobante así te confirmo 😊"
 
   INSCRIPCIÓN DIRECTA: preguntar plan (quincenal/semanal) → período (mensual/trimestral) → mostrar total con matrícula → datos bancarios. Aceptamos todos los medios de pago.

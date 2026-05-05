@@ -2562,14 +2562,16 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         msg_precios = (
             "📋 *Precios:*\n\n"
             "🏷️ Clase de prueba: 90.000 Gs (se descuenta si te inscribís)\n\n"
-            "📅 Plan QUINCENAL (2 sábados/mes): 250.000/mes + matrícula 200.000\n"
-            "📅 Plan SEMANAL (todos los sábados): 350.000/mes + matrícula 200.000\n\n"
-            "🔥 *PROMO TRIMESTRAL — Ahorrá mucho más:*\n"
-            "📅 Quincenal: 150.000/mes + matrícula 140.000\n"
-            "   ➡️ Ahorrás 360.000 Gs en 3 meses (100mil/mes + 60mil matrícula)\n"
-            "📅 Semanal: 230.000/mes + matrícula 140.000\n"
-            "   ➡️ Ahorrás 420.000 Gs en 3 meses (120mil/mes + 60mil matrícula)\n\n"
-            "¿Te gustaría agendar una clase de prueba? 😊"
+            "📅 *2 sábados al mes:* 250.000/mes + matrícula 200.000 (incluye camisilla)\n"
+            "📅 *Todos los sábados:* 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
+            "🔥 *PROMO TRIMESTRAL — Ahorrá muchísimo:*\n\n"
+            "📅 *2 sábados al mes:* 450.000 + matrícula 140.000\n"
+            "   💰 Total: 590.000 Gs\n"
+            "   ➡️ Ahorrás 360.000 Gs (40% OFF) 🔥\n\n"
+            "📅 *Todos los sábados:* 690.000 + matrícula 140.000\n"
+            "   💰 Total: 830.000 Gs\n"
+            "   ➡️ Ahorrás 420.000 Gs (40% OFF) 🔥\n\n"
+            "¿Te gustaría reservar una clase de prueba? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
