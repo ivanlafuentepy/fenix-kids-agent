@@ -391,6 +391,9 @@ async def lifespan(app: FastAPI):
     # Follow-up leads: 9:00 AM PY, recorre leads con datos bancarios sin pago
     _followup_task = _fire_and_forget(_followup_loop())
 
+    # Follow-up masivo fotos: ONE-SHOT 6:00 AM PY 2026-05-06
+    _followup_fotos_task = _fire_and_forget(_followup_fotos_oneshot())
+
     # Keepalive: mantener ventana WhatsApp del admin abierta (cada 6h)
     _keepalive_task = _fire_and_forget(_keepalive_admin_loop())
 
@@ -3083,3 +3086,108 @@ async def telegram_setup(url: str, _: bool = Depends(_require_admin)):
     ok = await configurar_webhook(url)
     info = await obtener_info_webhook()
     return {"configurado": ok, "info": info}
+
+
+# ── Follow-up masivo fotos — ONE-SHOT 6:00 AM PY 2026-05-06 ──────────────────
+
+_FOLLOWUP_FOTO1 = os.path.join(os.path.dirname(__file__), "..", "static", "followup_caricatura.png")
+_FOLLOWUP_FOTO2 = os.path.join(os.path.dirname(__file__), "..", "static", "followup_foto.jpeg")
+
+
+async def _followup_fotos_oneshot():
+    """Envía fotos + texto a leads del 4-5 mayo. Se ejecuta UNA vez el 6 mayo 6AM PY."""
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, timedelta
+    from agent.airtable_client import _get_records, _LEADS, _patch
+    import httpx
+
+    _TZ_PY = ZoneInfo("America/Asuncion")
+
+    # Esperar hasta 6:00 AM PY del 6 de mayo
+    ahora = datetime.now(_TZ_PY)
+    target = datetime(2026, 5, 6, 6, 0, 0, tzinfo=_TZ_PY)
+    if ahora >= target:
+        # Ya pasó, verificar si es el mismo día (permite re-deploy)
+        if ahora.date() > target.date():
+            logger.info("[FOLLOWUP-FOTOS] Ya pasó el 6 mayo — oneshot desactivado")
+            return
+    else:
+        delay = (target - ahora).total_seconds()
+        logger.info(f"[FOLLOWUP-FOTOS] Esperando {delay:.0f}s hasta 6AM PY 2026-05-06")
+        await asyncio.sleep(delay)
+
+    logger.info("[FOLLOWUP-FOTOS] Iniciando envío masivo de fotos...")
+
+    # Buscar leads desde 4 mayo que NO tengan 1ER FOLLOWUP checked
+    formula = "AND(IS_AFTER({FECHA CREACION},'2026-05-04T10:00:00.000Z'),NOT({1ER FOLLOWUP}))"
+    all_records = []
+    offset = None
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    api_key = os.getenv("AIRTABLE_API_KEY")
+
+    while True:
+        from urllib.parse import quote
+        params = f"filterByFormula={quote(formula)}&pageSize=100"
+        if offset:
+            params += f"&offset={offset}"
+        url = f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX?{params}"
+        async with httpx.AsyncClient(timeout=15) as cl:
+            r = await cl.get(url, headers={"Authorization": f"Bearer {api_key}"})
+            data = r.json()
+        all_records.extend(data.get("records", []))
+        offset = data.get("offset")
+        if not offset:
+            break
+
+    logger.info(f"[FOLLOWUP-FOTOS] {len(all_records)} leads para enviar")
+
+    # Leer fotos
+    with open(_FOLLOWUP_FOTO1, "rb") as f:
+        foto1_bytes = f.read()
+    with open(_FOLLOWUP_FOTO2, "rb") as f:
+        foto2_bytes = f.read()
+
+    enviados = 0
+    for rec in all_records:
+        fields = rec.get("fields", {})
+        telefono = fields.get("TELEFONO", "")
+        conversion = fields.get("CONVERSION", "")
+        nombre_hijo = fields.get("NOMBRE NIÑO", "") or fields.get("NOMBRE NI\u00d1O", "") or ""
+        if not telefono:
+            continue
+
+        try:
+            # Enviar foto 1
+            await proveedor.enviar_imagen_bytes(telefono, foto1_bytes, "image/png")
+            await asyncio.sleep(2)
+
+            # Enviar foto 2
+            await proveedor.enviar_imagen_bytes(telefono, foto2_bytes, "image/jpeg")
+            await asyncio.sleep(2)
+
+            # Texto según si pagó o no
+            if conversion == "PAGO" and nombre_hijo:
+                texto = (
+                    f"Aqui es donde {nombre_hijo} se transforma, este sabado entrenamos con todo!! "
+                    f"Cupos casi llenos para este sabado, los esperamos! 🔥🌳"
+                )
+            else:
+                texto = (
+                    "Aqui es donde tu hijo se transforma, este sabado entrenamos con todo!! "
+                    "Cupos casi llenos para este sabado, te gustaria confirmar la reserva? 🔥🌳"
+                )
+
+            await proveedor.enviar_mensaje(telefono, texto)
+            await guardar_mensaje(telefono, "assistant", texto)
+
+            # Marcar 1ER FOLLOWUP en Airtable
+            await _patch(_LEADS, rec["id"], {"1ER FOLLOWUP": True})
+
+            enviados += 1
+            logger.info(f"[FOLLOWUP-FOTOS] Enviado a {telefono} ({enviados}/{len(all_records)})")
+            await asyncio.sleep(3)  # pausa entre leads
+
+        except Exception as e:
+            logger.error(f"[FOLLOWUP-FOTOS] Error con {telefono}: {e}")
+
+    logger.info(f"[FOLLOWUP-FOTOS] Completado: {enviados}/{len(all_records)} enviados")
