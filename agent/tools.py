@@ -54,7 +54,8 @@ def obtener_datos_pago() -> str:
         "Datos para transferencia:\n\n"
         "🏦 Banco Itaú\n"
         "👤 Iván Lafuente\n"
-        "🔢 Alias CI: 1604338"
+        "🔢 CI/Alias: 1604338\n"
+        "📱 Cell: 0982790407"
     )
 
 

@@ -22,7 +22,7 @@ DATOS_BANCARIOS = (
     "Ivan Lafuente\n"
     "Itaú\n"
     "Cta cte 1074574\n"
-    "CI 1604338\n"
+    "CI/Alias: 1604338\n"
     "Cell 0982790407"
 )
 

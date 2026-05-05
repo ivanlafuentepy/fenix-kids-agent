@@ -2635,13 +2635,18 @@ async def _procesar_comprobante(
 
     logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo}")
 
-    # ── Ivan sigue automáticamente: pregunta sábado y horario ─────────
+    # ── Ivan confirma reserva (solo si ya eligió horario antes) ─────────
     try:
         await asyncio.sleep(3)  # pausa natural
         historial_post = await obtener_historial(telefono, limite=40)
         agent_pago, _ = await obtener_agent_actual(telefono)
         respuesta_ivan = await generar_respuesta(
-            mensaje="[SISTEMA: pago confirmado, continuar con agendamiento]",
+            mensaje=(
+                "[SISTEMA: pago confirmado. Si el padre YA eligió sábado+horario antes de pagar, "
+                "decí 'Reserva confirmada ✅ [NOMBRE] tiene su lugar el sábado [FECHA] a las [HORA]h' "
+                "y agradecé la transferencia. NADA MÁS, no pidas datos, no mandes formulario. "
+                "Si NO eligió horario todavía, ofrecé los sábados disponibles.]"
+            ),
             historial=historial_post,
             agent_actual=agent_pago or "ivan",
         )
@@ -2650,6 +2655,20 @@ async def _procesar_comprobante(
         await proveedor.enviar_mensaje(telefono, respuesta_ivan)
         if topic_id:
             await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=telefono, group_override=group_override)
+
+        # ── Formulario SEPARADO (solo si confirmó reserva) ─────────
+        if "reserva confirmada" in respuesta_ivan.lower() or "tiene su lugar" in respuesta_ivan.lower():
+            await asyncio.sleep(5)  # pausa entre mensajes
+            msg_formulario = (
+                "Ahora sí, para completar la reserva pasame estos datos 📋\n\n"
+                "• Nombre completo tuyo (papá/mamá que acompaña)\n"
+                "• Nombre completo del nene/a\n"
+                "• Fecha de nacimiento del nene/a"
+            )
+            await guardar_mensaje(telefono, "assistant", msg_formulario)
+            await proveedor.enviar_mensaje(telefono, msg_formulario)
+            if topic_id:
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_formulario}", telefono=telefono, group_override=group_override)
     except Exception as e:
         logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
 
