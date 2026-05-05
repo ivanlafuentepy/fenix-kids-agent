@@ -514,6 +514,8 @@ Datos bancarios: Ivan Lafuente, Itaú, Cta cte 1074574, CI 1604338.
 | 168 | Campo SEGUIMIENTOS creado en LEADS FENIX via API | ✅ Hecho |
 | 169 | CONCEPTO gratis = F.GRATIS (matchea Airtable) | ✅ Hecho |
 | 170 | Agregar GRATIS a CONVERSION de PRUEBA FENIX | ⏳ Pendiente (Ivan — manual) |
+| 171 | Follow-up masivo fotos (oneshot 6AM PY 5 mayo): 2 fotos + CTA a ~100 leads | ✅ Hecho |
+| 172 | Campo 1ER FOLLOWUP (checkbox) en LEADS FENIX — marca leads que recibieron fotos | ✅ Hecho |
 
 ---
 
