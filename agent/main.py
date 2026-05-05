@@ -511,11 +511,11 @@ async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
     from sqlalchemy import select
     async with async_session() as session:
         result = await session.execute(
-            select(Mensaje).where(Mensaje.contenido == "[audio]").order_by(Mensaje.id.desc()).limit(5)
+            select(Mensaje).where(Mensaje.content == "[audio]").order_by(Mensaje.id.desc()).limit(5)
         )
         audios = result.scalars().all()
         resultado["ultimos_audios_recibidos"] = [
-            {"telefono": a.telefono, "id": a.id, "timestamp": str(a.timestamp) if hasattr(a, 'timestamp') else "N/A"}
+            {"telefono": a.telefono, "id": a.id, "timestamp": str(a.timestamp)}
             for a in audios
         ] if audios else "Ningún [audio] encontrado en historial"
 
