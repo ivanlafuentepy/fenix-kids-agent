@@ -237,7 +237,7 @@ async def extraer_datos_formulario(historial: list[dict]) -> dict:
 
     historial_texto = "\n".join(
         f"{'PADRE' if m['role'] == 'user' else 'AURORA'}: {m['content']}"
-        for m in historial[-30:]
+        for m in historial[-15:]
     )
 
     prompt_extraccion = """Analizá este historial de chat y extraé los datos de formulario.
@@ -279,7 +279,7 @@ Historial:
         async with asyncio.timeout(15):
             response = await client_ivan.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=800,
+                max_tokens=300,
                 messages=[{"role": "user", "content": prompt_extraccion}],
             )
         texto = response.content[0].text.strip()
@@ -341,7 +341,7 @@ Conversación:
         async with asyncio.timeout(15):
             response = await client_ivan.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=800,
+                max_tokens=300,
                 messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text.strip()
