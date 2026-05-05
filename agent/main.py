@@ -1179,59 +1179,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         _texto_cmd = texto.lower().strip().rstrip(".,!?")
         if telefono == admin_phone and "resumen" in _texto_cmd and "anuncio" in _texto_cmd:
             try:
-                from agent.airtable_client import _get_records, _PRUEBAS
-                from collections import defaultdict
-                # Paginar todos los registros de PRUEBA FENIX
-                all_records = []
-                offset = None
-                while True:
-                    params = ""
-                    if offset:
-                        params = f"&offset={offset}"
-                    _url_pf = f"https://api.airtable.com/v0/{os.getenv('AIRTABLE_BASE_ID')}/PRUEBA%20FENIX?pageSize=100{params}"
-                    import httpx as _httpx_resumen
-                    async with _httpx_resumen.AsyncClient(timeout=15) as _cl:
-                        _r = await _cl.get(_url_pf, headers={
-                            "Authorization": f"Bearer {os.getenv('AIRTABLE_API_KEY')}",
-                        })
-                        _data = _r.json()
-                    all_records.extend(_data.get("records", []))
-                    offset = _data.get("offset")
-                    if not offset:
-                        break
-
-                # Agrupar por FECHA CREACION (solo fecha, sin hora)
-                por_fecha = defaultdict(lambda: {"cantidad": 0, "monto": 0, "nombres": []})
-                _MONTOS_CONCEPTO = {
-                    "F.PRUEBA 90MIL": 90_000,
-                    "F.PRUEBA 120MIL": 120_000,
-                    "F.PRUEBA 150MIL": 150_000,
-                }
-                for rec in all_records:
-                    f = rec.get("fields", {})
-                    fecha_raw = f.get("FECHA CREACION", "")[:10]
-                    if not fecha_raw:
-                        continue
-                    concepto = f.get("CONCEPTO", "")
-                    monto = _MONTOS_CONCEPTO.get(concepto, 0)
-                    nombre = f.get("NOMBRE HIJO", "") or "sin nombre"
-                    por_fecha[fecha_raw]["cantidad"] += 1
-                    por_fecha[fecha_raw]["monto"] += monto
-                    por_fecha[fecha_raw]["nombres"].append(nombre)
-
-                # Armar resumen
-                total_agendados = len(all_records)
-                total_monto = sum(d["monto"] for d in por_fecha.values())
-                lineas = [f"📊 RESUMEN ANUNCIOS — {total_agendados} agendados, {total_monto:,} Gs total\n"]
-                for fecha in sorted(por_fecha.keys(), reverse=True):
-                    d = por_fecha[fecha]
-                    monto_fmt = f"{d['monto']:,}".replace(",", ".")
-                    nombres_str = ", ".join(d["nombres"])
-                    lineas.append(f"📅 {fecha}: {d['cantidad']} agendados — {monto_fmt} Gs")
-                    lineas.append(f"   {nombres_str}")
-
-                resumen_anuncios = "\n".join(lineas)
-                await proveedor.enviar_mensaje(telefono, resumen_anuncios)
+                await _generar_resumen_anuncios(telefono, _texto_cmd)
             except Exception as e:
                 logger.error(f"[RESUMEN] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen: {e}")
@@ -2146,6 +2094,156 @@ async def _procesar_confirmacion_reserva(
         except Exception as _e_rec:
             logger.error(f"[RECORDATORIO] Error programando para {telefono}: {_e_rec}")
 
+
+
+# ── Resumen anuncios (comando admin) ─────────────────────────────────────────
+
+_DIAS_SEMANA = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
+_MESES_NOMBRE = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+                 7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+_MONTOS_CONCEPTO = {
+    "F.PRUEBA 90MIL": 90_000,
+    "F.PRUEBA 120MIL": 120_000,
+    "F.PRUEBA 150MIL": 150_000,
+}
+
+
+def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
+    """
+    Parsea el filtro de fecha del comando resumen anuncios.
+    Retorna (label, fecha_desde, fecha_hasta) en formato YYYY-MM-DD.
+    None = sin filtro (mes corriente por default).
+    """
+    from datetime import date, timedelta
+
+    hoy = date.today()
+
+    # "resumen anuncios hoy"
+    if "hoy" in texto_cmd:
+        iso = hoy.isoformat()
+        return f"hoy ({hoy.day}/{hoy.month})", iso, iso
+
+    # "resumen anuncios ayer"
+    if "ayer" in texto_cmd:
+        ayer = hoy - timedelta(days=1)
+        iso = ayer.isoformat()
+        return f"ayer ({ayer.day}/{ayer.month})", iso, iso
+
+    # "resumen anuncios abril" / "resumen anuncios marzo"
+    for num, nombre in _MESES_NOMBRE.items():
+        if nombre in texto_cmd:
+            desde = f"{hoy.year}-{num:02d}-01"
+            if num == 12:
+                hasta = f"{hoy.year + 1}-01-01"
+            else:
+                hasta = f"{hoy.year}-{num + 1:02d}-01"
+            # hasta es el primer día del mes siguiente (exclusive)
+            ultimo = date.fromisoformat(hasta) - timedelta(days=1)
+            return f"{nombre} {hoy.year}", desde, ultimo.isoformat()
+
+    # Default: mes corriente
+    desde = f"{hoy.year}-{hoy.month:02d}-01"
+    if hoy.month == 12:
+        hasta_next = f"{hoy.year + 1}-01-01"
+    else:
+        hasta_next = f"{hoy.year}-{hoy.month + 1:02d}-01"
+    ultimo = date.fromisoformat(hasta_next) - timedelta(days=1)
+    return f"{_MESES_NOMBRE[hoy.month]} {hoy.year}", desde, ultimo.isoformat()
+
+
+async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
+    """Genera y envía resumen de PRUEBA FENIX agrupado por fecha."""
+    from datetime import date as _date_cls
+    from collections import defaultdict
+    import httpx as _httpx_r
+
+    label, fecha_desde, fecha_hasta = _parsear_filtro_fecha(texto_cmd)
+
+    # Paginar todos los registros de PRUEBA FENIX
+    all_records = []
+    offset = None
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    api_key = os.getenv("AIRTABLE_API_KEY")
+    while True:
+        params = f"pageSize=100"
+        if offset:
+            params += f"&offset={offset}"
+        _url = f"https://api.airtable.com/v0/{base_id}/PRUEBA%20FENIX?{params}"
+        async with _httpx_r.AsyncClient(timeout=15) as _cl:
+            _r = await _cl.get(_url, headers={"Authorization": f"Bearer {api_key}"})
+            _data = _r.json()
+        all_records.extend(_data.get("records", []))
+        offset = _data.get("offset")
+        if not offset:
+            break
+
+    # Filtrar por rango de fechas
+    registros_filtrados = []
+    for rec in all_records:
+        f = rec.get("fields", {})
+        fecha_raw = f.get("FECHA CREACION", "")[:10]
+        if not fecha_raw:
+            continue
+        if fecha_desde and fecha_raw < fecha_desde:
+            continue
+        if fecha_hasta and fecha_raw > fecha_hasta:
+            continue
+        registros_filtrados.append(rec)
+
+    if not registros_filtrados:
+        await proveedor.enviar_mensaje(telefono, f"📊 RESUMEN ANUNCIOS — {label}\n\nSin agendados en este período.")
+        return
+
+    # Agrupar por fecha + contar por monto
+    por_fecha = defaultdict(lambda: {"90": 0, "120": 0, "150": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+    for rec in registros_filtrados:
+        f = rec.get("fields", {})
+        fecha_raw = f.get("FECHA CREACION", "")[:10]
+        concepto = f.get("CONCEPTO", "")
+        monto = _MONTOS_CONCEPTO.get(concepto, 0)
+        por_fecha[fecha_raw]["cantidad"] += 1
+        por_fecha[fecha_raw]["total_monto"] += monto
+        if monto == 90_000:
+            por_fecha[fecha_raw]["90"] += 1
+        elif monto == 120_000:
+            por_fecha[fecha_raw]["120"] += 1
+        elif monto == 150_000:
+            por_fecha[fecha_raw]["150"] += 1
+        else:
+            por_fecha[fecha_raw]["sin"] += 1
+
+    # Totales generales
+    total_agendados = len(registros_filtrados)
+    total_monto = sum(d["total_monto"] for d in por_fecha.values())
+    total_fmt = f"{total_monto:,}".replace(",", ".")
+
+    lineas = [f"📊 RESUMEN ANUNCIOS — {label}", f"Total: {total_agendados} agendados — {total_fmt} Gs\n"]
+
+    for fecha_iso in sorted(por_fecha.keys(), reverse=True):
+        d = por_fecha[fecha_iso]
+        # Formato: DOM 4/5
+        try:
+            _fd = _date_cls.fromisoformat(fecha_iso)
+            dia_sem = _DIAS_SEMANA[_fd.weekday()]
+            fecha_label = f"{dia_sem} {_fd.day}/{_fd.month}"
+        except Exception:
+            fecha_label = fecha_iso
+        monto_dia = f"{d['total_monto']:,}".replace(",", ".")
+        lineas.append(f"📅 {fecha_label} — {d['cantidad']} agendados — {monto_dia} Gs")
+        # Desglose por monto
+        desglose = []
+        if d["90"]:
+            desglose.append(f"90mil: {d['90']}")
+        if d["120"]:
+            desglose.append(f"120mil: {d['120']}")
+        if d["150"]:
+            desglose.append(f"150mil: {d['150']}")
+        if d["sin"]:
+            desglose.append(f"s/monto: {d['sin']}")
+        if desglose:
+            lineas.append(f"   {' | '.join(desglose)}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
 
 # ── Afiche de precios ────────────────────────────────────────────────────────
