@@ -904,7 +904,7 @@ async def crear_prueba_fenix(
 
     # Deducir concepto según monto
     if monto == 0:
-        concepto = "F.PRUEBA GRATIS"
+        concepto = "F.GRATIS"
     elif monto == 120_000:
         concepto = "F.PRUEBA 120MIL"
     elif monto == 150_000:
