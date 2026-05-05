@@ -1135,6 +1135,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await guardar_ctwa_clid(msg.telefono, msg.ctwa_clid)
             logger.info(f"[CAPI] ctwa_clid capturado para {msg.telefono}")
 
+        # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
+        if texto == "[audio]" and hasattr(msg, "media_id") and msg.media_id:
+            try:
+                audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
+                if audio_bytes:
+                    transcripcion = await transcribir_audio(audio_bytes, mime_type)
+                    if transcripcion:
+                        texto = transcripcion
+                        logger.info(f"Audio transcripto: {texto[:80]}")
+                    else:
+                        logger.warning(f"Transcripción vacía para {msg.media_id}")
+            except Exception as e:
+                logger.error(f"Error transcribiendo audio: {e}")
+
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
         _reset_phones = {admin_phone, "595982844548"}
@@ -1263,19 +1277,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"[DIAG] Padre dijo '{texto}' — ignorando, diagnóstico pendiente")
                 return
 
-        # ── Transcribir audio ANTES de todo (para que detectores usen texto real)
-        if hasattr(msg, "media_id") and msg.media_id:
-            try:
-                audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
-                if audio_bytes:
-                    transcripcion = await transcribir_audio(audio_bytes, mime_type)
-                    if transcripcion:
-                        texto = transcripcion
-                        logger.info(f"Audio transcripto: {texto[:80]}")
-                    else:
-                        logger.warning(f"Transcripción vacía para {msg.media_id}")
-            except Exception as e:
-                logger.error(f"Error transcribiendo audio: {e}")
+        # (Transcripción de audio ya se hizo al inicio de la función)
 
 
         # ── Preparar nombre para Telegram (se usa después del router) ─────
