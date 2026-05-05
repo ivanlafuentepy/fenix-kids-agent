@@ -462,6 +462,66 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
+@app.get("/debug/diagnostico-audio")
+async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
+    """Diagnostica paso a paso por qué los audios podrían fallar."""
+    import httpx
+    resultado = {}
+
+    # 1. Variables de entorno
+    meta_token = os.getenv("META_ACCESS_TOKEN", "")
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    phone_id = os.getenv("META_PHONE_NUMBER_ID", "")
+    resultado["meta_token"] = f"{'OK (' + meta_token[:15] + '...)' if meta_token else '*** NO CONFIGURADO ***'}"
+    resultado["groq_key"] = f"{'OK (' + groq_key[:10] + '...)' if groq_key else '*** NO CONFIGURADO ***'}"
+    resultado["phone_number_id"] = phone_id or "*** NO CONFIGURADO ***"
+
+    # 2. Probar que el token de Meta funciona (GET al phone_number_id)
+    if meta_token and phone_id:
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                r = await client.get(
+                    f"https://graph.facebook.com/v21.0/{phone_id}",
+                    headers={"Authorization": f"Bearer {meta_token}"}
+                )
+                resultado["meta_api_test"] = {
+                    "status": r.status_code,
+                    "response": r.json() if r.status_code == 200 else r.text[:300],
+                }
+            except Exception as e:
+                resultado["meta_api_test"] = {"error": str(e)}
+
+    # 3. Probar que Groq responde
+    if groq_key:
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                r = await client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {groq_key}"}
+                )
+                resultado["groq_api_test"] = {
+                    "status": r.status_code,
+                    "ok": r.status_code == 200,
+                }
+            except Exception as e:
+                resultado["groq_api_test"] = {"error": str(e)}
+
+    # 4. Buscar último audio recibido en historial (cualquier lead)
+    from agent.memory import async_session, Mensaje
+    from sqlalchemy import select
+    async with async_session() as session:
+        result = await session.execute(
+            select(Mensaje).where(Mensaje.contenido == "[audio]").order_by(Mensaje.id.desc()).limit(5)
+        )
+        audios = result.scalars().all()
+        resultado["ultimos_audios_recibidos"] = [
+            {"telefono": a.telefono, "id": a.id, "timestamp": str(a.timestamp) if hasattr(a, 'timestamp') else "N/A"}
+            for a in audios
+        ] if audios else "Ningún [audio] encontrado en historial"
+
+    return resultado
+
+
 @app.get("/conversacion/{telefono}")
 async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)):
     """Historial completo de una conversación con timestamps — para análisis de flujo."""
