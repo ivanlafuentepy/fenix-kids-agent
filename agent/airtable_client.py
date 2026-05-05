@@ -257,7 +257,7 @@ async def obtener_lead_record_id(telefono: str) -> str | None:
 async def actualizar_conversion_lead(telefono: str, estado: str) -> bool:
     """
     Actualiza el campo CONVERSION del LEAD.
-    Estado puede ser: CONSULTA, AGENDA, INSCRIPTO
+    Estado puede ser: CONSULTA, CONTACTADO, PAGO, GRATIS, INSCRIPTO, DESCARTADO
     """
     record_id = await obtener_lead_record_id(telefono)
     if not record_id:
@@ -905,11 +905,14 @@ async def crear_prueba_fenix(
     from datetime import datetime, timezone
 
     # Deducir concepto según monto
-    concepto = "F.PRUEBA 90MIL"
-    if monto == 120_000:
+    if monto == 0:
+        concepto = "F.PRUEBA GRATIS"
+    elif monto == 120_000:
         concepto = "F.PRUEBA 120MIL"
     elif monto == 150_000:
         concepto = "F.PRUEBA 150MIL"
+    else:
+        concepto = "F.PRUEBA 90MIL"
 
     # Deducir género del nombre del hijo
     genero = _deducir_genero(nombre_hijo)
