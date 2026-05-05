@@ -462,7 +462,7 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
-@app.get("/debug/diagnostico-audio")
+@app.get("/diagnostico-audio")
 async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
     """Diagnostica paso a paso por qué los audios podrían fallar."""
     import httpx
