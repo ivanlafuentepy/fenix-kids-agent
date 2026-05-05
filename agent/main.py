@@ -1136,18 +1136,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             logger.info(f"[CAPI] ctwa_clid capturado para {msg.telefono}")
 
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
-        if texto == "[audio]" and hasattr(msg, "media_id") and msg.media_id:
-            try:
-                audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
-                if audio_bytes:
-                    transcripcion = await transcribir_audio(audio_bytes, mime_type)
-                    if transcripcion:
-                        texto = transcripcion
-                        logger.info(f"Audio transcripto: {texto[:80]}")
+        if texto == "[audio]":
+            _has_media = hasattr(msg, "media_id") and msg.media_id
+            logger.info(f"[AUDIO] Detectado [audio] de {telefono} — media_id={'SÍ' if _has_media else 'NO'}")
+            if _has_media:
+                try:
+                    audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
+                    logger.info(f"[AUDIO] Descarga: {len(audio_bytes) if audio_bytes else 0} bytes, mime={mime_type}")
+                    if audio_bytes:
+                        transcripcion = await transcribir_audio(audio_bytes, mime_type)
+                        if transcripcion:
+                            texto = transcripcion
+                            logger.info(f"[AUDIO] Transcripto OK: {texto[:80]}")
+                        else:
+                            logger.warning(f"[AUDIO] Transcripción vacía para {msg.media_id}")
                     else:
-                        logger.warning(f"Transcripción vacía para {msg.media_id}")
-            except Exception as e:
-                logger.error(f"Error transcribiendo audio: {e}")
+                        logger.error(f"[AUDIO] No se pudo descargar media {msg.media_id}")
+                except Exception as e:
+                    logger.error(f"[AUDIO] Error transcribiendo: {e}", exc_info=True)
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
