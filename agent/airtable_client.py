@@ -266,13 +266,11 @@ async def actualizar_conversion_lead(telefono: str, estado: str) -> bool:
 
 
 async def actualizar_agent_lead(telefono: str, agent: str, modo_nixie: str | None = None) -> bool:
-    """Actualiza AGENT_ACTUAL y opcionalmente MODO_AURORA en LEADS."""
+    """Actualiza AGENT_ACTUAL en LEADS."""
     record_id = await obtener_lead_record_id(telefono)
     if not record_id:
         return False
     campos: dict = {"AGENT_ACTUAL": agent.upper()}
-    if modo_nixie:
-        campos["MODO_AURORA"] = modo_nixie
     return await _patch(_LEADS, record_id, campos)
 
 
@@ -923,7 +921,6 @@ async def crear_prueba_fenix(
         "APELLIDO": apellido_responsable,
         "NOMBRE HIJO": nombre_hijo,
         "APELLIDO HIJO": apellido_hijo,
-        "EDAD HIJO": edad_hijo,
         "FECHA RESERVA": fecha_reserva,
         "HORA": hora,
         "FECHA NACIMIENTO": fecha_nacimiento,
