@@ -1967,11 +1967,12 @@ async def _procesar_confirmacion_reserva(
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")
 
-    logger.info(f"Confirmación Aurora detectada: {fecha_str} {hora_str} para {telefono}")
+    logger.info(f"Confirmación detectada ({agent_actual}): {fecha_str} {hora_str} para {telefono}")
 
-    # Actualizar LEADS con conversión + datos de reserva (PAGO porque ya pagaron)
-    await actualizar_conversion_lead(telefono, "PAGO")
-    await actualizar_reserva_lead(telefono, fecha_str, hora_str)
+    # Solo Ivan toca LEADS FENIX — Aurora NUNCA toca LEADS ni PRUEBA
+    if agent_actual == "ivan":
+        await actualizar_conversion_lead(telefono, "PAGO")
+        await actualizar_reserva_lead(telefono, fecha_str, hora_str)
 
     # Calcular fecha ISO para Airtable
     fecha_iso = None
