@@ -1176,7 +1176,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Comando resumen anuncios (solo admin) ──────────────────────────
-        if texto.lower().replace(" ", "") in ("resumenanuncios", "resumenanuncio") and telefono == admin_phone:
+        _texto_cmd = texto.lower().strip().rstrip(".,!?")
+        if telefono == admin_phone and "resumen" in _texto_cmd and "anuncio" in _texto_cmd:
             try:
                 from agent.airtable_client import _get_records, _PRUEBAS
                 from collections import defaultdict
