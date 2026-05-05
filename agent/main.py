@@ -3103,17 +3103,17 @@ async def _followup_fotos_oneshot():
 
     _TZ_PY = ZoneInfo("America/Asuncion")
 
-    # Esperar hasta 6:00 AM PY del 6 de mayo
+    # Esperar hasta 6:00 AM PY del 5 de mayo
     ahora = datetime.now(_TZ_PY)
-    target = datetime(2026, 5, 6, 6, 0, 0, tzinfo=_TZ_PY)
+    target = datetime(2026, 5, 5, 6, 0, 0, tzinfo=_TZ_PY)
     if ahora >= target:
-        # Ya pasó, verificar si es el mismo día (permite re-deploy)
-        if ahora.date() > target.date():
-            logger.info("[FOLLOWUP-FOTOS] Ya pasó el 6 mayo — oneshot desactivado")
+        # Ya pasó, verificar si es el mismo día (permite re-deploy el mismo día)
+        if (ahora - target).total_seconds() > 3600:  # más de 1h después = ya corrió
+            logger.info("[FOLLOWUP-FOTOS] Ya pasó la ventana — oneshot desactivado")
             return
     else:
         delay = (target - ahora).total_seconds()
-        logger.info(f"[FOLLOWUP-FOTOS] Esperando {delay:.0f}s hasta 6AM PY 2026-05-06")
+        logger.info(f"[FOLLOWUP-FOTOS] Esperando {delay:.0f}s hasta 6AM PY 2026-05-05")
         await asyncio.sleep(delay)
 
     logger.info("[FOLLOWUP-FOTOS] Iniciando envío masivo de fotos...")
