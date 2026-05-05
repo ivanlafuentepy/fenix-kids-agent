@@ -549,12 +549,25 @@ async def notificar_pago_telegram(
         return False
 
     wa_link = f"https://wa.me/{telefono}"
+
+    # Link al topic de Telegram de este lead
+    tg_link = ""
+    try:
+        topic = await obtener_topic(telefono)
+        if topic and topic.topic_id and topic.group_id:
+            # Convertir group_id negativo (-100XXXXXXXXXX) a ID interno para t.me/c/
+            gid = str(topic.group_id).replace("-100", "", 1)
+            tg_link = f"\n💬 https://t.me/c/{gid}/{topic.topic_id}"
+    except Exception:
+        pass
+
     texto = (
         f"{emoji} {titulo}\n\n"
         f"👤 {nombre}\n"
         f"📱 {telefono}"
         f"{extra}\n\n"
         f"📲 {wa_link}"
+        f"{tg_link}"
     )
 
     url = _api_url("sendMessage")
