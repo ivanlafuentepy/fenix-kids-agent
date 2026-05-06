@@ -2006,7 +2006,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESERVA] Error en cierre formulario: {e}")
 
-        # ── Enviar afiche cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
+        # ── Enviar afiche de horarios si el padre pregunta frecuencia/días ──
+        if (agent_actual == "ivan"
+                and telefono not in _afiche_horarios_enviado
+                and _padre_pregunta_horarios(texto)):
+            _afiche_horarios_enviado.add(telefono)
+            await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
+
+        # ── Enviar afiche de precios cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
         _ivan_dice_afiche = (
             agent_actual == "ivan"
             and "te paso un afiche" in respuesta.lower()
@@ -2553,6 +2560,47 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
 # ── Afiche de precios ────────────────────────────────────────────────────────
 
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
+_AFICHE_HORARIOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_horarios.png")
+_afiche_horarios_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche horarios
+
+async def _enviar_afiche_horarios(telefono: str, topic_id: int | None, tg_group: int = 0):
+    """Envía el afiche de horarios cuando el padre pregunta por frecuencia/días/horarios."""
+    try:
+        with open(_AFICHE_HORARIOS_PATH, "rb") as f:
+            image_bytes = f.read()
+        ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
+        if ok:
+            logger.info(f"[AFICHE HORARIOS] Imagen enviada a {telefono}")
+        else:
+            logger.error(f"[AFICHE HORARIOS] Error enviando imagen a {telefono}")
+
+        # Espejar en Telegram
+        _tid = topic_id
+        if not _tid:
+            try:
+                _tid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=tg_group)
+            except Exception:
+                pass
+        if _tid:
+            await enviar_a_topic(_tid, "👨‍🏫 IVAN: [📸 Afiche de horarios enviado]", telefono=telefono, group_override=tg_group)
+
+    except FileNotFoundError:
+        logger.error(f"[AFICHE HORARIOS] Archivo no encontrado: {_AFICHE_HORARIOS_PATH}")
+    except Exception as e:
+        logger.error(f"[AFICHE HORARIOS] Error: {e}")
+
+
+def _padre_pregunta_horarios(texto: str) -> bool:
+    """Detecta si el padre pregunta por horarios, frecuencia o días."""
+    t = texto.lower().strip()
+    patrones = [
+        "cuantas veces", "cuántas veces", "que dias", "qué días", "que día",
+        "horario", "horarios", "a la semana", "por semana", "frecuencia",
+        "cuando es", "cuándo es", "cuando son", "cuándo son",
+        "que dia", "qué dia", "dias de clase", "días de clase",
+    ]
+    return any(p in t for p in patrones)
+
 
 async def _armar_followup_afiche(telefono: str) -> str:
     """Arma el follow-up del afiche con nombre del hijo desde Airtable o historial."""
