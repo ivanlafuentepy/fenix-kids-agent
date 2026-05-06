@@ -1457,6 +1457,29 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
 
+        # ── Detección respuesta post-followup (ventana 24h) ───────────────
+        # Si el lead está en CONTACTADO y ya recibió al menos 1 followup,
+        # marcar que respondió y actualizar FECHA FOLLOWUP (resetea reloj 24h).
+        if agent_actual == "ivan":
+            try:
+                from agent.airtable_client import _get_records, _LEADS, _patch
+                _lr_fu = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr_fu:
+                    _f_fu = _lr_fu[0].get("fields", {})
+                    _conv_fu = _f_fu.get("CONVERSION", "")
+                    _seg_fu = _f_fu.get("SEGUIMIENTOS", 0) or 0
+                    if _conv_fu == "CONTACTADO" and _seg_fu >= 1:
+                        from datetime import datetime, timezone
+                        _campos_fu = {"FECHA FOLLOWUP": datetime.now(timezone.utc).isoformat()}
+                        if _seg_fu == 1:
+                            _campos_fu["RESPONDIO FU1"] = True
+                        elif _seg_fu >= 2:
+                            _campos_fu["RESPONDIO FU2"] = True
+                        await _patch(_LEADS, _lr_fu[0]["id"], _campos_fu)
+                        logger.info(f"[FOLLOWUP] {telefono} respondió post-FU{_seg_fu} → ventana 24h reabierta")
+            except Exception as e:
+                logger.error(f"[FOLLOWUP] Error detectando respuesta post-FU: {e}")
+
         # ── "Hola Aurora" fuerza Aurora (una vez por número) ──────────────
         _quiere_registro = _detectar_registro(texto, telefono)
         if _quiere_registro and agent_actual != "aurora":
@@ -2238,7 +2261,14 @@ async def _followup_loop():
 
 
 async def _ejecutar_followup():
-    """Recorre leads CONTACTADO con SEGUIMIENTOS<3 y envía follow-up si pasaron 24h."""
+    """Recorre leads CONTACTADO y envía follow-up respetando ventana 24h de WhatsApp.
+
+    Lógica de ventana:
+    - FU1 siempre se envía (24h después de datos bancarios — ventana abierta por msg del lead).
+    - FU2 solo si RESPONDIO FU1=True (el lead respondió al FU1, reabrió ventana).
+    - FU3 solo si RESPONDIO FU2=True (idem).
+    - Si pasaron 24h y NO respondió al FU previo → DESCARTADO (ventana cerrada).
+    """
     from datetime import datetime, timezone
     import httpx as _httpx_fu
 
@@ -2282,6 +2312,21 @@ async def _ejecutar_followup():
             except Exception:
                 continue
 
+            # ── Validar ventana 24h: FU2+ solo si respondió al FU anterior ──
+            respondio_fu1 = fields.get("RESPONDIO FU1", False)
+            respondio_fu2 = fields.get("RESPONDIO FU2", False)
+
+            if seguimientos == 1 and not respondio_fu1:
+                # FU1 enviado, no respondió, 24h pasaron → ventana cerrada
+                await actualizar_conversion_lead(telefono, "DESCARTADO")
+                logger.info(f"[FOLLOWUP] {telefono}: no respondió FU1, ventana cerrada → DESCARTADO")
+                continue
+            if seguimientos == 2 and not respondio_fu2:
+                # FU2 enviado, no respondió, 24h pasaron → ventana cerrada
+                await actualizar_conversion_lead(telefono, "DESCARTADO")
+                logger.info(f"[FOLLOWUP] {telefono}: no respondió FU2, ventana cerrada → DESCARTADO")
+                continue
+
             # Datos para el mensaje
             nombre_hijo = fields.get("NOMBRE NIÑO", "") or ""
             nombre_padre = fields.get("NOMBRE RESPONSABLE", "") or ""
@@ -2308,7 +2353,7 @@ async def _ejecutar_followup():
                 )
             elif seguimientos == 1:
                 instruccion = (
-                    f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer. "
+                    f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
                     f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
@@ -2334,7 +2379,7 @@ async def _ejecutar_followup():
                 # Si llegó a 3 → DESCARTADO
                 if nuevo >= 3:
                     await actualizar_conversion_lead(telefono, "DESCARTADO")
-                    logger.info(f"[FOLLOWUP] {telefono}: 3 seguimientos sin respuesta → DESCARTADO")
+                    logger.info(f"[FOLLOWUP] {telefono}: 3 seguimientos completados → DESCARTADO")
 
                 # Espejar en Telegram
                 try:
