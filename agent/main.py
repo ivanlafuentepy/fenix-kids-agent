@@ -3616,6 +3616,18 @@ async def _followup_video_oneshot():
 
     logger.info(f"[FOLLOWUP-VIDEO] {len(telefonos_ventana)} leads con ventana abierta")
 
+    # Consultar Airtable para saber quién ya recibió 1ER FOLLOWUP
+    from agent.airtable_client import _get_records, _LEADS
+    leads_con_1er_fu = set()
+    for telefono in telefonos_ventana:
+        try:
+            recs = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            if recs and recs[0].get("fields", {}).get("1ER FOLLOWUP"):
+                leads_con_1er_fu.add(telefono)
+        except Exception:
+            pass
+    logger.info(f"[FOLLOWUP-VIDEO] {len(leads_con_1er_fu)} ya recibieron 1ER FU, {len(telefonos_ventana) - len(leads_con_1er_fu)} es su 1ro")
+
     # Leer video
     try:
         with open(_FOLLOWUP_VIDEO, "rb") as f:
@@ -3658,11 +3670,12 @@ async def _followup_video_oneshot():
             await proveedor.enviar_mensaje(telefono, texto_fu)
             await guardar_mensaje(telefono, "assistant", texto_fu)
 
-            # Espejar en Telegram
+            # Espejar en Telegram — anotar si es 1ro o 2do según si ya recibió el masivo de fotos
+            _fu_num = "2DO" if telefono in leads_con_1er_fu else "1ER"
             try:
                 _topic_vid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
                 if _topic_vid:
-                    await enviar_a_topic(_topic_vid, f"📢 2DO FOLLOWUP: [🎬 Video + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
+                    await enviar_a_topic(_topic_vid, f"📢 {_fu_num} FOLLOWUP: [🎬 Video + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
             except Exception:
                 pass
 
