@@ -567,17 +567,20 @@ async def test_audio_download(media_id: str, _: bool = Depends(_require_admin)):
 @app.get("/resumen-followup")
 async def resumen_followup(_: bool = Depends(_require_admin)):
     """
-    Muestra todos los leads con seguimiento, si respondieron, y si pagaron.
-    Además hace backfill: revisa historial y marca RESPONDIO FU1/FU2 retroactivamente.
+    Revisa todos los leads con 1ER FOLLOWUP checked.
+    Para cada uno, checkea el historial para ver si respondieron después del 5 de mayo.
+    Marca RESPONDIO FU1 en Airtable y muestra resumen.
     """
     import httpx as _httpx_fu
-    from agent.memory import obtener_historial
+    from datetime import datetime, timezone
+    from agent.memory import async_session, Mensaje
+    from sqlalchemy import select as sa_select
 
     base_id = os.getenv("AIRTABLE_BASE_ID")
     api_key = os.getenv("AIRTABLE_API_KEY")
 
-    # Buscar leads con SEGUIMIENTOS >= 1 (cualquier CONVERSION)
-    formula = "AND({SEGUIMIENTOS}>=1)"
+    # Buscar todos los leads con 1ER FOLLOWUP checked
+    formula = "{1ER FOLLOWUP}=TRUE()"
     all_records = []
     offset_r = None
     while True:
@@ -594,92 +597,88 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
         if not offset_r:
             break
 
+    # Fecha del masivo: 5 de mayo 2026
+    fecha_masivo = datetime(2026, 5, 5, 9, 0, 0)
+
     resultados = []
-    backfill_count = 0
+    actualizados = 0
     for rec in all_records:
         fields = rec.get("fields", {})
         telefono = fields.get("TELEFONO", "")
         nombre = fields.get("NOMBRE RESPONSABLE", "") or ""
         nombre_hijo = fields.get("NOMBRE NIÑO", "") or ""
         conversion = fields.get("CONVERSION", "")
-        seguimientos = fields.get("SEGUIMIENTOS", 0) or 0
-        respondio_fu1 = fields.get("RESPONDIO FU1", False)
-        respondio_fu2 = fields.get("RESPONDIO FU2", False)
-        fecha_fu = fields.get("FECHA FOLLOWUP", "")
+        respondio = fields.get("RESPONDIO FU1", False)
 
-        # Backfill: revisar historial para marcar RESPONDIO FU1/FU2
-        backfill_campos = {}
-        if telefono and seguimientos >= 1:
-            historial = await obtener_historial(telefono, limite=40)
-            # Buscar si hay mensajes del user DESPUÉS de un FOLLOWUP del assistant
-            fu_indices = []
-            for i, m in enumerate(historial):
-                if m.get("role") == "assistant" and "FOLLOWUP" not in m.get("content", ""):
-                    continue
-                # Buscar patrón: assistant envía seguimiento, después user responde
-            # Método más simple: si está en CONTACTADO/PAGO y seguimientos >= 1,
-            # buscar si hay mensajes user después del último assistant
-            user_despues_fu = False
-            encontre_fu_msg = False
-            for m in reversed(historial):
-                if m.get("role") == "assistant":
-                    content = m.get("content", "").lower()
-                    # Los follow-ups son generados por Claude con instrucciones del sistema
-                    # No tienen un marcador claro, pero si el user respondió después es lo que importa
-                    encontre_fu_msg = True
-                    break
-                elif m.get("role") == "user":
-                    user_despues_fu = True
+        if not telefono:
+            continue
 
-            if user_despues_fu and seguimientos >= 1 and not respondio_fu1:
-                backfill_campos["RESPONDIO FU1"] = True
-                respondio_fu1 = True
-            if user_despues_fu and seguimientos >= 2 and not respondio_fu2:
-                backfill_campos["RESPONDIO FU2"] = True
-                respondio_fu2 = True
+        # Buscar en DB si hay mensajes del USER después del 5 de mayo 9:00
+        respondio_despues = False
+        ultimo_msg_user = None
+        async with async_session() as session:
+            query = (
+                sa_select(Mensaje)
+                .where(Mensaje.telefono == telefono)
+                .where(Mensaje.role == "user")
+                .where(Mensaje.timestamp > fecha_masivo)
+                .order_by(Mensaje.timestamp.desc())
+                .limit(1)
+            )
+            result = await session.execute(query)
+            msg = result.scalar_one_or_none()
+            if msg:
+                respondio_despues = True
+                ultimo_msg_user = msg.timestamp.isoformat()[:16]
 
-            # Aplicar backfill
-            if backfill_campos:
-                try:
-                    async with _httpx_fu.AsyncClient(timeout=10) as cl:
-                        await cl.patch(
-                            f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX/{rec['id']}",
-                            json={"fields": backfill_campos},
-                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                        )
-                    backfill_count += 1
-                except Exception:
-                    pass
+        # Marcar RESPONDIO FU1 en Airtable si respondió y no estaba marcado
+        if respondio_despues and not respondio:
+            try:
+                async with _httpx_fu.AsyncClient(timeout=10) as cl:
+                    await cl.patch(
+                        f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX/{rec['id']}",
+                        json={"fields": {"RESPONDIO FU1": True}},
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    )
+                actualizados += 1
+                respondio = True
+            except Exception:
+                pass
 
         resultados.append({
             "telefono": telefono,
             "nombre": f"{nombre} ({nombre_hijo})" if nombre_hijo else nombre,
             "conversion": conversion,
-            "seguimientos": seguimientos,
-            "respondio_fu1": respondio_fu1,
-            "respondio_fu2": respondio_fu2,
-            "fecha_followup": fecha_fu[:16] if fecha_fu else "",
+            "respondio": respondio_despues,
+            "respondio_fu1_airtable": respondio,
+            "ultimo_msg_post_fu": ultimo_msg_user,
         })
 
-    # Stats de conversión
-    total_fu = len(resultados)
+    # Stats
+    total = len(resultados)
+    respondieron = sum(1 for r in resultados if r["respondio"])
+    no_respondieron = total - respondieron
     pagaron = [r for r in resultados if r["conversion"] == "PAGO"]
-    descartados = [r for r in resultados if r["conversion"] == "DESCARTADO"]
+    pagaron_y_respondieron = [r for r in pagaron if r["respondio"]]
     contactados = [r for r in resultados if r["conversion"] == "CONTACTADO"]
-    respondieron_fu1 = sum(1 for r in resultados if r["respondio_fu1"])
-    respondieron_fu2 = sum(1 for r in resultados if r["respondio_fu2"])
+    consultas = [r for r in resultados if r["conversion"] == "CONSULTA"]
 
     return {
         "resumen": {
-            "total_con_followup": total_fu,
+            "total_1er_followup": total,
+            "respondieron": respondieron,
+            "no_respondieron": no_respondieron,
+            "tasa_respuesta": f"{respondieron/total*100:.1f}%" if total else "0%",
+            "pagaron": len(pagaron),
             "contactados": len(contactados),
-            "pagaron_post_fu": len(pagaron),
-            "descartados": len(descartados),
-            "respondieron_fu1": respondieron_fu1,
-            "respondieron_fu2": respondieron_fu2,
-            "backfill_aplicado": backfill_count,
+            "consultas_sin_avance": len(consultas),
+            "airtable_actualizados": actualizados,
         },
-        "leads": sorted(resultados, key=lambda r: r["seguimientos"], reverse=True),
+        "respondieron": sorted(
+            [r for r in resultados if r["respondio"]],
+            key=lambda r: r["ultimo_msg_post_fu"] or "", reverse=True
+        ),
+        "no_respondieron": [r for r in resultados if not r["respondio"]],
     }
 
 
