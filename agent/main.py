@@ -1267,10 +1267,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 except Exception as e:
                     _debug_info += f", ERROR={e}"
                     logger.error(f"[AUDIO] Error transcribiendo: {e}", exc_info=True)
-            # Guardar debug como mensaje del sistema (temporal — para diagnóstico)
             if texto == "[audio]":
-                await guardar_mensaje(telefono, "assistant", f"[DEBUG AUDIO] {_debug_info}")
-                logger.info(f"[AUDIO DEBUG] {_debug_info}")
+                logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
@@ -1386,7 +1384,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # Espejo: si es imagen, reenviar la imagen real a Telegram
                 if texto == "[imagen]" and hasattr(msg, "media_id") and msg.media_id:
                     try:
-                        from agent.transcriber import descargar_audio_whatsapp
                         img_bytes, _ = await descargar_audio_whatsapp(msg.media_id)
                         if img_bytes:
                             await enviar_media_a_topic(topic_id, img_bytes, tipo="imagen", telefono=telefono, group_override=_tg_group)
