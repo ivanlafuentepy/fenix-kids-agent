@@ -3539,6 +3539,14 @@ async def _followup_fotos_oneshot():
             await proveedor.enviar_mensaje(telefono, texto)
             await guardar_mensaje(telefono, "assistant", texto)
 
+            # Espejar en Telegram
+            try:
+                _topic_fu_fotos = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                if _topic_fu_fotos:
+                    await enviar_a_topic(_topic_fu_fotos, f"📢 1ER FOLLOWUP: [📸 2 fotos + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
+            except Exception:
+                pass
+
             # Marcar 1ER FOLLOWUP en Airtable
             await _patch(_LEADS, rec["id"], {"1ER FOLLOWUP": True})
 
