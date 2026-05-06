@@ -615,8 +615,10 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
 
         # Buscar en DB si hay mensajes del USER después del 5 de mayo 9:00
         respondio_despues = False
+        pago_post_fu = False
         ultimo_msg_user = None
         async with async_session() as session:
+            # ¿Respondió?
             query = (
                 sa_select(Mensaje)
                 .where(Mensaje.telefono == telefono)
@@ -630,6 +632,20 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
             if msg:
                 respondio_despues = True
                 ultimo_msg_user = msg.timestamp.isoformat()[:16]
+
+            # ¿Pagó DESPUÉS del followup? (buscar "pago confirmado" del assistant después del 5/5)
+            if conversion == "PAGO":
+                query_pago = (
+                    sa_select(Mensaje)
+                    .where(Mensaje.telefono == telefono)
+                    .where(Mensaje.role == "assistant")
+                    .where(Mensaje.content.ilike("%pago confirmado%"))
+                    .where(Mensaje.timestamp > fecha_masivo)
+                    .limit(1)
+                )
+                result_pago = await session.execute(query_pago)
+                if result_pago.scalar_one_or_none():
+                    pago_post_fu = True
 
         # Marcar RESPONDIO FU1 en Airtable si respondió y no estaba marcado
         if respondio_despues and not respondio:
@@ -650,7 +666,7 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
             "nombre": f"{nombre} ({nombre_hijo})" if nombre_hijo else nombre,
             "conversion": conversion,
             "respondio": respondio_despues,
-            "respondio_fu1_airtable": respondio,
+            "pago_post_fu": pago_post_fu,
             "ultimo_msg_post_fu": ultimo_msg_user,
         })
 
@@ -658,10 +674,10 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
     total = len(resultados)
     respondieron = sum(1 for r in resultados if r["respondio"])
     no_respondieron = total - respondieron
-    pagaron = [r for r in resultados if r["conversion"] == "PAGO"]
-    pagaron_y_respondieron = [r for r in pagaron if r["respondio"]]
-    contactados = [r for r in resultados if r["conversion"] == "CONTACTADO"]
-    consultas = [r for r in resultados if r["conversion"] == "CONSULTA"]
+    pagaron_post_fu = sum(1 for r in resultados if r["pago_post_fu"])
+    pagaron_antes = sum(1 for r in resultados if r["conversion"] == "PAGO" and not r["pago_post_fu"])
+    contactados = sum(1 for r in resultados if r["conversion"] == "CONTACTADO")
+    consultas = sum(1 for r in resultados if r["conversion"] == "CONSULTA")
 
     return {
         "resumen": {
@@ -669,9 +685,10 @@ async def resumen_followup(_: bool = Depends(_require_admin)):
             "respondieron": respondieron,
             "no_respondieron": no_respondieron,
             "tasa_respuesta": f"{respondieron/total*100:.1f}%" if total else "0%",
-            "pagaron": len(pagaron),
-            "contactados": len(contactados),
-            "consultas_sin_avance": len(consultas),
+            "pagaron_POST_followup": pagaron_post_fu,
+            "pagaron_ANTES_followup": pagaron_antes,
+            "contactados_esperando_pago": contactados,
+            "consultas_sin_avance": consultas,
             "airtable_actualizados": actualizados,
         },
         "respondieron": sorted(
