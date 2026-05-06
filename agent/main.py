@@ -2185,22 +2185,43 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         pass
 
                 # ── Link wa.me al admin ───────────────────────────────────────
-                # Nombre padre: Haiku ya lo extrajo del formulario
+                # Usar datos de Haiku (más completos) con fallback al historial
                 _nombre_padre_form = ""
+                _hijo_form = ""
                 if datos_form:
                     padre_d = datos_form.get("padre") or {}
                     _nombre_padre_form = padre_d.get("nombre", "") or ""
+                    if not _nombre_padre_form and padre_d.get("apellido"):
+                        _nombre_padre_form = padre_d.get("apellido", "")
+                    # Nombre completo del padre desde Haiku
+                    _np_full = f"{padre_d.get('nombre', '')} {padre_d.get('apellido', '')}".strip()
+                    if _np_full:
+                        _np = _np_full
+                    # Hijos desde Haiku
+                    ninos_nombres = [f"{n.get('nombre', '')} {n.get('apellido', '')}".strip() for n in datos_form.get("ninos", []) if n.get("nombre")]
+                    if ninos_nombres:
+                        _hijo_form = ", ".join(ninos_nombres)
+                    else:
+                        _hijo_form = _hijo
+                else:
+                    _hijo_form = _hijo
                 if not _nombre_padre_form:
                     _nombre_padre_form = primer_nombre or ""
-                _con_hijo = f", te espero con {_hijo}" if _hijo else ""
+                _con_hijo = f", te espero con {_hijo_form}" if _hijo_form else ""
                 _saludo = f"Que tal {_nombre_padre_form}" if _nombre_padre_form else "Que tal"
                 msg_wa = f"{_saludo}, te saluda el profe Ivan de Fenix Kids. Recibí tu reserva{_con_hijo} {fecha_hora}. 🌳"
                 wa_link = f"https://wa.me/{telefono}?text={quote(msg_wa)}"
+                # Link al topic de Telegram
+                _tg_link_reserva = ""
+                if topic_id and _tg_group:
+                    _gid_r = str(_tg_group).replace("-100", "", 1)
+                    _tg_link_reserva = f"\n💬 https://t.me/c/{_gid_r}/{topic_id}"
                 alerta_admin = (
                     f"📅 RESERVA COMPLETA\n\n"
                     f"👤 {_np or 'Lead'}\n"
-                    f"👦 {_hijo or 'hijo/a'}\n"
-                    f"📆 {fecha_hora}\n\n"
+                    f"👦 {_hijo_form or 'hijo/a'}\n"
+                    f"📆 {fecha_hora}"
+                    f"{_tg_link_reserva}\n\n"
                     f"📲 {wa_link}"
                 )
                 await proveedor.enviar_mensaje(admin_phone, alerta_admin)
