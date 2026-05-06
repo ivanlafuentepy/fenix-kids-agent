@@ -1267,8 +1267,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 except Exception as e:
                     _debug_info += f", ERROR={e}"
                     logger.error(f"[AUDIO] Error transcribiendo: {e}", exc_info=True)
-            # Guardar debug en DB SIEMPRE (para ver qué pasa)
-            await guardar_mensaje(telefono, "assistant", f"[AUDIO-DEBUG-v2] {_debug_info}")
+            if texto == "[audio]":
+                logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
@@ -2572,11 +2572,21 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             por_fecha[fecha_raw]["sin"] += 1
 
     # Totales generales
+    _GASTO_DIARIO = 200_000  # Gs por día en anuncios
     total_agendados = len(registros_filtrados)
-    total_monto = sum(d["total_monto"] for d in por_fecha.values())
-    total_fmt = f"{total_monto:,}".replace(",", ".")
+    total_agendado = sum(d["total_monto"] for d in por_fecha.values())
+    num_dias = len(por_fecha)
+    total_gastado = num_dias * _GASTO_DIARIO
+    diferencia = total_agendado - total_gastado
+    total_agendado_fmt = f"{total_agendado:,}".replace(",", ".")
+    total_gastado_fmt = f"{total_gastado:,}".replace(",", ".")
+    diferencia_fmt = f"{diferencia:,}".replace(",", ".")
+    signo = "+" if diferencia >= 0 else ""
 
-    lineas = [f"📊 RESUMEN ANUNCIOS — {label}", f"Total: {total_agendados} agendados — {total_fmt} Gs\n"]
+    lineas = [
+        f"📊 RESUMEN ANUNCIOS — {label}",
+        f"Total: {total_agendados} agendados — {total_agendado_fmt} Gs\n",
+    ]
 
     for fecha_iso in sorted(por_fecha.keys(), reverse=True):
         d = por_fecha[fecha_iso]
@@ -2588,7 +2598,8 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         except Exception:
             fecha_label = fecha_iso
         monto_dia = f"{d['total_monto']:,}".replace(",", ".")
-        lineas.append(f"📅 {fecha_label} — {d['cantidad']} agendados — {monto_dia} Gs")
+        gasto_dia_fmt = f"{_GASTO_DIARIO:,}".replace(",", ".")
+        lineas.append(f"📅 {fecha_label} — {d['cantidad']} agendados — {monto_dia} Gs (gasto: {gasto_dia_fmt})")
         # Desglose por monto
         desglose = []
         if d["90"]:
@@ -2601,6 +2612,12 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             desglose.append(f"s/monto: {d['sin']}")
         if desglose:
             lineas.append(f"   {' | '.join(desglose)}")
+
+    # Totales finales
+    lineas.append("")
+    lineas.append(f"💰 Total agendado: {total_agendado_fmt} Gs")
+    lineas.append(f"📢 Total gastado ({num_dias} días x {f'{_GASTO_DIARIO:,}'.replace(',','.')}): {total_gastado_fmt} Gs")
+    lineas.append(f"{'✅' if diferencia >= 0 else '🔴'} Diferencia: {signo}{diferencia_fmt} Gs")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
