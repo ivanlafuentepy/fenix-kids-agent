@@ -1246,22 +1246,31 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
         if texto == "[audio]":
             _media_token = os.getenv("META_MEDIA_TOKEN", "")
-            logger.info(f"[AUDIO] Detectado de {telefono} — media_id={msg.media_id or 'NINGUNO'} — META_MEDIA_TOKEN={'SÍ' if _media_token else 'NO'}")
+            _debug_info = f"media_id={msg.media_id or 'NINGUNO'}, META_MEDIA_TOKEN={'SÍ' if _media_token else 'NO'}"
+            logger.info(f"[AUDIO] Detectado de {telefono} — {_debug_info}")
             if msg.media_id:
                 try:
                     audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
-                    logger.info(f"[AUDIO] Descarga: {len(audio_bytes) if audio_bytes else 0} bytes, mime={mime_type}")
+                    _debug_info += f", descarga={len(audio_bytes) if audio_bytes else 0}bytes, mime={mime_type}"
                     if audio_bytes:
                         transcripcion = await transcribir_audio(audio_bytes, mime_type)
                         if transcripcion:
                             texto = transcripcion
+                            _debug_info += f", transcripcion=OK"
                             logger.info(f"[AUDIO] Transcripto OK: {texto[:80]}")
                         else:
+                            _debug_info += ", transcripcion=VACIA"
                             logger.warning(f"[AUDIO] Transcripción vacía para {msg.media_id}")
                     else:
+                        _debug_info += ", descarga=FALLÓ"
                         logger.error(f"[AUDIO] No se pudo descargar media {msg.media_id}")
                 except Exception as e:
+                    _debug_info += f", ERROR={e}"
                     logger.error(f"[AUDIO] Error transcribiendo: {e}", exc_info=True)
+            # Guardar debug como mensaje del sistema (temporal — para diagnóstico)
+            if texto == "[audio]":
+                await guardar_mensaje(telefono, "assistant", f"[DEBUG AUDIO] {_debug_info}")
+                logger.info(f"[AUDIO DEBUG] {_debug_info}")
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
