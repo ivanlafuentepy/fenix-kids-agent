@@ -43,34 +43,31 @@ PRECIOS = {
 
 
 def monto_prueba_por_hijos(historial: list[dict]) -> int:
-    """Detecta cuántos hijos vienen según el historial y retorna el monto correcto."""
+    """
+    Extrae el monto de prueba que Ivan confirmó en la conversación.
+    Busca el último mensaje de Ivan con "Transferencia: X Gs" o monto explícito
+    cerca de datos bancarios. Fallback: 90K.
+    """
     import re
-    texto_completo = " ".join(m.get("content", "").lower() for m in historial)
-    _palabras_hijos = r"(hijos|hijas|hermanos|hermanas|chicos|chicas|nenes|nenas|niños|niñas)"
-    # Buscar menciones de cantidad de hijos
-    if re.search(rf"(tres|3)\s*{_palabras_hijos}", texto_completo):
-        return 150_000
-    if re.search(rf"(dos|2)\s*{_palabras_hijos}", texto_completo):
-        return 120_000
-    # Contar nombres de hijos distintos en el historial (ej: "Noa 12 años\nAlisa 6 años")
-    # Solo contar líneas que empiezan con nombre propio + edad (no preguntas genéricas)
-    _nombres_hijos = set()
-    for m in historial:
-        if m.get("role") == "user":
-            lineas = m.get("content", "").strip().split("\n")
-            for linea in lineas:
-                l = linea.strip()
-                # Patrón: nombre(s) seguido de edad (ej: "Carlos 8 años", "Tirza 6 años")
-                # Excluir frases genéricas: la línea debe empezar con mayúscula (nombre propio)
-                if re.match(r"[A-ZÁÉÍÓÚÑ]", l) and re.search(r"\d+\s*(años|año|meses)", l.lower()):
-                    # Excluir si parece pregunta o frase genérica (no un nombre+edad)
-                    if not re.search(r"(desde|tiene|aceptan|hasta|edad|solo|ya)", l.lower()):
-                        _nombres_hijos.add(l.lower())
-    if len(_nombres_hijos) >= 3:
-        return 150_000
-    if len(_nombres_hijos) >= 2:
-        return 120_000
-    # Default: 1 hijo = 90mil
+    # Buscar en mensajes de Ivan (de más reciente a más antiguo)
+    # el monto que le pidió al padre transferir
+    for m in reversed(historial):
+        if m.get("role") != "assistant":
+            continue
+        contenido = m.get("content", "")
+        # Patrón: "Transferencia: 120.000 Gs" o "120.000 Gs" cerca de datos bancarios
+        match = re.search(r"[Tt]ransferencia[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "Prueba 2 hijos: 120.000" o "Prueba: 90.000"
+        match = re.search(r"[Pp]rueba[^:]*:\s*(\d{2,3})[.\s]?(\d{3})", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "90mil Gs" o "120mil" (sin punto de miles)
+        match = re.search(r"(\d{2,3})\s*mil\s*[Gg]s", contenido)
+        if match:
+            return int(match.group(1)) * 1000
+    # Fallback: 1 hijo = 90mil
     return 90_000
 
 # ── Detección de comprobante ─────────────────────────────────────────────────
