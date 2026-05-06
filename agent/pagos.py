@@ -53,14 +53,19 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
     if re.search(rf"(dos|2)\s*{_palabras_hijos}", texto_completo):
         return 120_000
     # Contar nombres de hijos distintos en el historial (ej: "Noa 12 años\nAlisa 6 años")
-    # Buscar patrón: nombre + edad en líneas separadas del mismo mensaje user
+    # Solo contar líneas que empiezan con nombre propio + edad (no preguntas genéricas)
     _nombres_hijos = set()
     for m in historial:
         if m.get("role") == "user":
             lineas = m.get("content", "").strip().split("\n")
             for linea in lineas:
-                if re.search(r"\d+\s*(años|año|meses)", linea.lower()):
-                    _nombres_hijos.add(linea.strip().lower())
+                l = linea.strip()
+                # Patrón: nombre(s) seguido de edad (ej: "Carlos 8 años", "Tirza 6 años")
+                # Excluir frases genéricas: la línea debe empezar con mayúscula (nombre propio)
+                if re.match(r"[A-ZÁÉÍÓÚÑ]", l) and re.search(r"\d+\s*(años|año|meses)", l.lower()):
+                    # Excluir si parece pregunta o frase genérica (no un nombre+edad)
+                    if not re.search(r"(desde|tiene|aceptan|hasta|edad|solo|ya)", l.lower()):
+                        _nombres_hijos.add(l.lower())
     if len(_nombres_hijos) >= 3:
         return 150_000
     if len(_nombres_hijos) >= 2:
