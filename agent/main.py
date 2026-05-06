@@ -530,7 +530,7 @@ async def test_audio_download(media_id: str, _: bool = Depends(_require_admin)):
     """Prueba descargar y transcribir un media_id específico."""
     import httpx
     resultado = {"media_id": media_id}
-    meta_token = os.getenv("META_MEDIA_TOKEN") or os.getenv("META_ACCESS_TOKEN", "")
+    meta_token = os.getenv("META_ACCESS_TOKEN", "")
     if not meta_token:
         return {"error": "META_ACCESS_TOKEN no configurado"}
 
