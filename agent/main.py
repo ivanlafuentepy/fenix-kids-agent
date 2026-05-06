@@ -2049,9 +2049,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[FOLLOWUP] Error marcando CONTACTADO: {e}")
 
+        # ── Detectar si el afiche va a enviarse (para no duplicar precios) ──
+        _va_a_enviar_afiche = False
+        if agent_actual == "ivan" and telefono not in _afiche_enviado:
+            _ivan_dice_afiche_check = "te paso un afiche" in respuesta.lower()
+            _interes_post_diag_check = (
+                _diagnostico_ya_enviado(historial)
+                and _padre_muestra_interes(texto)
+            )
+            if _ivan_dice_afiche_check or _interes_post_diag_check:
+                _va_a_enviar_afiche = True
+
         # ── Enviar respuesta (con delay humano) ────────────────────────────
-        await _delay_humano(respuesta)
-        await proveedor.enviar_mensaje(telefono, respuesta)
+        if _va_a_enviar_afiche:
+            # Afiche + msg_precios (hardcoded) — respuesta de Claude se omite
+            # porque el afiche ya cubre precios/horarios/CTA
+            _afiche_enviado.add(telefono)
+            await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
+        else:
+            await _delay_humano(respuesta)
+            await proveedor.enviar_mensaje(telefono, respuesta)
 
         # ── Espejo respuesta en Telegram ──────────────────────────────────
         agente_label = "🌟 AURORA" if agent_actual == "aurora" else "👨‍🏫 IVAN"
@@ -2958,12 +2975,18 @@ async def _procesar_comprobante(
     await enviar_evento_pago(telefono)
 
     # Notificar al admin (solo informativo, sin botones)
+    # Link al topic de Telegram de este lead
+    tg_link_admin = ""
+    if topic_id and group_override:
+        gid = str(group_override).replace("-100", "", 1)
+        tg_link_admin = f"\n💬 https://t.me/c/{gid}/{topic_id}"
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
         f"👤 Padre: {nombre_padre}\n"
         f"👦 Hijo/a: {nombre_hijo}\n"
         f"📱 {telefono}\n"
-        f"💰 Tipo: {tipo_label}\n\n"
+        f"💰 Tipo: {tipo_label}"
+        f"{tg_link_admin}\n\n"
         f"Auto-confirmado. Ivan sigue con el agendamiento."
     )
     # Reenviar imagen al admin (si hay media_id)
