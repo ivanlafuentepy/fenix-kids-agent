@@ -172,14 +172,15 @@ class ProveedorMeta(ProveedorWhatsApp):
             return None
         url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/media"
         headers = {"Authorization": f"Bearer {self.access_token}"}
-        ext = "png" if "png" in mime_type else "jpg"
+        _ext_map = {"image/png": "png", "image/jpeg": "jpg", "video/mp4": "mp4", "video/quicktime": "mov"}
+        ext = _ext_map.get(mime_type.split(";")[0].strip(), "bin")
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(
                     url,
                     headers=headers,
                     data={"messaging_product": "whatsapp", "type": mime_type},
-                    files={"file": (f"image.{ext}", image_bytes, mime_type)},
+                    files={"file": (f"media.{ext}", image_bytes, mime_type)},
                 )
                 if r.status_code == 200:
                     media_id = r.json().get("id")
@@ -199,6 +200,35 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not media_id:
             return False
         return await self.enviar_imagen(telefono, media_id, caption)
+
+    async def enviar_video_bytes(
+        self, telefono: str, video_bytes: bytes, mime_type: str = "video/mp4", caption: str = ""
+    ) -> bool:
+        """Sube un video y lo envía."""
+        media_id = await self.subir_media(video_bytes, mime_type)
+        if not media_id:
+            return False
+        if not self.access_token or not self.phone_number_id:
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        video_obj = {"id": media_id}
+        if caption:
+            video_obj["caption"] = caption
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "video",
+            "video": video_obj,
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.error(f"Error Meta video: {r.status_code} — {r.text}")
+            return r.status_code == 200
 
     async def enviar_plantilla(
         self,

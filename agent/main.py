@@ -391,8 +391,10 @@ async def lifespan(app: FastAPI):
     # Follow-up leads: 9:00 AM PY, recorre leads con datos bancarios sin pago
     _followup_task = _fire_and_forget(_followup_loop())
 
-    # Follow-up masivo fotos: ONE-SHOT 6:00 AM PY 2026-05-06
+    # Follow-up masivo fotos: ONE-SHOT (ya ejecutado 5/5)
     _followup_fotos_task = _fire_and_forget(_followup_fotos_oneshot())
+    # Follow-up video: ONE-SHOT 6:00 AM PY 2026-05-06
+    _followup_video_task = _fire_and_forget(_followup_video_oneshot())
 
     # Keepalive: mantener ventana WhatsApp del admin abierta (cada 6h)
     _keepalive_task = _fire_and_forget(_keepalive_admin_loop())
@@ -3558,3 +3560,117 @@ async def _followup_fotos_oneshot():
             logger.error(f"[FOLLOWUP-FOTOS] Error con {telefono}: {e}")
 
     logger.info(f"[FOLLOWUP-FOTOS] Completado: {enviados}/{len(all_records)} enviados")
+
+
+# ── Follow-up video — ONE-SHOT 6:00 AM PY 2026-05-06 ──────────────────────
+
+_FOLLOWUP_VIDEO = os.path.join(os.path.dirname(__file__), "..", "static", "followup_video.mp4")
+
+
+async def _followup_video_oneshot():
+    """Envía video a todos los leads con ventana 24h abierta. ONE-SHOT 6AM PY 6/5."""
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, timedelta
+    from agent.memory import async_session, Mensaje
+    from sqlalchemy import select as sa_select
+
+    _TZ_PY = ZoneInfo("America/Asuncion")
+
+    # Esperar hasta 6:00 AM PY del 6 de mayo
+    ahora = datetime.now(_TZ_PY)
+    target = datetime(2026, 5, 6, 6, 0, 0, tzinfo=_TZ_PY)
+    if ahora >= target:
+        if (ahora - target).total_seconds() > 3600:
+            logger.info("[FOLLOWUP-VIDEO] Ya pasó la ventana — oneshot desactivado")
+            return
+    else:
+        delay = (target - ahora).total_seconds()
+        logger.info(f"[FOLLOWUP-VIDEO] Esperando {delay:.0f}s hasta 6AM PY 2026-05-06")
+        await asyncio.sleep(delay)
+
+    logger.info("[FOLLOWUP-VIDEO] Iniciando envío masivo de video...")
+
+    # Ventana 24h: leads que escribieron después del 5 de mayo 5:00 UTC (~1AM PY)
+    from datetime import timezone
+    corte_ventana = datetime(2026, 5, 5, 5, 0, 0, tzinfo=timezone.utc)
+
+    # Buscar teléfonos con mensajes user recientes (ventana abierta)
+    telefonos_ventana = set()
+    async with async_session() as session:
+        query = (
+            sa_select(Mensaje.telefono)
+            .where(Mensaje.role == "user")
+            .where(Mensaje.timestamp > corte_ventana.replace(tzinfo=None))
+            .distinct()
+        )
+        result = await session.execute(query)
+        telefonos_ventana = {row[0] for row in result.all()}
+
+    if not telefonos_ventana:
+        logger.info("[FOLLOWUP-VIDEO] No hay leads con ventana abierta")
+        return
+
+    # Excluir admin
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    telefonos_ventana.discard(admin_phone)
+
+    logger.info(f"[FOLLOWUP-VIDEO] {len(telefonos_ventana)} leads con ventana abierta")
+
+    # Leer video
+    try:
+        with open(_FOLLOWUP_VIDEO, "rb") as f:
+            video_bytes = f.read()
+    except FileNotFoundError:
+        logger.error(f"[FOLLOWUP-VIDEO] Archivo no encontrado: {_FOLLOWUP_VIDEO}")
+        return
+
+    # Subir video UNA sola vez (reusar media_id)
+    media_id_video = await proveedor.subir_media(video_bytes, "video/mp4")
+    if not media_id_video:
+        logger.error("[FOLLOWUP-VIDEO] No se pudo subir el video a Meta")
+        return
+
+    logger.info(f"[FOLLOWUP-VIDEO] Video subido: media_id={media_id_video}")
+
+    texto_fu = "Regalale a tu hijo un sábado que recordará por el resto de su vida. Quedan pocos lugares disponibles."
+
+    enviados = 0
+    for telefono in telefonos_ventana:
+        try:
+            # Enviar video con caption
+            ok = await proveedor.enviar_imagen(telefono, media_id_video, caption="")
+            if not ok:
+                # Fallback: enviar como video explícito
+                url_msg = f"https://graph.facebook.com/{proveedor.api_version}/{proveedor.phone_number_id}/messages"
+                headers = {"Authorization": f"Bearer {proveedor.access_token}", "Content-Type": "application/json"}
+                import httpx
+                async with httpx.AsyncClient() as cl:
+                    await cl.post(url_msg, json={
+                        "messaging_product": "whatsapp",
+                        "to": telefono,
+                        "type": "video",
+                        "video": {"id": media_id_video},
+                    }, headers=headers)
+
+            await asyncio.sleep(2)
+
+            # Enviar texto
+            await proveedor.enviar_mensaje(telefono, texto_fu)
+            await guardar_mensaje(telefono, "assistant", texto_fu)
+
+            # Espejar en Telegram
+            try:
+                _topic_vid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                if _topic_vid:
+                    await enviar_a_topic(_topic_vid, f"📢 2DO FOLLOWUP: [🎬 Video + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
+            except Exception:
+                pass
+
+            enviados += 1
+            logger.info(f"[FOLLOWUP-VIDEO] Enviado a {telefono} ({enviados}/{len(telefonos_ventana)})")
+            await asyncio.sleep(3)
+
+        except Exception as e:
+            logger.error(f"[FOLLOWUP-VIDEO] Error con {telefono}: {e}")
+
+    logger.info(f"[FOLLOWUP-VIDEO] Completado: {enviados}/{len(telefonos_ventana)} enviados")
