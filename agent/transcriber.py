@@ -36,9 +36,8 @@ async def descargar_audio_whatsapp(media_id: str) -> tuple[bytes, str] | tuple[N
     Returns:
         (bytes del audio, mime_type) o (None, None) si falla.
     """
-    # META_MEDIA_TOKEN permite usar un token con permisos de media download
-    # (necesario si la app principal no está suscrita al WABA)
-    access_token = os.getenv("META_MEDIA_TOKEN") or os.getenv("META_ACCESS_TOKEN")
+    # META_MEDIA_TOKEN: token de app suscrita al WABA (Dorita) para descargar media
+    access_token = os.getenv("META_MEDIA_TOKEN", os.getenv("META_ACCESS_TOKEN"))
     if not access_token:
         logger.error("[Transcriber] META_ACCESS_TOKEN no configurado")
         return None, None
