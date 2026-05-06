@@ -522,6 +522,45 @@ async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
     return resultado
 
 
+@app.get("/test-audio/{media_id}")
+async def test_audio_download(media_id: str, _: bool = Depends(_require_admin)):
+    """Prueba descargar y transcribir un media_id específico."""
+    import httpx
+    resultado = {"media_id": media_id}
+    meta_token = os.getenv("META_ACCESS_TOKEN", "")
+    if not meta_token:
+        return {"error": "META_ACCESS_TOKEN no configurado"}
+
+    # Paso 1: obtener URL
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            r = await client.get(
+                f"https://graph.facebook.com/v21.0/{media_id}",
+                headers={"Authorization": f"Bearer {meta_token}"}
+            )
+            resultado["paso1_status"] = r.status_code
+            resultado["paso1_response"] = r.json() if r.status_code == 200 else r.text[:500]
+            if r.status_code != 200:
+                return resultado
+
+            url = r.json().get("url")
+            mime = r.json().get("mime_type", "?")
+            resultado["media_url"] = url[:50] + "..." if url else None
+            resultado["mime_type"] = mime
+
+            # Paso 2: descargar
+            if url:
+                r2 = await client.get(url, headers={"Authorization": f"Bearer {meta_token}"})
+                resultado["paso2_status"] = r2.status_code
+                resultado["paso2_bytes"] = len(r2.content) if r2.status_code == 200 else 0
+                if r2.status_code != 200:
+                    resultado["paso2_error"] = r2.text[:300]
+        except Exception as e:
+            resultado["error"] = str(e)
+
+    return resultado
+
+
 @app.get("/conversacion/{telefono}")
 async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)):
     """Historial completo de una conversación con timestamps — para análisis de flujo."""
@@ -1204,7 +1243,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
         if texto == "[audio]":
             _has_media = hasattr(msg, "media_id") and msg.media_id
-            logger.info(f"[AUDIO] Detectado [audio] de {telefono} — media_id={'SÍ' if _has_media else 'NO'}")
+            logger.info(f"[AUDIO] Detectado [audio] de {telefono} — media_id={msg.media_id or 'NINGUNO'}")
             if _has_media:
                 try:
                     audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
