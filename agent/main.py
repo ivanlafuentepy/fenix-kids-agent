@@ -1267,8 +1267,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 except Exception as e:
                     _debug_info += f", ERROR={e}"
                     logger.error(f"[AUDIO] Error transcribiendo: {e}", exc_info=True)
-            if texto == "[audio]":
-                logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
+            # Guardar debug en DB SIEMPRE (para ver qué pasa)
+            await guardar_mensaje(telefono, "assistant", f"[AUDIO-DEBUG-v2] {_debug_info}")
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
