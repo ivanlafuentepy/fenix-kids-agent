@@ -564,6 +564,125 @@ async def test_audio_download(media_id: str, _: bool = Depends(_require_admin)):
     return resultado
 
 
+@app.get("/resumen-followup")
+async def resumen_followup(_: bool = Depends(_require_admin)):
+    """
+    Muestra todos los leads con seguimiento, si respondieron, y si pagaron.
+    Además hace backfill: revisa historial y marca RESPONDIO FU1/FU2 retroactivamente.
+    """
+    import httpx as _httpx_fu
+    from agent.memory import obtener_historial
+
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    api_key = os.getenv("AIRTABLE_API_KEY")
+
+    # Buscar leads con SEGUIMIENTOS >= 1 (cualquier CONVERSION)
+    formula = "AND({SEGUIMIENTOS}>=1)"
+    all_records = []
+    offset_r = None
+    while True:
+        from urllib.parse import quote
+        params = f"filterByFormula={quote(formula)}&pageSize=100"
+        if offset_r:
+            params += f"&offset={offset_r}"
+        url = f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX?{params}"
+        async with _httpx_fu.AsyncClient(timeout=15) as cl:
+            r = await cl.get(url, headers={"Authorization": f"Bearer {api_key}"})
+            data = r.json()
+        all_records.extend(data.get("records", []))
+        offset_r = data.get("offset")
+        if not offset_r:
+            break
+
+    resultados = []
+    backfill_count = 0
+    for rec in all_records:
+        fields = rec.get("fields", {})
+        telefono = fields.get("TELEFONO", "")
+        nombre = fields.get("NOMBRE RESPONSABLE", "") or ""
+        nombre_hijo = fields.get("NOMBRE NIÑO", "") or ""
+        conversion = fields.get("CONVERSION", "")
+        seguimientos = fields.get("SEGUIMIENTOS", 0) or 0
+        respondio_fu1 = fields.get("RESPONDIO FU1", False)
+        respondio_fu2 = fields.get("RESPONDIO FU2", False)
+        fecha_fu = fields.get("FECHA FOLLOWUP", "")
+
+        # Backfill: revisar historial para marcar RESPONDIO FU1/FU2
+        backfill_campos = {}
+        if telefono and seguimientos >= 1:
+            historial = await obtener_historial(telefono, limite=40)
+            # Buscar si hay mensajes del user DESPUÉS de un FOLLOWUP del assistant
+            fu_indices = []
+            for i, m in enumerate(historial):
+                if m.get("role") == "assistant" and "FOLLOWUP" not in m.get("content", ""):
+                    continue
+                # Buscar patrón: assistant envía seguimiento, después user responde
+            # Método más simple: si está en CONTACTADO/PAGO y seguimientos >= 1,
+            # buscar si hay mensajes user después del último assistant
+            user_despues_fu = False
+            encontre_fu_msg = False
+            for m in reversed(historial):
+                if m.get("role") == "assistant":
+                    content = m.get("content", "").lower()
+                    # Los follow-ups son generados por Claude con instrucciones del sistema
+                    # No tienen un marcador claro, pero si el user respondió después es lo que importa
+                    encontre_fu_msg = True
+                    break
+                elif m.get("role") == "user":
+                    user_despues_fu = True
+
+            if user_despues_fu and seguimientos >= 1 and not respondio_fu1:
+                backfill_campos["RESPONDIO FU1"] = True
+                respondio_fu1 = True
+            if user_despues_fu and seguimientos >= 2 and not respondio_fu2:
+                backfill_campos["RESPONDIO FU2"] = True
+                respondio_fu2 = True
+
+            # Aplicar backfill
+            if backfill_campos:
+                try:
+                    async with _httpx_fu.AsyncClient(timeout=10) as cl:
+                        await cl.patch(
+                            f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX/{rec['id']}",
+                            json={"fields": backfill_campos},
+                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        )
+                    backfill_count += 1
+                except Exception:
+                    pass
+
+        resultados.append({
+            "telefono": telefono,
+            "nombre": f"{nombre} ({nombre_hijo})" if nombre_hijo else nombre,
+            "conversion": conversion,
+            "seguimientos": seguimientos,
+            "respondio_fu1": respondio_fu1,
+            "respondio_fu2": respondio_fu2,
+            "fecha_followup": fecha_fu[:16] if fecha_fu else "",
+        })
+
+    # Stats de conversión
+    total_fu = len(resultados)
+    pagaron = [r for r in resultados if r["conversion"] == "PAGO"]
+    descartados = [r for r in resultados if r["conversion"] == "DESCARTADO"]
+    contactados = [r for r in resultados if r["conversion"] == "CONTACTADO"]
+    respondieron_fu1 = sum(1 for r in resultados if r["respondio_fu1"])
+    respondieron_fu2 = sum(1 for r in resultados if r["respondio_fu2"])
+
+    return {
+        "resumen": {
+            "total_con_followup": total_fu,
+            "contactados": len(contactados),
+            "pagaron_post_fu": len(pagaron),
+            "descartados": len(descartados),
+            "respondieron_fu1": respondieron_fu1,
+            "respondieron_fu2": respondieron_fu2,
+            "backfill_aplicado": backfill_count,
+        },
+        "leads": sorted(resultados, key=lambda r: r["seguimientos"], reverse=True),
+    }
+
+
 @app.get("/conversacion/{telefono}")
 async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)):
     """Historial completo de una conversación con timestamps — para análisis de flujo."""
@@ -2801,9 +2920,17 @@ async def _procesar_comprobante(
     await guardar_mensaje(telefono, "assistant", msg_lead)
     await proveedor.enviar_mensaje(telefono, msg_lead)
 
-    # Actualizar conversión en Airtable
+    # Actualizar conversión en Airtable + registrar en qué FU pagó
     try:
         await actualizar_conversion_lead(telefono, "PAGO")
+        # Si tenía seguimientos, registrar en cuál pagó
+        from agent.airtable_client import _get_records, _LEADS, _patch
+        _lr_pago = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if _lr_pago:
+            _seg_pago = _lr_pago[0].get("fields", {}).get("SEGUIMIENTOS", 0) or 0
+            if _seg_pago >= 1:
+                await _patch(_LEADS, _lr_pago[0]["id"], {"PAGO POST FU": _seg_pago})
+                logger.info(f"[FOLLOWUP] {telefono} pagó después de FU{_seg_pago}")
     except Exception as e:
         logger.error(f"[PAGOS] Error actualizando conversión: {e}")
 
