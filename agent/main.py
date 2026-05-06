@@ -470,9 +470,12 @@ async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
 
     # 1. Variables de entorno
     meta_token = os.getenv("META_ACCESS_TOKEN", "")
+    media_token = os.getenv("META_MEDIA_TOKEN", "")
     groq_key = os.getenv("GROQ_API_KEY", "")
     phone_id = os.getenv("META_PHONE_NUMBER_ID", "")
     resultado["meta_token"] = f"{'OK (' + meta_token[:15] + '...)' if meta_token else '*** NO CONFIGURADO ***'}"
+    resultado["meta_media_token"] = f"{'OK (' + media_token[:15] + '...)' if media_token else '*** NO CONFIGURADO — audios no van a funcionar ***'}"
+    resultado["token_para_media"] = f"{'META_MEDIA_TOKEN' if media_token else 'META_ACCESS_TOKEN'} (se usa para descargar audio/imagen)"
     resultado["groq_key"] = f"{'OK (' + groq_key[:10] + '...)' if groq_key else '*** NO CONFIGURADO ***'}"
     resultado["phone_number_id"] = phone_id or "*** NO CONFIGURADO ***"
 
@@ -1242,9 +1245,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
         if texto == "[audio]":
-            _has_media = hasattr(msg, "media_id") and msg.media_id
-            logger.info(f"[AUDIO] Detectado [audio] de {telefono} — media_id={msg.media_id or 'NINGUNO'}")
-            if _has_media:
+            _media_token = os.getenv("META_MEDIA_TOKEN", "")
+            logger.info(f"[AUDIO] Detectado de {telefono} — media_id={msg.media_id or 'NINGUNO'} — META_MEDIA_TOKEN={'SÍ' if _media_token else 'NO'}")
+            if msg.media_id:
                 try:
                     audio_bytes, mime_type = await descargar_audio_whatsapp(msg.media_id)
                     logger.info(f"[AUDIO] Descarga: {len(audio_bytes) if audio_bytes else 0} bytes, mime={mime_type}")
