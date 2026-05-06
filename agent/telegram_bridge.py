@@ -476,26 +476,43 @@ async def notificar_agenda_telegram(
         fecha_display = "fecha a confirmar"
 
     nombre_display = nombre or telefono
-    primer_nombre = (nombre or "").split()[0] if nombre else "alumno"
+    primer_nombre = (nombre or "").split()[0] if nombre else ""
 
     # Mensaje wa.me personalizado según agente
+    saludo = f"Hola {primer_nombre}, " if primer_nombre else "Hola, "
+    if agente == "aurora":
+        intro = "me contó Aurora que reservaste"
+    else:
+        intro = "te saluda el profe Ivan de Fenix Kids. Recibí tu reserva"
+    fecha_parte = f" para el {dia or ''} a las {hora or ''}" if dia else ""
     if nombre_hijos:
         wa_text_preescrito = (
-            f"Hola {primer_nombre}, me contó Aurora que reservaste para el {dia or ''} a las {hora or ''}. "
+            f"{saludo}{intro}{fecha_parte}. "
             f"Le espero a {nombre_hijos} para descuearle con todo! 🔥🌳"
         )
     else:
         wa_text_preescrito = (
-            f"Hola {primer_nombre}, me contó Aurora que reservaste para el {dia or ''} a las {hora or ''}. "
+            f"{saludo}{intro}{fecha_parte}. "
             f"Los espero para descuearle con todo! 🔥🌳"
         )
 
     from urllib.parse import quote
     wa_link = f"https://wa.me/{telefono}?text={quote(wa_text_preescrito)}"
 
+    # Link al topic de Telegram de este lead
+    tg_link = ""
+    try:
+        topic = await obtener_topic(telefono)
+        if topic and topic.topic_id and topic.group_id:
+            gid = str(topic.group_id).replace("-100", "", 1)
+            tg_link = f"\n💬 https://t.me/c/{gid}/{topic.topic_id}"
+    except Exception:
+        pass
+
     texto = (
         f"📅 {nombre_display} agendó para el {fecha_display}\n"
         f"📱 {wa_link}"
+        f"{tg_link}"
     )
 
     url = _api_url("sendMessage")
