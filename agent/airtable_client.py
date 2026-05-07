@@ -181,13 +181,14 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     if records:
         return records[0]["id"]
 
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
+    _PY_TZ = timezone(timedelta(hours=-3))
     resultado = await _post(_LEADS, {
         "TELEFONO": telefono,
         "ROMPEHIELOS": rompehielos,
         "CONVERSION": "CONSULTA",
         "AGENT_ACTUAL": "IVAN",
-        "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
+        "FECHA CREACION": datetime.now(_PY_TZ).isoformat(),
     })
     if resultado:
         record_id = resultado["id"]
@@ -900,7 +901,8 @@ async def crear_prueba_fenix(
     metodo_pago: str = "TRANSFER",
 ) -> str | None:
     """Crea un registro en PRUEBA FENIX con todos los campos. Retorna record_id o None."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
+    _PY_TZ = timezone(timedelta(hours=-3))
 
     # Deducir concepto según monto
     if monto == 0:
@@ -930,7 +932,7 @@ async def crear_prueba_fenix(
         "GENERO": genero,
         "ORIGEN LEAD": "ANUNCIO",
         "REGISTRAR": True,
-        "FECHA CREACION": datetime.now(timezone.utc).isoformat(),
+        "FECHA CREACION": datetime.now(_PY_TZ).isoformat(),
     }
     if diagnostico_ids:
         campos["DIAGNOSTICO"] = diagnostico_ids

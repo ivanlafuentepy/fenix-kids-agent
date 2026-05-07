@@ -2648,9 +2648,11 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
     Retorna (label, fecha_desde, fecha_hasta) en formato YYYY-MM-DD.
     None = sin filtro (mes corriente por default).
     """
-    from datetime import date, timedelta
+    from datetime import date, timedelta, datetime, timezone
 
-    hoy = date.today()
+    # Paraguay es UTC-3 — Railway corre en UTC, así que forzamos hora PY
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
 
     # "resumen anuncios hoy"
     if "hoy" in texto_cmd:
