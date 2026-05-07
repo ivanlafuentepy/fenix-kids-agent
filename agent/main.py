@@ -2687,6 +2687,25 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
     return f"{_MESES_NOMBRE[hoy.month]} {hoy.year}", desde, ultimo.isoformat()
 
 
+def _fecha_py(iso_str: str) -> str:
+    """Convierte un timestamp ISO (UTC o con offset) a fecha PY (YYYY-MM-DD).
+    Si solo tiene fecha sin hora, la devuelve tal cual."""
+    from datetime import datetime, timezone, timedelta
+    _PY_TZ = timezone(timedelta(hours=-3))
+    if not iso_str:
+        return ""
+    try:
+        # Intentar parsear como datetime completo
+        if "T" in iso_str:
+            # fromisoformat maneja offsets como +00:00 y -03:00
+            dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+            return dt.astimezone(_PY_TZ).date().isoformat()
+        # Solo fecha, devolver tal cual
+        return iso_str[:10]
+    except Exception:
+        return iso_str[:10]
+
+
 async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     """Genera y envía resumen de PRUEBA FENIX agrupado por fecha."""
     from datetime import date as _date_cls
@@ -2713,11 +2732,11 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         if not offset:
             break
 
-    # Filtrar por rango de fechas
+    # Filtrar por rango de fechas (convertir UTC → hora PY)
     registros_filtrados = []
     for rec in all_records:
         f = rec.get("fields", {})
-        fecha_raw = f.get("FECHA CREACION", "")[:10]
+        fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
         if not fecha_raw:
             continue
         if fecha_desde and fecha_raw < fecha_desde:
@@ -2734,7 +2753,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     por_fecha = defaultdict(lambda: {"90": 0, "120": 0, "150": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
     for rec in registros_filtrados:
         f = rec.get("fields", {})
-        fecha_raw = f.get("FECHA CREACION", "")[:10]
+        fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
         concepto = f.get("CONCEPTO", "")
         monto = _MONTOS_CONCEPTO.get(concepto, 0)
         por_fecha[fecha_raw]["cantidad"] += 1
