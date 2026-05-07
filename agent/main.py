@@ -1452,6 +1452,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen reservas: {e}")
             return
 
+        # ── Comando resumen followup (solo admin) ──────────────────────────
+        if telefono == admin_phone and "resumen" in _texto_cmd and ("followup" in _texto_cmd or "follow" in _texto_cmd or "fu" in _texto_cmd.split()):
+            try:
+                await _generar_resumen_followup(telefono)
+            except Exception as e:
+                logger.error(f"[RESUMEN FU] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen followup: {e}")
+            return
+
         # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
         if texto.lower().replace(" ", "") == "modoalumno" and telefono == admin_phone:
             cancelar_seguimiento(telefono)
@@ -2791,6 +2800,126 @@ async def _generar_resumen_reservas(telefono: str):
     total = total_aurora + total_fenix
     lineas.append(f"👧👦 *Total: {total} guerrero{'s' if total != 1 else ''}*")
     lineas.append(f"   🌳 Aurora: {total_aurora} | 🔥 Prueba: {total_fenix}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_resumen_followup(telefono: str):
+    """Genera resumen de follow-ups: quién espera respuesta, quién respondió, descartados, pagaron."""
+    from datetime import datetime, timezone, timedelta
+    from agent.airtable_client import _get_records, _LEADS
+    from urllib.parse import quote
+
+    ahora = datetime.now(timezone.utc)
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    api_key = os.getenv("AIRTABLE_API_KEY")
+
+    # Traer todos los leads que entraron al sistema de FU (tienen FECHA FOLLOWUP)
+    # Incluye CONTACTADO (en proceso) y DESCARTADO (cerrados) y PAGO (convirtieron)
+    formula = "NOT({FECHA FOLLOWUP}=BLANK())"
+    all_records = []
+    offset_fu = None
+    import httpx as _httpx_fu
+    while True:
+        params = f"filterByFormula={quote(formula)}&pageSize=100"
+        if offset_fu:
+            params += f"&offset={offset_fu}"
+        _url = f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX?{params}"
+        async with _httpx_fu.AsyncClient(timeout=15) as _cl:
+            _r = await _cl.get(_url, headers={"Authorization": f"Bearer {api_key}"})
+            _data = _r.json()
+        all_records.extend(_data.get("records", []))
+        offset_fu = _data.get("offset")
+        if not offset_fu:
+            break
+
+    # Clasificar leads
+    esperando = []      # FU enviado, esperando respuesta (< 24h)
+    respondieron = []   # Respondió al último FU, esperando pago
+    descartados = []    # No respondió, ventana cerrada
+    pagaron = []        # Pagó post-FU
+
+    for rec in all_records:
+        f = rec.get("fields", {})
+        tel = f.get("TELEFONO", "")
+        nombre_padre = (f.get("NOMBRE RESPONSABLE", "") or "").split()[0] if f.get("NOMBRE RESPONSABLE") else tel[-4:]
+        nombre_hijo = f.get("NOMBRE NIÑO", "") or ""
+        conversion = f.get("CONVERSION", "")
+        seguimientos = f.get("SEGUIMIENTOS", 0) or 0
+        respondio_fu1 = f.get("RESPONDIO FU1", False)
+        respondio_fu2 = f.get("RESPONDIO FU2", False)
+        fecha_fu = f.get("FECHA FOLLOWUP", "")
+        pago_post = f.get("PAGO POST FU", 0) or 0
+
+        if not tel:
+            continue
+
+        # Calcular horas desde último FU
+        horas_desde = 0
+        try:
+            fecha_ultimo = datetime.fromisoformat(fecha_fu.replace("Z", "+00:00"))
+            horas_desde = (ahora - fecha_ultimo).total_seconds() / 3600
+        except Exception:
+            pass
+
+        label = f"{nombre_padre} ({nombre_hijo})" if nombre_hijo else nombre_padre
+
+        # Clasificar
+        if conversion == "PAGO":
+            if pago_post or seguimientos >= 1:
+                pagaron.append(f"💰 {label} — pagó post FU{seguimientos}")
+            continue
+
+        if conversion == "DESCARTADO":
+            fu_label = f"FU{seguimientos}" if seguimientos else "FU1"
+            descartados.append(f"⛔ {label} — no respondió {fu_label}")
+            continue
+
+        # CONTACTADO — en proceso
+        if seguimientos == 0:
+            # Tiene FECHA FOLLOWUP pero SEGUIMIENTOS=0 → esperando primer FU
+            esperando.append(f"⏳ {label} — esperando FU1 ({int(horas_desde)}h)")
+            continue
+
+        # Determinar si respondió al último FU
+        if seguimientos == 1:
+            if respondio_fu1:
+                respondieron.append(f"✅ {label} — respondió FU1, esperando pago")
+            else:
+                esperando.append(f"🟡 {label} — FU1 enviado hace {int(horas_desde)}h")
+        elif seguimientos == 2:
+            if respondio_fu2:
+                respondieron.append(f"✅ {label} — respondió FU2, esperando pago")
+            else:
+                esperando.append(f"🟡 {label} — FU2 enviado hace {int(horas_desde)}h")
+        elif seguimientos >= 3:
+            esperando.append(f"🔴 {label} — FU3 enviado hace {int(horas_desde)}h")
+
+    # Armar mensaje
+    lineas = ["📊 *RESUMEN FOLLOWUP*\n"]
+
+    if esperando:
+        lineas.append(f"🟡 *EN CURSO ({len(esperando)}):*")
+        lineas.extend(esperando)
+        lineas.append("")
+
+    if respondieron:
+        lineas.append(f"✅ *RESPONDIERON ({len(respondieron)}):*")
+        lineas.extend(respondieron)
+        lineas.append("")
+
+    if pagaron:
+        lineas.append(f"💰 *PAGARON POST-FU ({len(pagaron)}):*")
+        lineas.extend(pagaron)
+        lineas.append("")
+
+    if descartados:
+        lineas.append(f"❌ *DESCARTADOS ({len(descartados)}):*")
+        lineas.extend(descartados)
+        lineas.append("")
+
+    total = len(esperando) + len(respondieron) + len(pagaron) + len(descartados)
+    lineas.append(f"📈 *Total en FU: {total}* — ✅{len(respondieron)} 💰{len(pagaron)} ❌{len(descartados)} 🟡{len(esperando)}")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
