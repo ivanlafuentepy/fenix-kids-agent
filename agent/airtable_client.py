@@ -767,8 +767,17 @@ async def crear_reserva(nino_id: str, horario_id: str, familia_id: str = "") -> 
     """
     Crea una RESERVA vinculando NINO + HORARIO + FAMILIAS.
     Siempre 1 reserva = 1 niño + 1 horario.
-    Retorna el record_id de la RESERVA creada.
+    Si ya existe una reserva para ese niño en ese horario, no crea duplicado.
+    Retorna el record_id de la RESERVA (existente o nueva).
     """
+    # Guard: verificar si ya existe reserva de este niño en este horario
+    formula = f"AND(FIND('{nino_id}', ARRAYJOIN({{NINO}})), FIND('{horario_id}', ARRAYJOIN({{HORARIO}})))"
+    existentes = await _get_records(_RESERVAS, formula=formula, max_records=1)
+    if existentes:
+        rid = existentes[0]["id"]
+        logger.info(f"Reserva ya existe: {rid} nino={nino_id} horario={horario_id} — no se crea duplicado")
+        return rid
+
     campos = {
         "NINO": [nino_id],
         "HORARIO": [horario_id],
