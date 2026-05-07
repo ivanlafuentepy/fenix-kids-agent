@@ -2723,7 +2723,11 @@ async def _generar_resumen_reservas(telefono: str):
     fecha_iso = sabado.isoformat()
 
     _DIAS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
+    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
     fecha_label = f"{_DIAS[sabado.weekday()]} {sabado.day}/{sabado.month}"
+    # FECHA RESERVA en PRUEBA FENIX se guarda como "9 de mayo" (texto, no ISO)
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
 
     turnos = ["9:30", "11:00", "15:30"]
 
@@ -2734,11 +2738,24 @@ async def _generar_resumen_reservas(telefono: str):
         aurora_por_turno[hora] = ninos
 
     # ── FENIX: clases de prueba (PRUEBA FENIX con FECHA RESERVA = sábado) ──
-    pruebas = await _get_records(
+    # Buscar por formato texto ("9 de mayo") y también ISO por si se normaliza a futuro
+    pruebas_texto = await _get_records(
+        _PRUEBAS,
+        formula=f"{{FECHA RESERVA}}='{fecha_texto}'",
+        max_records=50,
+    )
+    pruebas_iso = await _get_records(
         _PRUEBAS,
         formula=f"{{FECHA RESERVA}}='{fecha_iso}'",
         max_records=50,
     )
+    # Dedup por record id
+    _seen_ids = set()
+    pruebas = []
+    for rec in pruebas_texto + pruebas_iso:
+        if rec["id"] not in _seen_ids:
+            _seen_ids.add(rec["id"])
+            pruebas.append(rec)
     fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
     for rec in pruebas:
         f = rec.get("fields", {})
