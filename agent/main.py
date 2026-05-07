@@ -1443,6 +1443,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen: {e}")
             return
 
+        # ── Comando resumen reservas (solo admin) ─────────────────────────
+        if telefono == admin_phone and "resumen" in _texto_cmd and "reserva" in _texto_cmd:
+            try:
+                await _generar_resumen_reservas(telefono)
+            except Exception as e:
+                logger.error(f"[RESUMEN RESERVAS] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen reservas: {e}")
+            return
+
         # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
         if texto.lower().replace(" ", "") == "modoalumno" and telefono == admin_phone:
             cancelar_seguimiento(telefono)
@@ -2685,6 +2694,105 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
         hasta_next = f"{hoy.year}-{hoy.month + 1:02d}-01"
     ultimo = date.fromisoformat(hasta_next) - timedelta(days=1)
     return f"{_MESES_NOMBRE[hoy.month]} {hoy.year}", desde, ultimo.isoformat()
+
+
+async def _generar_resumen_reservas(telefono: str):
+    """Genera resumen de reservas del sábado más cercano, agrupado por turno.
+    Separa AURORA (alumnos inscriptos) y FENIX (clases de prueba)."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+    import httpx as _httpx_res
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    # Calcular el sábado más cercano (hoy si es sábado, sino el próximo)
+    dias_hasta_sabado = (5 - hoy.weekday()) % 7
+    if dias_hasta_sabado == 0 and hoy.weekday() != 5:
+        dias_hasta_sabado = 7
+    sabado = hoy + timedelta(days=dias_hasta_sabado)
+    fecha_iso = sabado.isoformat()
+
+    _DIAS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
+    fecha_label = f"{_DIAS[sabado.weekday()]} {sabado.day}/{sabado.month}"
+
+    turnos = ["9:30", "11:00", "15:30"]
+
+    # ── AURORA: alumnos inscriptos (RESERVAS FENIX via HORARIOS) ──
+    aurora_por_turno = {}
+    for hora in turnos:
+        ninos = await obtener_ninos_por_horario(fecha_iso, hora)
+        aurora_por_turno[hora] = ninos
+
+    # ── FENIX: clases de prueba (PRUEBA FENIX con FECHA RESERVA = sábado) ──
+    pruebas = await _get_records(
+        _PRUEBAS,
+        formula=f"{{FECHA RESERVA}}='{fecha_iso}'",
+        max_records=50,
+    )
+    fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
+    for rec in pruebas:
+        f = rec.get("fields", {})
+        hora_raw = (f.get("HORA") or "").strip()
+        # Normalizar para matchear turnos
+        if hora_raw not in fenix_por_turno:
+            # Intentar match parcial (ej "9:30" vs "09:30")
+            for t in turnos:
+                if hora_raw.lstrip("0") == t or hora_raw == t:
+                    hora_raw = t
+                    break
+        if hora_raw in fenix_por_turno:
+            nombre = f.get("NOMBRE HIJO", "")
+            apellido = f.get("APELLIDO HIJO", "")
+            fenix_por_turno[hora_raw].append({
+                "nombre": nombre,
+                "apellido": apellido,
+            })
+
+    # ── Armar mensaje ──
+    emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆"]
+    lineas = [f"📋 *RESERVAS — {fecha_label}*\n"]
+    total_aurora = 0
+    total_fenix = 0
+
+    for hora in turnos:
+        aurora = aurora_por_turno[hora]
+        fenix = fenix_por_turno[hora]
+        total_turno = len(aurora) + len(fenix)
+        total_aurora += len(aurora)
+        total_fenix += len(fenix)
+
+        lineas.append(f"⏰ *{hora}h* — {total_turno} niño{'s' if total_turno != 1 else ''}")
+
+        if aurora:
+            lineas.append(f"   🌳 *Aurora ({len(aurora)}):*")
+            for i, n in enumerate(aurora):
+                emoji = emojis[i % len(emojis)]
+                nombre = (n.get("apodo") or n["nombre"]).split()[0]
+                apellido = n["apellido"].split()[0] if n["apellido"] else ""
+                nombre_full = f"{nombre} {apellido}".strip()
+                edad_str = f" ({n['edad']} años)" if n.get("edad") else ""
+                lineas.append(f"      {emoji} {nombre_full}{edad_str}")
+
+        if fenix:
+            lineas.append(f"   🔥 *Fenix — prueba ({len(fenix)}):*")
+            for i, n in enumerate(fenix):
+                emoji = emojis[(i + len(aurora)) % len(emojis)]
+                nombre = n["nombre"].split()[0] if n["nombre"] else ""
+                apellido = n["apellido"].split()[0] if n["apellido"] else ""
+                nombre_full = f"{nombre} {apellido}".strip()
+                lineas.append(f"      {emoji} {nombre_full}")
+
+        if not aurora and not fenix:
+            lineas.append("   — vacío")
+
+        lineas.append("")
+
+    total = total_aurora + total_fenix
+    lineas.append(f"👧👦 *Total: {total} guerrero{'s' if total != 1 else ''}*")
+    lineas.append(f"   🌳 Aurora: {total_aurora} | 🔥 Prueba: {total_fenix}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
 
 def _fecha_py(iso_str: str) -> str:
