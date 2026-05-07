@@ -634,8 +634,8 @@ async def obtener_o_crear_horario(fecha_iso: str, hora: str) -> str | None:
     if hora_norm.startswith("0"):
         hora_norm = hora_norm[1:]
 
-    # Buscar HORARIO existente — Airtable guarda FECHA en formato ISO (YYYY-MM-DD)
-    formula = f"AND({{FECHA}}='{fecha_iso}', {{HORA}}='{hora_norm}')"
+    # Buscar HORARIO existente — FECHA es tipo Date, usar DATESTR para comparar
+    formula = f"AND(DATESTR({{FECHA}})='{fecha_iso}', {{HORA}}='{hora_norm}')"
     records = await _get_records(_HORARIOS, formula=formula, max_records=1)
     if records:
         return records[0]["id"]
@@ -686,8 +686,8 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
     if hora_norm.startswith("0"):
         hora_norm = hora_norm[1:]
 
-    # Buscar el HORARIO
-    formula = f"AND({{FECHA}}='{fecha_iso}', {{HORA}}='{hora_norm}')"
+    # Buscar el HORARIO — FECHA es tipo Date en Airtable, usar DATESTR para comparar
+    formula = f"AND(DATESTR({{FECHA}})='{fecha_iso}', {{HORA}}='{hora_norm}')"
     horarios = await _get_records(_HORARIOS, formula=formula, max_records=1)
     if not horarios:
         return []
