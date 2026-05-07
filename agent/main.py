@@ -2762,7 +2762,6 @@ async def _generar_resumen_reservas(telefono: str):
         hora_raw = (f.get("HORA") or "").strip()
         # Normalizar para matchear turnos
         if hora_raw not in fenix_por_turno:
-            # Intentar match parcial (ej "9:30" vs "09:30")
             for t in turnos:
                 if hora_raw.lstrip("0") == t or hora_raw == t:
                     hora_raw = t
@@ -2770,9 +2769,11 @@ async def _generar_resumen_reservas(telefono: str):
         if hora_raw in fenix_por_turno:
             nombre = f.get("NOMBRE HIJO", "")
             apellido = f.get("APELLIDO HIJO", "")
+            edad = str(f["EDAD HIJO"]) if f.get("EDAD HIJO") else ""
             fenix_por_turno[hora_raw].append({
                 "nombre": nombre,
                 "apellido": apellido,
+                "edad": edad,
             })
 
     # ── Armar mensaje ──
@@ -2788,7 +2789,16 @@ async def _generar_resumen_reservas(telefono: str):
         total_aurora += len(aurora)
         total_fenix += len(fenix)
 
-        lineas.append(f"⏰ *{hora}h* — {total_turno} niño{'s' if total_turno != 1 else ''}")
+        # Calcular edad promedio del turno
+        edades_turno = []
+        for n in aurora + fenix:
+            try:
+                edades_turno.append(int(n["edad"]))
+            except (ValueError, KeyError, TypeError):
+                pass
+        prom_str = f" — prom {sum(edades_turno)/len(edades_turno):.0f} años" if edades_turno else ""
+
+        lineas.append(f"⏰ *{hora}h* — {total_turno} niño{'s' if total_turno != 1 else ''}{prom_str}")
 
         if aurora:
             lineas.append(f"   🌳 *Aurora ({len(aurora)}):*")
@@ -2807,7 +2817,8 @@ async def _generar_resumen_reservas(telefono: str):
                 nombre = n["nombre"].split()[0] if n["nombre"] else ""
                 apellido = n["apellido"].split()[0] if n["apellido"] else ""
                 nombre_full = f"{nombre} {apellido}".strip()
-                lineas.append(f"      {emoji} {nombre_full}")
+                edad_str = f" ({n['edad']} años)" if n.get("edad") else ""
+                lineas.append(f"      {emoji} {nombre_full}{edad_str}")
 
         if not aurora and not fenix:
             lineas.append("   — vacío")
