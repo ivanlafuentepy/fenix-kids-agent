@@ -388,8 +388,8 @@ async def lifespan(app: FastAPI):
             logger.error(f"[STARTUP] Error procesando pendientes nocturnos: {e}")
     _noche_task = _fire_and_forget(_noche_wakeup_loop(_procesar_pendientes_noche))
 
-    # Follow-up leads: 9:00 AM PY, recorre leads con datos bancarios sin pago
-    _followup_task = _fire_and_forget(_followup_loop())
+    # Follow-up leads: DESACTIVADO — Ivan prepara y envía manualmente a las 6am
+    # _followup_task = _fire_and_forget(_followup_loop())
 
     # Follow-up masivo fotos: ONE-SHOT (ya ejecutado 5/5)
     _followup_fotos_task = _fire_and_forget(_followup_fotos_oneshot())
