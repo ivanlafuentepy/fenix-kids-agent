@@ -59,12 +59,20 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
         match = re.search(r"[Tt]ransfer(?:ir|encia)\**[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
         if match:
             return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "Monto: **150.000 Gs**" o "Monto: 150.000 Gs" (tolera **markdown**)
+        match = re.search(r"[Mm]onto[:\s]*\**\s*(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "Son 150.000 Gs" (confirmación directa de monto)
+        match = re.search(r"[Ss]on\s+\**(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
         # Patrón: "Prueba 2 hijos: 120.000" o "Prueba: 90.000" o "(prueba para 2 hijos)"
         match = re.search(r"[Pp]rueba[^:)]*[:\)]\s*(\d{2,3})[.\s]?(\d{3})", contenido)
         if match:
             return int(match.group(1)) * 1000 + int(match.group(2))
-        # Patrón: "120.000 Gs (prueba" — monto antes de la palabra prueba
-        match = re.search(r"(\d{2,3})[.\s](\d{3})\s*[Gg]s\s*\(prueba", contenido)
+        # Patrón: "120.000 Gs (prueba" — monto antes de la palabra prueba (tolera **markdown**)
+        match = re.search(r"(\d{2,3})[.\s](\d{3})\s*[Gg]s\**\s*\(prueba", contenido)
         if match:
             return int(match.group(1)) * 1000 + int(match.group(2))
         # Patrón: "90mil Gs" o "120mil" (sin punto de miles)
