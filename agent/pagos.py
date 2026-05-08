@@ -55,12 +55,16 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
         if m.get("role") != "assistant":
             continue
         contenido = m.get("content", "")
-        # Patrón: "Transferencia: 120.000 Gs" o "120.000 Gs" cerca de datos bancarios
-        match = re.search(r"[Tt]ransferencia[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
+        # Patrón: "Transferencia: 120.000 Gs" o "A transferir: 120.000 Gs" (tolera **markdown**)
+        match = re.search(r"[Tt]ransfer(?:ir|encia)\**[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
         if match:
             return int(match.group(1)) * 1000 + int(match.group(2))
-        # Patrón: "Prueba 2 hijos: 120.000" o "Prueba: 90.000"
-        match = re.search(r"[Pp]rueba[^:]*:\s*(\d{2,3})[.\s]?(\d{3})", contenido)
+        # Patrón: "Prueba 2 hijos: 120.000" o "Prueba: 90.000" o "(prueba para 2 hijos)"
+        match = re.search(r"[Pp]rueba[^:)]*[:\)]\s*(\d{2,3})[.\s]?(\d{3})", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "120.000 Gs (prueba" — monto antes de la palabra prueba
+        match = re.search(r"(\d{2,3})[.\s](\d{3})\s*[Gg]s\s*\(prueba", contenido)
         if match:
             return int(match.group(1)) * 1000 + int(match.group(2))
         # Patrón: "90mil Gs" o "120mil" (sin punto de miles)
