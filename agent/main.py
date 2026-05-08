@@ -2067,6 +2067,29 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[FOLLOWUP] Error marcando CONTACTADO: {e}")
 
+        # ── Detectar si el padre mandó datos del formulario post-pago ──────
+        _es_formulario_completo = False
+        if agent_actual == "ivan" and telefono not in _prueba_creada:
+            _pago_confirmado_cierre = any(
+                "pago confirmado" in m.get("content", "").lower()
+                for m in historial if m.get("role") == "assistant"
+            )
+            _ivan_pidio_formulario = any(
+                ("📋" in m.get("content", "") or "pasame estos datos" in m.get("content", "").lower())
+                for m in historial if m.get("role") == "assistant"
+            )
+            # El padre manda datos reales: texto largo con nombre + fecha (tiene "/" o "-")
+            _texto_tiene_datos = (
+                len(texto) > 20
+                and ("/" in texto or "-" in texto)
+                and any(p in texto.lower() for p in ["nombre", "mamá", "mama", "papá", "papa", "nene", "nena", "hijo", "hija", "nacimiento"])
+            )
+            _es_formulario_completo = (
+                _pago_confirmado_cierre
+                and _ivan_pidio_formulario
+                and _texto_tiene_datos
+            )
+
         # ── Detectar si el afiche va a enviarse (para no duplicar precios) ──
         _va_a_enviar_afiche = False
         if agent_actual == "ivan" and telefono not in _afiche_enviado:
@@ -2079,9 +2102,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _va_a_enviar_afiche = True
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
-        if _va_a_enviar_afiche:
+        if _es_formulario_completo:
+            # Padre mandó datos del formulario → responder agradecimiento, NO la respuesta de Claude
+            respuesta = "Muchas gracias por tus datos! Ya queda todo listo. Los esperamos el sábado 🔥🌳"
+            await _delay_humano(respuesta)
+            await proveedor.enviar_mensaje(telefono, respuesta)
+        elif _va_a_enviar_afiche:
             # Afiche + msg_precios (hardcoded) — respuesta de Claude se omite
-            # porque el afiche ya cubre precios/horarios/CTA
             _afiche_enviado.add(telefono)
             await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
         else:
@@ -2093,30 +2120,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono, group_override=_tg_group)
 
-        # ── Crear PRUEBA + link wa.me DESPUÉS de que el padre completó el formulario ──
-        _resp_lower_link = respuesta.lower()
-        # Detectar: Ivan responde al formulario completo del padre.
-        # Condiciones: (1) Ivan dice "los esperamos" o "esperamos el" o "listo"
-        #              (2) hay "reserva confirmada" en historial
-        #              (3) el PADRE (no Ivan) mandó datos en su ÚLTIMO mensaje (nombre/fecha)
-        #              (4) Ivan NO está pidiendo datos en esta respuesta (no dice "pasame" ni "📋")
-        #              (5) no se creó ya
-        _padre_mando_datos = len(texto) > 10 and ("/" in texto or any(c.isdigit() for c in texto))
-        _ivan_no_pide_datos = "pasame" not in _resp_lower_link and "📋" not in respuesta
-        # Guard: solo crear PRUEBA FENIX si el lead YA pagó
-        _pago_confirmado_cierre = any(
-            "pago confirmado" in m.get("content", "").lower()
-            for m in historial if m.get("role") == "assistant"
-        )
-        _es_cierre_formulario = (
-            agent_actual == "ivan"
-            and ("los esperamos" in _resp_lower_link or "esperamos el" in _resp_lower_link or "listo" in _resp_lower_link)
-            and _ivan_no_pide_datos
-            and _pago_confirmado_cierre
-            and any("reserva confirmada" in m.get("content", "").lower() for m in historial if m.get("role") == "assistant")
-            and telefono not in _prueba_creada
-        )
-        if _es_cierre_formulario:
+        # ── Crear PRUEBA FENIX si el padre completó el formulario ─────────
+        if _es_formulario_completo:
             _prueba_creada.add(telefono)
             try:
                 from urllib.parse import quote
@@ -2254,19 +2259,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _afiche_horarios_enviado.add(telefono)
             await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
 
-        # ── Enviar afiche de precios cuando Ivan dice "te paso un afiche" o padre muestra interés post-diagnóstico ──
-        _ivan_dice_afiche = (
-            agent_actual == "ivan"
-            and "te paso un afiche" in respuesta.lower()
-        )
-        _interes_post_diag = (
-            agent_actual == "ivan"
-            and _diagnostico_ya_enviado(historial)
-            and _padre_muestra_interes(texto)
-        )
-        if telefono not in _afiche_enviado and (_ivan_dice_afiche or _interes_post_diag):
-            _afiche_enviado.add(telefono)
-            await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
+        # ── Afiche de precios: se maneja arriba (pre-respuesta) para evitar duplicados ──
 
         # ── Seguimiento desactivado temporalmente ─────────────────────────
         # TODO: reactivar cuando se arme el follow up
