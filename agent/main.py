@@ -1407,8 +1407,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if texto == "[audio]":
                 logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
 
-        # ── Comando reset (solo admin) ────────────────────────────────────
+        # ── Comando "comandos" (solo admin) — lista de comandos disponibles ──
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        if texto.lower().strip() == "comandos" and telefono == admin_phone:
+            msg_comandos = (
+                "⚙️ *COMANDOS ADMIN*\n\n"
+                "📊 *Resumenes:*\n"
+                "• `resumen anuncios` — métricas de anuncios Meta\n"
+                "• `resumen anuncios hoy` / `ayer` / `[mes]`\n"
+                "• `resumen reservas` — reservas del sábado próximo por turno\n"
+                "• `resumen followup` — mapa completo de FU\n\n"
+                "🔄 *Reset:*\n"
+                "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
+                "• `modo alumno` — reset conversación, simular padre inscripto\n\n"
+                "📋 *Info:*\n"
+                "• `comandos` — esta lista"
+            )
+            await proveedor.enviar_mensaje(telefono, msg_comandos)
+            return
+
+        # ── Comando reset (solo admin) ────────────────────────────────────
         _reset_phones = {admin_phone, "595982844548"}
         if texto.lower() == "holayosoyfenix" and telefono in _reset_phones:
             cancelar_seguimiento(telefono)
@@ -2753,10 +2771,11 @@ async def _generar_resumen_reservas(telefono: str):
     for rec in pruebas:
         f = rec.get("fields", {})
         hora_raw = (f.get("HORA") or "").strip()
-        # Normalizar para matchear turnos
+        # Normalizar para matchear turnos (ej: "11h" → "11:00", "9:30h" → "9:30")
         if hora_raw not in fenix_por_turno:
+            _h_clean = hora_raw.replace("h", "").replace("hs", "").strip()
             for t in turnos:
-                if hora_raw.lstrip("0") == t or hora_raw == t:
+                if _h_clean == t or _h_clean.lstrip("0") == t or _h_clean == t.split(":")[0]:
                     hora_raw = t
                     break
         if hora_raw in fenix_por_turno:
