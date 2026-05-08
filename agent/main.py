@@ -1112,6 +1112,8 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
         r"listo[!✅\s🙌]*.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"qued[aá]s confirmad[oa].*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"agendam.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"est[aá] confirmado.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:confirmado|confirmada)",
     ]
     texto_lower = respuesta.lower()
     resultados = []
@@ -2467,6 +2469,28 @@ async def _procesar_confirmacion_reserva(
                 logger.warning(f"No se pudo obtener/crear HORARIO {fecha_airtable} {hora_str}")
         except Exception as e:
             logger.error(f"Error creando RESERVA para {telefono}: {e}")
+
+    # ── Reagendamiento PRUEBA FENIX (Ivan): actualizar fecha si ya existe ─────
+    if agent_actual == "ivan" and fecha_str and hora_str:
+        try:
+            from agent.airtable_client import _get_records, _patch, _PRUEBAS
+            _pruebas_existentes = await _get_records(
+                _PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=5
+            )
+            if _pruebas_existentes:
+                # Ya tiene PRUEBA FENIX → reagendamiento, actualizar fecha/hora
+                _hora_norm = hora_str.replace("h", "").replace(".", ":")
+                if ":" not in _hora_norm:
+                    _hora_norm = f"{_hora_norm}:00"
+                for _pr in _pruebas_existentes:
+                    await _patch(_PRUEBAS, _pr["id"], {
+                        "FECHA RESERVA": fecha_str,
+                        "HORA": _hora_norm,
+                    })
+                    _nh_pr = _pr.get("fields", {}).get("NOMBRE HIJO", "?")
+                    logger.info(f"[REAGENDAR] {_nh_pr} ({telefono}): {fecha_str} {_hora_norm}")
+        except Exception as e:
+            logger.error(f"[REAGENDAR] Error actualizando PRUEBA FENIX: {e}")
 
     # PRUEBA FENIX se crea post-formulario (cuando Ivan dice "los esperamos")
     # Ver bloque _es_cierre_formulario en el flujo principal
