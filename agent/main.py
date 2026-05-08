@@ -1788,13 +1788,61 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
                 )
 
-        # ── Generar respuesta ─────────────────────────────────────────────
-        respuesta = await generar_respuesta(
-            mensaje=texto,
-            historial=historial,
-            agent_actual=agent_actual,
-            contexto_extra=contexto_extra,
-        )
+        # ── Intercepción pre-Claude: horarios, precios, ubicación, interés post-diag ──
+        # Si el padre pregunta algo que el código puede responder solo,
+        # ni llamamos a Claude — ahorra tokens y evita respuestas duplicadas.
+        _interceptado = False
+        _acciones_interceptadas = []  # lista de acciones a ejecutar post-respuesta
+        if agent_actual == "ivan":
+            _pide_precios = _padre_pregunta_precios(texto)
+            _pide_horarios = _padre_pregunta_horarios(texto)
+            _pide_ubicacion = _padre_pregunta_ubicacion(texto)
+            _interes_post_diag = (
+                _diagnostico_ya_enviado(historial)
+                and _padre_muestra_interes(texto)
+                and telefono not in _afiche_enviado
+            )
+
+            if _pide_precios or _pide_horarios or _pide_ubicacion or _interes_post_diag:
+                _interceptado = True
+                _partes = []  # texto de respuesta
+
+                # Interés post-diagnóstico → afiche precios (es lo que corresponde)
+                if _interes_post_diag and not _pide_precios:
+                    _pide_precios = True  # tratar como pedido de precios
+
+                if _pide_precios and telefono not in _afiche_enviado:
+                    _acciones_interceptadas.append("afiche_precios")
+                    _partes.append("Te paso un afiche para que veas todas las opciones 😊")
+                elif _pide_precios:
+                    # Ya vio el afiche, dar resumen corto en texto
+                    _partes.append("Prueba: 90mil (se descuenta si te inscribís). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
+
+                if _pide_horarios and telefono not in _afiche_horarios_enviado:
+                    _acciones_interceptadas.append("afiche_horarios")
+                    _partes.append("Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios")
+                elif _pide_horarios:
+                    # Ya vio el afiche de horarios
+                    _partes.append("9:30h | 11:00h | 15:30h — ¿cuál te viene bien? 🤝")
+
+                if _pide_ubicacion:
+                    _partes.append(
+                        "📍 FENIX Kids Academy — Parque Fenix dentro de La Casona Lafuente\n"
+                        "Maestras Paraguayas 2056\n"
+                        "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
+                    )
+
+                respuesta = "\n\n".join(_partes)
+                logger.info(f"[INTERCEPCIÓN] {telefono}: precios={_pide_precios} horarios={_pide_horarios} ubi={_pide_ubicacion} post_diag={_interes_post_diag}")
+
+        # ── Generar respuesta con Claude (solo si no fue interceptado) ────
+        if not _interceptado:
+            respuesta = await generar_respuesta(
+                mensaje=texto,
+                historial=historial,
+                agent_actual=agent_actual,
+                contexto_extra=contexto_extra,
+            )
 
         # ── Anti-repetición: quitar preguntas que ya se hicieron ──────────
         if agent_actual == "ivan" and historial:
@@ -2112,23 +2160,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 and _texto_tiene_datos
             )
 
-        # ── Detectar si el afiche de precios va a enviarse (para no duplicar) ──
+        # ── Detectar si Claude dice "te paso un afiche" (safety net) ──────
         _va_a_enviar_afiche = False
-        if agent_actual == "ivan" and telefono not in _afiche_enviado:
-            _ivan_dice_afiche_check = "te paso un afiche" in respuesta.lower()
-            _interes_post_diag_check = (
-                _diagnostico_ya_enviado(historial)
-                and _padre_muestra_interes(texto)
-            )
-            if _ivan_dice_afiche_check or _interes_post_diag_check:
+        if agent_actual == "ivan" and telefono not in _afiche_enviado and not _interceptado:
+            if "te paso un afiche" in respuesta.lower():
                 _va_a_enviar_afiche = True
-
-        # ── Detectar si el padre pregunta horarios → afiche horarios en vez de texto ──
-        _va_a_enviar_afiche_horarios = False
-        if (agent_actual == "ivan"
-                and telefono not in _afiche_horarios_enviado
-                and _padre_pregunta_horarios(texto)):
-            _va_a_enviar_afiche_horarios = True
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         if _es_formulario_completo:
@@ -2139,7 +2175,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _hora_form = ""
             for _m_f in reversed(_hist_form):
                 if _m_f.get("role") == "assistant" and "reserva confirmada" in _m_f.get("content", "").lower():
-                    # Extraer nombres: "Reserva confirmada ✅ Eladio y Amira tienen..."
                     _match_nombres = re.search(r"reserva confirmada[✅!\s]*(.+?)\s+tienen?\s+su\s+lugar", _m_f["content"], re.IGNORECASE)
                     if _match_nombres:
                         _nombres_form = _match_nombres.group(1).strip()
@@ -2152,24 +2187,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _nombres_form = _extraer_nombre_hijo_historial(_hist_form) or ""
                 if _nombres_form == "no mencionó":
                     _nombres_form = ""
-            # Armar respuesta con datos concretos
             _nombre_part = f" {_nombres_form}" if _nombres_form else ""
             _fecha_part = f" el sábado {_fecha_form} a las {_hora_form}h" if _fecha_form else " el sábado"
             _verbo = "tienen" if " y " in _nombres_form else "tiene"
             respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
-        elif _va_a_enviar_afiche:
-            # Afiche + msg_precios (hardcoded) — respuesta de Claude se omite
-            _afiche_enviado.add(telefono)
-            await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
-        elif _va_a_enviar_afiche_horarios:
-            # Padre pregunta horarios → enviar afiche de horarios, omitir respuesta de Claude
-            respuesta = "Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios"
+        elif _interceptado:
+            # Respuesta interceptada por código — enviar texto + afiches
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
-            _afiche_horarios_enviado.add(telefono)
-            await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
+            # Ejecutar acciones (enviar afiches)
+            for _accion in _acciones_interceptadas:
+                if _accion == "afiche_precios":
+                    _afiche_enviado.add(telefono)
+                    await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
+                elif _accion == "afiche_horarios":
+                    _afiche_horarios_enviado.add(telefono)
+                    await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
+        elif _va_a_enviar_afiche:
+            # Post-diagnóstico interés → afiche precios (respuesta Claude se omite)
+            _afiche_enviado.add(telefono)
+            await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
         else:
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
@@ -3170,6 +3209,30 @@ def _padre_pregunta_horarios(texto: str) -> bool:
         "horario", "horarios", "a la semana", "por semana", "frecuencia",
         "cuando es", "cuándo es", "cuando son", "cuándo son",
         "que dia", "qué dia", "dias de clase", "días de clase",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_precios(texto: str) -> bool:
+    """Detecta si el padre pregunta por precios, costos o planes."""
+    t = texto.lower().strip()
+    patrones = [
+        "precio", "precios", "costo", "costos", "cuanto sale", "cuánto sale",
+        "cuanto cuesta", "cuánto cuesta", "cuanto es", "cuánto es",
+        "que sale", "qué sale", "tarifa", "tarifas", "planes", "mensualidad",
+        "cuanto hay que pagar", "cuánto hay que pagar", "valor",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_ubicacion(texto: str) -> bool:
+    """Detecta si el padre pregunta por ubicación o dirección."""
+    t = texto.lower().strip()
+    patrones = [
+        "ubicacion", "ubicación", "donde queda", "dónde queda",
+        "donde es", "dónde es", "direccion", "dirección",
+        "donde están", "donde estan", "dónde están",
+        "como llego", "cómo llego", "lugar", "mapa",
     ]
     return any(p in t for p in patrones)
 
