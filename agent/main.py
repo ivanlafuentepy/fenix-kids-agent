@@ -2096,11 +2096,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 ("📋" in m.get("content", "") or "pasame estos datos" in m.get("content", "").lower())
                 for m in historial if m.get("role") == "assistant"
             )
-            # El padre manda datos reales: texto largo con nombre + fecha (tiene "/" o "-")
+            # El padre manda datos reales: texto con fechas (tiene "/") y suficiente largo
+            # Si pago ya confirmado + Ivan pidió formulario, no exigir keywords —
+            # la gente manda datos crudos sin decir "nombre" ni "nacimiento"
+            _tiene_fechas = ("/" in texto or "-" in texto)
+            _tiene_keywords = any(p in texto.lower() for p in ["nombre", "mamá", "mama", "papá", "papa", "nene", "nena", "hijo", "hija", "nacimiento"])
             _texto_tiene_datos = (
                 len(texto) > 20
-                and ("/" in texto or "-" in texto)
-                and any(p in texto.lower() for p in ["nombre", "mamá", "mama", "papá", "papa", "nene", "nena", "hijo", "hija", "nacimiento"])
+                and _tiene_fechas
+                and (_tiene_keywords or (_pago_confirmado_cierre and _ivan_pidio_formulario))
             )
             _es_formulario_completo = (
                 _pago_confirmado_cierre
@@ -2121,8 +2125,31 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         if _es_formulario_completo:
-            # Padre mandó datos del formulario → responder agradecimiento, NO la respuesta de Claude
-            respuesta = "Muchas gracias por tus datos! Ya queda todo listo. Los esperamos el sábado 🔥🌳"
+            # Extraer nombres hijos + fecha/hora del mensaje "Reserva confirmada" previo
+            _hist_form = await obtener_historial(telefono, limite=40)
+            _nombres_form = ""
+            _fecha_form = ""
+            _hora_form = ""
+            for _m_f in reversed(_hist_form):
+                if _m_f.get("role") == "assistant" and "reserva confirmada" in _m_f.get("content", "").lower():
+                    # Extraer nombres: "Reserva confirmada ✅ Eladio y Amira tienen..."
+                    _match_nombres = re.search(r"reserva confirmada[✅!\s]*(.+?)\s+tienen?\s+su\s+lugar", _m_f["content"], re.IGNORECASE)
+                    if _match_nombres:
+                        _nombres_form = _match_nombres.group(1).strip()
+                    _match_f = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_f["content"].lower())
+                    if _match_f:
+                        _fecha_form = _match_f.group(1)
+                        _hora_form = _match_f.group(2)
+                    break
+            if not _nombres_form:
+                _nombres_form = _extraer_nombre_hijo_historial(_hist_form) or ""
+                if _nombres_form == "no mencionó":
+                    _nombres_form = ""
+            # Armar respuesta con datos concretos
+            _nombre_part = f" {_nombres_form}" if _nombres_form else ""
+            _fecha_part = f" el sábado {_fecha_form} a las {_hora_form}h" if _fecha_form else " el sábado"
+            _verbo = "tienen" if " y " in _nombres_form else "tiene"
+            respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
         elif _va_a_enviar_afiche:
