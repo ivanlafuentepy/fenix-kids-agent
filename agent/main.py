@@ -2112,7 +2112,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 and _texto_tiene_datos
             )
 
-        # ── Detectar si el afiche va a enviarse (para no duplicar precios) ──
+        # ── Detectar si el afiche de precios va a enviarse (para no duplicar) ──
         _va_a_enviar_afiche = False
         if agent_actual == "ivan" and telefono not in _afiche_enviado:
             _ivan_dice_afiche_check = "te paso un afiche" in respuesta.lower()
@@ -2122,6 +2122,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             )
             if _ivan_dice_afiche_check or _interes_post_diag_check:
                 _va_a_enviar_afiche = True
+
+        # ── Detectar si el padre pregunta horarios → afiche horarios en vez de texto ──
+        _va_a_enviar_afiche_horarios = False
+        if (agent_actual == "ivan"
+                and telefono not in _afiche_horarios_enviado
+                and _padre_pregunta_horarios(texto)):
+            _va_a_enviar_afiche_horarios = True
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         if _es_formulario_completo:
@@ -2156,6 +2163,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Afiche + msg_precios (hardcoded) — respuesta de Claude se omite
             _afiche_enviado.add(telefono)
             await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
+        elif _va_a_enviar_afiche_horarios:
+            # Padre pregunta horarios → enviar afiche de horarios, omitir respuesta de Claude
+            respuesta = "Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios"
+            await _delay_humano(respuesta)
+            await proveedor.enviar_mensaje(telefono, respuesta)
+            _afiche_horarios_enviado.add(telefono)
+            await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
         else:
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
@@ -2297,14 +2311,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESERVA] Error en cierre formulario: {e}")
 
-        # ── Enviar afiche de horarios si el padre pregunta frecuencia/días ──
-        if (agent_actual == "ivan"
-                and telefono not in _afiche_horarios_enviado
-                and _padre_pregunta_horarios(texto)):
-            _afiche_horarios_enviado.add(telefono)
-            await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
-
-        # ── Afiche de precios: se maneja arriba (pre-respuesta) para evitar duplicados ──
+        # ── Afiches de horarios y precios: se manejan arriba (pre-respuesta) para evitar duplicados ──
 
         # ── Seguimiento desactivado temporalmente ─────────────────────────
         # TODO: reactivar cuando se arme el follow up
