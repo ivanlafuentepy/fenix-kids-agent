@@ -453,6 +453,19 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     agent, modo = await obtener_agent_actual(telefono)
     familia_id = await obtener_familia_id(telefono)
     convertido = await esta_convertido(telefono)
+    # Topic de Telegram
+    topic_info = None
+    try:
+        from agent.telegram_bridge import obtener_topic
+        topic = await obtener_topic(telefono)
+        if topic:
+            topic_info = {
+                "topic_id": topic.topic_id,
+                "nombre": topic.nombre,
+                "group_id": topic.group_id,
+            }
+    except Exception:
+        pass
     return {
         "telefono": telefono,
         "mensajes_totales": len(historial),
@@ -460,6 +473,7 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
         "modo_nixie": modo,
         "familia_id": familia_id,
         "esta_convertido": convertido,
+        "topic_telegram": topic_info,
         "ultimos_5": historial[-5:] if len(historial) >= 5 else historial,
     }
 
