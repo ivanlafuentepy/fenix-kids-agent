@@ -2464,6 +2464,12 @@ async def _procesar_confirmacion_reserva(
 
     # ── Obtener niños de la familia (para nombre real + RESERVAS) ──────────────
     familia_id = await obtener_familia_id(telefono)
+    if not familia_id:
+        # Fallback: buscar en Airtable por CELL LIMPIO (familia pre-existente)
+        _fam_at = await buscar_familia_por_telefono(telefono)
+        if _fam_at:
+            familia_id = _fam_at["id"]
+            logger.info(f"[RESERVA] Familia encontrada via Airtable CELL LIMPIO: {familia_id}")
     ninos = await obtener_ninos_de_familia(familia_id) if familia_id else []
 
     # Nombre display para el evento: "Mateo González" | "Mateo y Sofía González" | fallback
