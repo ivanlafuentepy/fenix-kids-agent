@@ -3225,10 +3225,11 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
         # Aurora
         for n in ninos_aurora:
             idx = len(registros) + 1
-            nombre = (n.get("apodo") or n.get("nombre", "?")).split()[0]
-            apellido = (n.get("apellido") or "").split()[0]
+            _n_parts = (n.get("apodo") or n.get("nombre", "?")).split()
+            nombre = _n_parts[0] if _n_parts else "?"
+            _a_parts = (n.get("apellido") or "").split()
+            apellido = _a_parts[0] if _a_parts else ""
             nombre_full = f"{nombre} {apellido}".strip()
-            # Find reserva ID for this nino+horario
             reserva_id = n.get("reserva_id", "")
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "RESERVAS", "record_id": reserva_id, "nino_id": n.get("id", "")})
             lineas.append(f"   {idx}. {nombre_full}")
@@ -3240,8 +3241,10 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             if f.get("CONVERSION") == "CANCELADO":
                 continue
             idx = len(registros) + 1
-            nombre = (f.get("NOMBRE HIJO") or "?").split()[0]
-            apellido = (f.get("APELLIDO HIJO") or "").split()[0]
+            _n_parts = (f.get("NOMBRE HIJO") or "?").split()
+            nombre = _n_parts[0] if _n_parts else "?"
+            _a_parts = (f.get("APELLIDO HIJO") or "").split()
+            apellido = _a_parts[0] if _a_parts else ""
             nombre_full = f"{nombre} {apellido}".strip()
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"]})
             lineas.append(f"   {idx}. {nombre_full} 🔥")
