@@ -1418,6 +1418,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen anuncios` — métricas de anuncios Meta\n"
                 "• `resumen anuncios hoy` / `ayer` / `[mes]`\n"
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
+                "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
                 "🔄 *Reset:*\n"
                 "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
@@ -1461,6 +1462,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESUMEN] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen: {e}")
+            return
+
+        # ── Comando resumen telegram (solo admin) ──────────────────────────
+        if telefono == admin_phone and "resumen" in _texto_cmd and "telegram" in _texto_cmd:
+            try:
+                await _generar_resumen_telegram(telefono)
+            except Exception as e:
+                logger.error(f"[RESUMEN TELEGRAM] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen telegram: {e}")
             return
 
         # ── Comando resumen reservas (solo admin) ─────────────────────────
@@ -2938,6 +2948,100 @@ async def _generar_resumen_reservas(telefono: str):
     lineas.append(f"👧👦 *Total: {total} guerrero{'s' if total != 1 else ''}*")
     lineas.append(f"   🌳 Aurora: {total_aurora} | 🔥 Prueba: {total_fenix}")
 
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_resumen_telegram(telefono: str):
+    """Genera resumen de reservas con link de Telegram debajo de cada nombre."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import _get_records, _PRUEBAS
+    from agent.telegram_bridge import obtener_topic
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    dias_hasta_sabado = (5 - hoy.weekday()) % 7
+    if dias_hasta_sabado == 0 and hoy.weekday() != 5:
+        dias_hasta_sabado = 7
+    sabado = hoy + timedelta(days=dias_hasta_sabado)
+    _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+              7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+    fecha_iso = sabado.isoformat()
+
+    # Buscar PRUEBA FENIX por texto e ISO
+    pruebas_texto = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_texto}'", max_records=50)
+    pruebas_iso = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
+    _seen = set()
+    pruebas = []
+    for rec in pruebas_texto + pruebas_iso:
+        if rec["id"] not in _seen:
+            _seen.add(rec["id"])
+            pruebas.append(rec)
+
+    turnos = ["9:30", "11:00", "15:30"]
+    por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
+
+    for rec in pruebas:
+        f = rec.get("fields", {})
+        hora_raw = (f.get("HORA") or "").strip()
+        # Normalizar
+        if hora_raw not in por_turno:
+            _h = hora_raw.replace("h", "").replace("hs", "").strip()
+            for t in turnos:
+                if _h == t or _h.lstrip("0") == t or _h == t.split(":")[0]:
+                    hora_raw = t
+                    break
+        if hora_raw in por_turno:
+            por_turno[hora_raw].append({
+                "nombre": f.get("NOMBRE HIJO", ""),
+                "apellido": f.get("APELLIDO HIJO", ""),
+                "tel": f.get("TELEFONO", ""),
+                "conversion": f.get("CONVERSION", ""),
+            })
+
+    # Agrupar por teléfono dentro de cada turno para hermanos
+    lineas = [f"📋 *RESERVAS + TELEGRAM — SAB {sabado.day}/{sabado.month}*\n"]
+    total = 0
+
+    for hora in turnos:
+        kids = por_turno[hora]
+        # Agrupar por tel
+        by_tel: dict[str, list[str]] = {}
+        for k in kids:
+            tel = k["tel"]
+            if tel not in by_tel:
+                by_tel[tel] = []
+            nombre = f"{k['nombre']} {k['apellido']}".strip()
+            if k.get("conversion") == "CANCELADO":
+                nombre += " (CANCELADO)"
+            by_tel[tel].append(nombre)
+
+        count = sum(len(v) for v in by_tel.values())
+        total += count
+        lineas.append(f"⏰ *{hora}h* — {count} niño{'s' if count != 1 else ''}")
+
+        for tel, nombres in by_tel.items():
+            # Get Telegram topic link
+            topic = await obtener_topic(tel)
+            if topic and topic.group_id:
+                gid = str(topic.group_id).replace("-100", "", 1)
+                tg_link = f"https://t.me/c/{gid}/{topic.topic_id}"
+            elif topic:
+                tg_link = f"topic:{topic.topic_id}"
+            else:
+                tg_link = "sin topic"
+
+            for nombre in nombres:
+                lineas.append(f"   - {nombre}")
+            lineas.append(f"     💬 {tg_link}")
+            lineas.append("")
+
+        if not kids:
+            lineas.append("   — vacío")
+            lineas.append("")
+
+    lineas.append(f"👧👦 *Total: {total}*")
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
 
