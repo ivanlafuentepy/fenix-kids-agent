@@ -713,16 +713,19 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                     rn = await client.get(url_nino, headers=_headers(), timeout=10)
                     if rn.status_code == 200:
                         nf = rn.json().get("fields", {})
-                        # Calcular edad
-                        edad = ""
-                        fecha_nac = nf.get("FECHA NACIMIENTO", "")
-                        if fecha_nac:
-                            try:
-                                nac = date.fromisoformat(fecha_nac)
-                                hoy = date.today()
-                                edad = str(hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day)))
-                            except ValueError:
-                                pass
+                        # Edad: usar campo EDAD de Airtable (formato "años,meses") o calcular
+                        edad = str(nf.get("EDAD", "")) if nf.get("EDAD") else ""
+                        if not edad:
+                            fecha_nac = nf.get("FECHA NACIMIENTO", "")
+                            if fecha_nac:
+                                try:
+                                    nac = date.fromisoformat(fecha_nac)
+                                    hoy = date.today()
+                                    _anios = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
+                                    _meses = (hoy.month - nac.month - (hoy.day < nac.day)) % 12
+                                    edad = f"{_anios},{_meses}"
+                                except ValueError:
+                                    pass
                         ninos.append({
                             "nombre": nf.get("NOMBRE", ""),
                             "apellido": nf.get("APELLIDO", ""),

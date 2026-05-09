@@ -2944,11 +2944,16 @@ async def _generar_resumen_reservas(telefono: str):
         total_aurora += len(aurora)
         total_fenix += len(fenix)
 
-        # Calcular edad promedio del turno
+        # Calcular edad promedio del turno (edad viene como "3,5" = 3 años 5 meses)
         edades_turno = []
         for n in aurora + fenix:
             try:
-                edades_turno.append(int(n["edad"]))
+                _edad_raw = str(n.get("edad", ""))
+                if "," in _edad_raw:
+                    _a, _m = _edad_raw.split(",", 1)
+                    edades_turno.append(int(_a) + int(_m) / 12)
+                elif _edad_raw:
+                    edades_turno.append(int(_edad_raw))
             except (ValueError, KeyError, TypeError):
                 pass
         prom_str = f" — prom {sum(edades_turno)/len(edades_turno):.0f} años" if edades_turno else ""
@@ -2962,7 +2967,7 @@ async def _generar_resumen_reservas(telefono: str):
                 nombre = (n.get("apodo") or n["nombre"]).split()[0]
                 apellido = n["apellido"].split()[0] if n["apellido"] else ""
                 nombre_full = f"{nombre} {apellido}".strip()
-                edad_str = f" ({n['edad']} años)" if n.get("edad") else ""
+                edad_str = f" ({n['edad']})" if n.get("edad") else ""
                 lineas.append(f"      {emoji} {nombre_full}{edad_str}")
 
         if fenix:
@@ -2972,7 +2977,7 @@ async def _generar_resumen_reservas(telefono: str):
                 nombre = n["nombre"].split()[0] if n["nombre"] else ""
                 apellido = n["apellido"].split()[0] if n["apellido"] else ""
                 nombre_full = f"{nombre} {apellido}".strip()
-                edad_str = f" ({n['edad']} años)" if n.get("edad") else ""
+                edad_str = f" ({n['edad']})" if n.get("edad") else ""
                 lineas.append(f"      {emoji} {nombre_full}{edad_str}")
 
         if not aurora and not fenix:
