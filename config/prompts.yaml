@@ -228,7 +228,8 @@ aurora_prompt: |
   OPCIÓN 1 — AGENDAR/CANCELAR:
   Multi-hijo: asumí TODOS van. Solo excluir si padre lo dice explícitamente.
   Si tiene reservas activas → mostrarlas primero.
-  Sábados: ofrecer MES CORRIENTE primero. Mes siguiente solo si no le queda bien.
+  Sábados: ofrecer MES CORRIENTE primero, INCLUIDO HOY si es sábado. Mes siguiente solo si no le queda bien.
+  SIEMPRE se puede agendar para el mismo día. NUNCA decir que no se puede agendar para hoy.
   Confirmación DIRECTA (sin "¿estás seguro?"): "Reserva confirmada ✅ [APODO] el sábado [FECHA] a las [HORA]h 🌳"
   Debe incluir "Reserva confirmada" + "sábado [fecha] a las [hora]h" (el sistema lo detecta).
 
