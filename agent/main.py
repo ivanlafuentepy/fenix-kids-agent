@@ -150,6 +150,9 @@ def _check_rate_limit(telefono: str) -> bool:
 # Guard: PRUEBA FENIX ya creada para este lead (evita duplicados)
 _prueba_creada: set[str] = set()
 
+# Estado de asistencia pendiente: {telefono_admin: [{idx, record_id, tabla, nombre},...]}
+_asistencia_pendiente: dict[str, list[dict]] = {}
+
 
 async def _delay_humano(texto: str):
     """Simula tiempo de tipeo para que el agente no parezca un bot."""
@@ -372,6 +375,34 @@ def _fire_and_forget(coro):
     return task
 
 
+async def _asistencia_auto_loop():
+    """Loop que envía lista de asistencia automáticamente al terminar cada turno (sábados)."""
+    from datetime import datetime, timezone, timedelta
+    _PY_TZ = timezone(timedelta(hours=-3))
+    # Horarios de envío: {hora_envio: turno_que_terminó}
+    _HORARIOS_ASISTENCIA = {
+        (11, 0): "9:30",    # 11:00 → lista del turno 9:30
+        (12, 30): "11:00",  # 12:30 → lista del turno 11:00
+        (17, 0): "15:30",   # 17:00 → lista del turno 15:30
+    }
+    _enviados_hoy: set[str] = set()
+
+    while True:
+        try:
+            ahora = datetime.now(_PY_TZ)
+            # Solo sábados
+            if ahora.weekday() == 5:
+                for (h, m), turno in _HORARIOS_ASISTENCIA.items():
+                    if ahora.hour == h and ahora.minute >= m and ahora.minute < m + 5 and turno not in _enviados_hoy:
+                        _enviados_hoy.add(turno)
+                        await _enviar_asistencia_automatica(turno)
+            else:
+                _enviados_hoy.clear()
+        except Exception as e:
+            logger.error(f"[ASISTENCIA AUTO] Error: {e}")
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await inicializar_db()
@@ -402,6 +433,9 @@ async def lifespan(app: FastAPI):
     # Contenido social: polling CONTENIDO FENIX + calendario diario
     from agent.contenido_social import iniciar_contenido_social
     iniciar_contenido_social(proveedor)
+
+    # Asistencia automática: enviar lista al terminar cada turno (sábados)
+    _asistencia_task = _fire_and_forget(_asistencia_auto_loop())
 
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
     print(f"[STARTUP] Proveedor: {proveedor.__class__.__name__}", flush=True)
@@ -1465,6 +1499,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
                 "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
+                "✅ *Asistencia:*\n"
+                "• `asistencia` — pasar lista del sábado por turno\n\n"
                 "🔄 *Reset:*\n"
                 "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
                 "• `modo alumno` — reset conversación, simular padre inscripto\n\n"
@@ -1499,8 +1535,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await enviar_a_topic(topic_reset, f"⚙️ RESET — {resumen}", telefono=telefono)
             return
 
-        # ── Comando resumen anuncios (solo admin) ──────────────────────────
+        # ── Respuesta a asistencia pendiente (solo admin) ─────────────────
+        if telefono == admin_phone and telefono in _asistencia_pendiente:
+            _resp_asis = texto.strip().lower()
+            if _resp_asis == "ok" or re.match(r'^[\d\s]+$', _resp_asis):
+                try:
+                    await _procesar_respuesta_asistencia(telefono, _resp_asis)
+                except Exception as e:
+                    logger.error(f"[ASISTENCIA] Error: {e}")
+                    await proveedor.enviar_mensaje(telefono, f"Error procesando asistencia: {e}")
+                return
+
+        # ── Comando asistencia (solo admin) ───────────────────────────────
         _texto_cmd = texto.lower().strip().rstrip(".,!?")
+        if telefono == admin_phone and ("asistencia" in _texto_cmd or "control asis" in _texto_cmd):
+            try:
+                await _generar_lista_asistencia(telefono)
+            except Exception as e:
+                logger.error(f"[ASISTENCIA] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando asistencia: {e}")
+            return
+
+        # ── Comando resumen anuncios (solo admin) ──────────────────────────
         if telefono == admin_phone and "resumen" in _texto_cmd and "anuncio" in _texto_cmd:
             try:
                 await _generar_resumen_anuncios(telefono, _texto_cmd)
@@ -3111,6 +3167,133 @@ async def _generar_resumen_telegram(telefono: str):
 
     lineas.append(f"👧👦 *Total: {total}*")
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
+    """Genera lista numerada de niños para pasar asistencia. Guarda estado en _asistencia_pendiente."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    # Si es sábado, usar hoy. Si no, buscar el sábado más cercano pasado (para control post-clase)
+    if hoy.weekday() == 5:
+        sabado = hoy
+    else:
+        # Último sábado
+        sabado = hoy - timedelta(days=(hoy.weekday() + 2) % 7)
+
+    fecha_iso = sabado.isoformat()
+    _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+              7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+
+    turnos = [turno_especifico] if turno_especifico else ["9:30", "11:00", "15:30"]
+    registros = []  # lista global numerada
+    lineas = [f"✅ *ASISTENCIA — SAB {sabado.day}/{sabado.month}*\n"]
+
+    for hora in turnos:
+        # Aurora (inscriptos)
+        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
+        # Fenix (pruebas)
+        pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
+        # También buscar por ISO
+        pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
+        _seen = set()
+        for p in pruebas + pruebas_iso:
+            if p["id"] not in _seen:
+                _seen.add(p["id"])
+
+        total = len(ninos_aurora) + len(_seen)
+        if total == 0:
+            continue
+
+        lineas.append(f"⏰ *{hora}h* ({total})")
+
+        # Aurora
+        for n in ninos_aurora:
+            idx = len(registros) + 1
+            nombre = (n.get("apodo") or n.get("nombre", "?")).split()[0]
+            apellido = (n.get("apellido") or "").split()[0]
+            nombre_full = f"{nombre} {apellido}".strip()
+            # Find reserva ID for this nino+horario
+            reserva_id = n.get("reserva_id", "")
+            registros.append({"idx": idx, "nombre": nombre_full, "tabla": "RESERVAS", "record_id": reserva_id, "nino_id": n.get("id", "")})
+            lineas.append(f"   {idx}. {nombre_full}")
+
+        # Fenix pruebas
+        for pid in _seen:
+            p = next(x for x in pruebas + pruebas_iso if x["id"] == pid)
+            f = p.get("fields", {})
+            if f.get("CONVERSION") == "CANCELADO":
+                continue
+            idx = len(registros) + 1
+            nombre = (f.get("NOMBRE HIJO") or "?").split()[0]
+            apellido = (f.get("APELLIDO HIJO") or "").split()[0]
+            nombre_full = f"{nombre} {apellido}".strip()
+            registros.append({"idx": idx, "nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"]})
+            lineas.append(f"   {idx}. {nombre_full} 🔥")
+
+        lineas.append("")
+
+    if not registros:
+        await proveedor.enviar_mensaje(telefono, "No hay reservas para pasar asistencia.")
+        return
+
+    lineas.append(f"*Total: {len(registros)}*")
+    lineas.append("")
+    lineas.append("Respondé *ok* (todos vinieron) o los números de los que faltaron (ej: 5 7)")
+
+    _asistencia_pendiente[telefono] = registros
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _procesar_respuesta_asistencia(telefono: str, respuesta: str):
+    """Procesa la respuesta de asistencia: 'ok' o '5 7' (ausentes)."""
+    from agent.airtable_client import _patch, _RESERVAS, _PRUEBAS
+
+    registros = _asistencia_pendiente.pop(telefono, [])
+    if not registros:
+        await proveedor.enviar_mensaje(telefono, "No hay asistencia pendiente.")
+        return
+
+    if respuesta == "ok":
+        ausentes = set()
+    else:
+        ausentes = set(int(n) for n in respuesta.split() if n.isdigit())
+
+    presentes = 0
+    ausentes_nombres = []
+
+    for reg in registros:
+        es_presente = reg["idx"] not in ausentes
+        if reg["tabla"] == "RESERVAS" and reg.get("record_id"):
+            await _patch(_RESERVAS, reg["record_id"], {"PRESENTE": es_presente})
+        elif reg["tabla"] == "PRUEBAS" and reg.get("record_id"):
+            await _patch(_PRUEBAS, reg["record_id"], {"PRESENTE": es_presente})
+
+        if es_presente:
+            presentes += 1
+        else:
+            ausentes_nombres.append(reg["nombre"])
+
+    msg = f"✅ Asistencia cargada!\n\nPresentes: {presentes}/{len(registros)}"
+    if ausentes_nombres:
+        msg += f"\nAusentes: {', '.join(ausentes_nombres)}"
+
+    await proveedor.enviar_mensaje(telefono, msg)
+    logger.info(f"[ASISTENCIA] {presentes}/{len(registros)} presentes, ausentes: {ausentes_nombres}")
+
+
+async def _enviar_asistencia_automatica(turno: str):
+    """Envía la lista de asistencia automáticamente al terminar un turno."""
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    try:
+        await _generar_lista_asistencia(admin_phone, turno_especifico=turno)
+        logger.info(f"[ASISTENCIA] Lista automática enviada para turno {turno}")
+    except Exception as e:
+        logger.error(f"[ASISTENCIA] Error enviando lista automática: {e}")
 
 
 async def _generar_resumen_followup(telefono: str):

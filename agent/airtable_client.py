@@ -727,6 +727,8 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                                 except ValueError:
                                     pass
                         ninos.append({
+                            "id": nino_id,
+                            "reserva_id": res_id,
                             "nombre": nf.get("NOMBRE", ""),
                             "apellido": nf.get("APELLIDO", ""),
                             "edad": edad,
