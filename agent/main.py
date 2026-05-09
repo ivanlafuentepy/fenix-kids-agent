@@ -1145,6 +1145,13 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
         r"est[aá] confirmado.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:confirmado|confirmada)",
     ]
+    # Patrones sin fecha (cambio de hora mismo día): capturan solo hora, fecha = "hoy"
+    patrones_sin_fecha = [
+        r"se pasa a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"te cambio a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"nos vemos a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:hoy|mismo)",
+        r"a las\s+(\d{1,2}[:h]\d{0,2}).*?hoy mismo",
+    ]
     texto_lower = respuesta.lower()
     resultados = []
     fechas_vistas = set()
@@ -1156,6 +1163,14 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
             if key not in fechas_vistas:
                 fechas_vistas.add(key)
                 resultados.append({"fecha": fecha, "hora": hora})
+    # Cambio de hora sin fecha → usar "hoy" como fecha
+    if not resultados:
+        for patron in patrones_sin_fecha:
+            match = re.search(patron, texto_lower)
+            if match:
+                hora = match.group(1).strip()
+                resultados.append({"fecha": "hoy", "hora": hora})
+                break
     return resultados
 
 
@@ -2427,6 +2442,15 @@ async def _procesar_confirmacion_reserva(
     """
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")
+
+    # Resolver "hoy" a fecha real
+    if fecha_str == "hoy":
+        from datetime import datetime, timezone, timedelta
+        _PY_TZ = timezone(timedelta(hours=-3))
+        _hoy = datetime.now(_PY_TZ).date()
+        _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+                  7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+        fecha_str = f"{_hoy.day} de {_MESES[_hoy.month]}"
 
     logger.info(f"Confirmación detectada ({agent_actual}): {fecha_str} {hora_str} para {telefono}")
 
