@@ -1500,7 +1500,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
                 "✅ *Asistencia:*\n"
-                "• `asistencia` — pasar lista del sábado por turno\n\n"
+                "• `asis 9.30` / `asis 11` / `asis 15.30` — pasar lista por turno\n"
+                "• `asistencia` — lista completa todos los turnos\n\n"
                 "🔄 *Reset:*\n"
                 "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
                 "• `modo alumno` — reset conversación, simular padre inscripto\n\n"
@@ -1548,9 +1549,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando asistencia (solo admin) ───────────────────────────────
         _texto_cmd = texto.lower().strip().rstrip(".,!?")
-        if telefono == admin_phone and ("asistencia" in _texto_cmd or "control asis" in _texto_cmd):
+        if telefono == admin_phone and ("asistencia" in _texto_cmd or "control asis" in _texto_cmd or _texto_cmd.startswith("asis ")):
             try:
-                await _generar_lista_asistencia(telefono)
+                # Detectar turno específico: "asistencia 9:30", "asistencia 11", "asistencia 15:30"
+                _turno_cmd = ""
+                _m_turno = re.search(r'(\d{1,2}[:.]\d{2}|\d{1,2})', _texto_cmd)
+                if _m_turno:
+                    _t = _m_turno.group(1).replace(".", ":")
+                    if ":" not in _t:
+                        _t = f"{_t}:00" if _t != "9" else "9:30"
+                    # Normalizar a turnos válidos
+                    _turno_map = {"9:30": "9:30", "11:00": "11:00", "15:30": "15:30", "11": "11:00", "15": "15:30", "9": "9:30"}
+                    _turno_cmd = _turno_map.get(_t, _t)
+                await _generar_lista_asistencia(telefono, turno_especifico=_turno_cmd)
             except Exception as e:
                 logger.error(f"[ASISTENCIA] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando asistencia: {e}")
