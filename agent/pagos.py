@@ -117,10 +117,16 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     if not datos_enviados:
         return False
 
-    # Condición 2 ya garantiza que Ivan envió datos bancarios (CI_BANCARIO en historial).
-    # Si los datos bancarios fueron enviados, cualquier imagen es comprobante.
-    # No restringir por ventana de mensajes recientes — el lead puede mandar
-    # la imagen horas después de recibir los datos bancarios.
+    # Condición 3: NO ya pagó — si "pago confirmado" ya está en el historial,
+    # el lead ya pagó y esta imagen es otra cosa (foto del mapa, selfie, etc.)
+    ya_pago = any(
+        "pago confirmado" in m.get("content", "").lower()
+        for m in historial
+        if m.get("role") == "assistant"
+    )
+    if ya_pago:
+        return False
+
     return True
 
 
