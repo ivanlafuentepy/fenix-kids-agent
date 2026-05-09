@@ -478,6 +478,22 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
+@app.post("/restaurar-aurora/{telefono}")
+async def restaurar_aurora(telefono: str, _: bool = Depends(_require_admin)):
+    """Restaura un número a Aurora sin borrar historial."""
+    familia = await buscar_familia_por_telefono(telefono)
+    if familia:
+        await guardar_familia_id(telefono, familia["id"])
+    await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+    await reactivar_dorita(telefono)
+    return {
+        "status": "ok",
+        "telefono": telefono,
+        "agent": "aurora",
+        "familia_id": familia["id"] if familia else None,
+    }
+
+
 @app.get("/diagnostico-audio")
 async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
     """Diagnostica paso a paso por qué los audios podrían fallar."""
