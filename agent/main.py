@@ -2998,6 +2998,7 @@ async def _generar_resumen_telegram(telefono: str):
                 "apellido": f.get("APELLIDO HIJO", ""),
                 "tel": f.get("TELEFONO", ""),
                 "conversion": f.get("CONVERSION", ""),
+                "responsable": f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip(),
             })
 
     # Agrupar por teléfono dentro de cada turno para hermanos
@@ -3007,21 +3008,21 @@ async def _generar_resumen_telegram(telefono: str):
     for hora in turnos:
         kids = por_turno[hora]
         # Agrupar por tel
-        by_tel: dict[str, list[str]] = {}
+        by_tel: dict[str, list] = {}
         for k in kids:
             tel = k["tel"]
             if tel not in by_tel:
-                by_tel[tel] = []
+                by_tel[tel] = {"nombres": [], "responsable": k.get("responsable", "")}
             nombre = f"{k['nombre']} {k['apellido']}".strip()
             if k.get("conversion") == "CANCELADO":
                 nombre += " (CANCELADO)"
-            by_tel[tel].append(nombre)
+            by_tel[tel]["nombres"].append(nombre)
 
-        count = sum(len(v) for v in by_tel.values())
+        count = sum(len(v["nombres"]) for v in by_tel.values())
         total += count
         lineas.append(f"⏰ *{hora}h* — {count} niño{'s' if count != 1 else ''}")
 
-        for tel, nombres in by_tel.items():
+        for tel, data in by_tel.items():
             # Get Telegram topic link
             topic = await obtener_topic(tel)
             if topic and topic.group_id:
@@ -3032,8 +3033,10 @@ async def _generar_resumen_telegram(telefono: str):
             else:
                 tg_link = "sin topic"
 
-            for nombre in nombres:
+            for nombre in data["nombres"]:
                 lineas.append(f"   - {nombre}")
+            if data["responsable"]:
+                lineas.append(f"     👤 {data['responsable']}")
             lineas.append(f"     💬 {tg_link}")
             lineas.append("")
 
