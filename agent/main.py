@@ -1552,7 +1552,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Respuesta a asistencia pendiente (solo admin) ─────────────────
         if telefono == admin_phone and telefono in _asistencia_pendiente:
             _resp_asis = texto.strip().lower()
-            if _resp_asis == "ok" or re.match(r'^[\d\s]+$', _resp_asis):
+            if _resp_asis == "ok" or re.match(r'^[\d\s,]+$', _resp_asis):
                 try:
                     await _procesar_respuesta_asistencia(telefono, _resp_asis)
                 except Exception as e:
@@ -3311,7 +3311,9 @@ async def _procesar_respuesta_asistencia(telefono: str, respuesta: str):
     if respuesta == "ok":
         ausentes = set()
     else:
-        ausentes = set(int(n) for n in respuesta.split() if n.isdigit())
+        # Aceptar "1 2", "1,2", "1, 2", etc.
+        _nums = re.split(r'[\s,]+', respuesta)
+        ausentes = set(int(n) for n in _nums if n.isdigit())
 
     presentes = 0
     ausentes_nombres = []
