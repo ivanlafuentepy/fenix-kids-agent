@@ -3223,6 +3223,28 @@ async def _ejecutar_inscripcion(
             }, familia_id)
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
+                # Migrar cara de PRUEBA FENIX → NIÑOS FENIX
+                prueba_face_id = of.get("FACE_ID", "")
+                prueba_foto = of.get("FOTO", [])
+                if prueba_face_id:
+                    try:
+                        import httpx
+                        from agent.face_recognition import actualizar_cara
+                        from agent.airtable_client import _patch, _NINOS
+                        # Re-indexar con el nuevo record_id del niño
+                        if prueba_foto:
+                            foto_bytes = None
+                            async with httpx.AsyncClient(timeout=30) as _hc:
+                                _r = await _hc.get(prueba_foto[0]["url"])
+                                if _r.status_code == 200:
+                                    foto_bytes = _r.content
+                            if foto_bytes:
+                                new_face_id = await actualizar_cara(nino_id, foto_bytes)
+                                if new_face_id:
+                                    await _patch(_NINOS, nino_id, {"FACE_ID": new_face_id})
+                                    logger.info(f"[FOTOS] Cara migrada de PRUEBA→NIÑO: {h_nombre} {h_apellido}")
+                    except Exception as e:
+                        logger.warning(f"[FOTOS] Error migrando cara: {e}")
 
     # ── 3. Crear PAGOS ───────────────────────────────────────────────
     _pagos_tabla = "PAGOS"

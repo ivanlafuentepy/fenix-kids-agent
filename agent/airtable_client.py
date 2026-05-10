@@ -1071,19 +1071,35 @@ async def obtener_familias_inscriptas() -> list[dict]:
 
 
 async def obtener_nombre_nino(nino_id: str) -> dict | None:
-    """Retorna nombre y apodo de un niño por su record_id."""
-    url = f"{_BASE_URL}/{_NINOS}/{nino_id}"
+    """Retorna nombre y apodo de un niño por su record_id (busca en NIÑOS y PRUEBA)."""
     async with httpx.AsyncClient() as client:
+        # Primero buscar en NIÑOS FENIX
         try:
-            r = await client.get(url, headers=_headers(), timeout=10)
+            r = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
             if r.status_code == 200:
                 f = r.json().get("fields", {})
                 return {
                     "id": nino_id,
+                    "tabla": _NINOS,
                     "nombre": f.get("NOMBRE", ""),
                     "apellido": f.get("APELLIDO", ""),
                     "apodo": f.get("APODO", ""),
                 }
-        except Exception as e:
-            logger.error(f"GET NIÑO {nino_id}: {e}")
+        except Exception:
+            pass
+        # Buscar en PRUEBA FENIX
+        try:
+            r = await client.get(f"{_BASE_URL}/{_PRUEBAS}/{nino_id}", headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                f = r.json().get("fields", {})
+                return {
+                    "id": nino_id,
+                    "tabla": _PRUEBAS,
+                    "nombre": f.get("NOMBRE HIJO", ""),
+                    "apellido": f.get("APELLIDO HIJO", ""),
+                    "apodo": "",
+                }
+        except Exception:
+            pass
+        logger.error(f"GET NIÑO/PRUEBA {nino_id}: no encontrado")
     return None

@@ -2,7 +2,7 @@
 # FENIX KIDS ACADEMY
 
 """
-Lee la foto de referencia de cada niño en Airtable (campo FOTO en NIÑOS FENIX)
+Lee la foto de referencia de cada niño en Airtable (NIÑOS FENIX + PRUEBA FENIX)
 y la indexa en la collection de AWS Rekognition.
 
 Uso:
@@ -11,8 +11,7 @@ Uso:
   python scripts/indexar_caras.py --crear   # solo crea la collection (primera vez)
 
 Prerequisitos:
-  - Campo FOTO (attachment) en tabla NIÑOS FENIX de Airtable
-  - Campo FACE_ID (single line text) en tabla NIÑOS FENIX
+  - Campo FOTO (attachment) + FACE_ID (text) en NIÑOS FENIX y PRUEBA FENIX
   - Variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION en .env
 """
 
@@ -28,51 +27,51 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.face_recognition import crear_collection, registrar_cara, actualizar_cara, contar_caras
-from agent.airtable_client import _get_records, _patch, _NINOS, _headers, _BASE_URL
+from agent.airtable_client import _patch, _NINOS, _headers, _BASE_URL
+
+_PRUEBAS = "PRUEBA FENIX"
 
 
-async def obtener_ninos_con_foto(solo_sin_face_id: bool = True) -> list[dict]:
+async def _obtener_registros_con_foto(tabla: str, solo_sin_face_id: bool, campo_nombre: str = "NOMBRE") -> list[dict]:
     """
-    Obtiene todos los niños que tienen campo FOTO en Airtable.
-    Si solo_sin_face_id=True, filtra los que ya tienen FACE_ID.
+    Obtiene registros con campo FOTO de una tabla.
+    campo_nombre: "NOMBRE" para NIÑOS, "NOMBRE HIJO" para PRUEBA.
     """
-    # Airtable no permite filtrar por attachment vacío con fórmulas,
-    # así que obtenemos todos y filtramos en Python.
-    url = f"{_BASE_URL}/{_NINOS}"
-    params = {"maxRecords": 100}
-    ninos = []
+    url = f"{_BASE_URL}/{tabla}"
+    params = {"maxRecords": 200}
+    registros = []
 
     async with httpx.AsyncClient() as client:
         while True:
             r = await client.get(url, params=params, headers=_headers(), timeout=15)
             if r.status_code != 200:
-                print(f"Error obteniendo niños: {r.status_code} {r.text[:200]}")
+                print(f"Error obteniendo {tabla}: {r.status_code} {r.text[:200]}")
                 break
 
             data = r.json()
             for rec in data.get("records", []):
                 fields = rec.get("fields", {})
-                foto = fields.get("FOTO")  # Attachment field = lista de objetos
+                foto = fields.get("FOTO")
                 if foto and len(foto) > 0:
                     if solo_sin_face_id and fields.get("FACE_ID"):
                         continue
-                    ninos.append({
+                    registros.append({
                         "id": rec["id"],
-                        "nombre": fields.get("NOMBRE", ""),
-                        "apellido": fields.get("APELLIDO", ""),
+                        "tabla": tabla,
+                        "nombre": fields.get(campo_nombre, ""),
+                        "apellido": fields.get("APELLIDO", fields.get("APELLIDO HIJO", "")),
                         "apodo": fields.get("APODO", ""),
-                        "foto_url": foto[0]["url"],  # Primera foto del attachment
+                        "foto_url": foto[0]["url"],
                         "face_id": fields.get("FACE_ID", ""),
                     })
 
-            # Paginación
             offset = data.get("offset")
             if offset:
                 params["offset"] = offset
             else:
                 break
 
-    return ninos
+    return registros
 
 
 async def descargar_foto(url: str) -> bytes | None:
@@ -86,11 +85,6 @@ async def descargar_foto(url: str) -> bytes | None:
         except Exception as e:
             print(f"  Error descargando foto: {e}")
     return None
-
-
-async def guardar_face_id(nino_id: str, face_id: str) -> bool:
-    """Guarda el FaceId en el campo FACE_ID del niño en Airtable."""
-    return await _patch(_NINOS, nino_id, {"FACE_ID": face_id})
 
 
 async def main():
@@ -117,41 +111,42 @@ async def main():
         print("Listo. Collection creada/verificada.")
         return
 
-    # Paso 2: obtener niños con foto
+    # Paso 2: obtener niños con foto de AMBAS tablas
     print("[2/3] Buscando niños con foto en Airtable...")
-    ninos = await obtener_ninos_con_foto(solo_sin_face_id=not reindexar_todos)
-    print(f"      {len(ninos)} niño(s) para indexar.")
+    sin_face = not reindexar_todos
+    ninos = await _obtener_registros_con_foto(_NINOS, sin_face, campo_nombre="NOMBRE")
+    pruebas = await _obtener_registros_con_foto(_PRUEBAS, sin_face, campo_nombre="NOMBRE HIJO")
+    todos = ninos + pruebas
+    print(f"      NIÑOS FENIX: {len(ninos)} | PRUEBA FENIX: {len(pruebas)} | Total: {len(todos)}")
     print()
 
-    if not ninos:
+    if not todos:
         print("No hay niños nuevos para indexar. Usá --all para re-indexar todos.")
         return
 
-    # Paso 3: indexar cada niño
+    # Paso 3: indexar cada uno
     print("[3/3] Indexando caras...")
     exitosos = 0
     fallidos = 0
 
-    for i, nino in enumerate(ninos, 1):
+    for i, nino in enumerate(todos, 1):
         nombre_display = nino["apodo"] or nino["nombre"]
-        print(f"  [{i}/{len(ninos)}] {nombre_display} {nino['apellido']}...", end=" ")
+        etiqueta = "NIÑO" if nino["tabla"] == _NINOS else "PRUEBA"
+        print(f"  [{i}/{len(todos)}] [{etiqueta}] {nombre_display} {nino['apellido']}...", end=" ")
 
-        # Descargar foto
         image_bytes = await descargar_foto(nino["foto_url"])
         if not image_bytes:
             print("FALLO (descarga)")
             fallidos += 1
             continue
 
-        # Indexar en Rekognition
         if reindexar_todos and nino["face_id"]:
             face_id = await actualizar_cara(nino["id"], image_bytes)
         else:
             face_id = await registrar_cara(nino["id"], image_bytes)
 
         if face_id:
-            # Guardar FaceId en Airtable
-            await guardar_face_id(nino["id"], face_id)
+            await _patch(nino["tabla"], nino["id"], {"FACE_ID": face_id})
             print(f"OK (FaceId: {face_id[:8]}...)")
             exitosos += 1
         else:
