@@ -150,6 +150,9 @@ def _check_rate_limit(telefono: str) -> bool:
 # Guard: PRUEBA FENIX ya creada para este lead (evita duplicados)
 _prueba_creada: set[str] = set()
 
+# Admin en modo padre (flujo normal): si no está acá, admin queda en modo secre (solo comandos)
+_admin_modo_padre: set[str] = set()
+
 # Estado de asistencia pendiente: {telefono_admin: [{idx, record_id, tabla, nombre},...]}
 _asistencia_pendiente: dict[str, list[dict]] = {}
 
@@ -1511,7 +1514,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `asistencia` — lista completa todos los turnos\n\n"
                 "🔄 *Reset:*\n"
                 "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
-                "• `modo alumno` — reset conversación, simular padre inscripto\n\n"
+                "• `modo alumno` — reset conversación, simular padre inscripto\n"
+                "• `modo padre` — activar flujo normal (diagnóstico/Claude)\n"
+                "• `modo secre` — volver a solo comandos (default)\n\n"
                 "📋 *Info:*\n"
                 "• `comandos` — esta lista"
             )
@@ -1524,6 +1529,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
+            _admin_modo_padre.discard(telefono)
             if telefono == admin_phone:
                 # Admin: reset completo incluyendo Airtable
                 contador = await eliminar_todo_de_telefono(telefono)
@@ -1619,9 +1625,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Pre-setear Aurora + cliente_inscripto para que el router no lo mande a Ivan
             await asignar_variante(telefono)  # crea la fila en ConversacionAB
             await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
+            _admin_modo_padre.add(telefono)  # activar flujo normal para que responda
             await proveedor.enviar_mensaje(
                 telefono,
-                "Modo alumno ✅\nConversación limpia, Airtable intacto.\nEscribí como si fueras un padre inscripto."
+                "Modo alumno ✅\nConversación limpia, Airtable intacto.\nEscribí como si fueras un padre inscripto.\nEscribí 'modo secre' para volver a comandos."
             )
             topic_alumno = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
             if topic_alumno:
@@ -1633,6 +1640,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             btn_titulo = texto.lower().strip()
             if "confirmar" in btn_titulo or "rechazar" in btn_titulo:
                 await _procesar_boton_pago(btn_titulo)
+                return
+
+        # ── Modo secre: admin siempre en modo comando, no responde como agente ─
+        # Si el admin escribe algo que no matcheó ningún comando arriba, ignorar.
+        # Solo "modo padre" activa el flujo normal (diagnóstico/Claude).
+        if telefono == admin_phone:
+            _texto_admin = texto.strip().lower().replace(" ", "")
+            if _texto_admin == "modopadre":
+                # Activar modo padre: limpiar estado y dejar que fluya como lead
+                _admin_modo_padre.add(telefono)
+                await proveedor.enviar_mensaje(
+                    telefono,
+                    "Modo padre ✅\nAhora te respondo como si fueras un padre. Escribí 'modo secre' para volver."
+                )
+                return
+            if _texto_admin == "modosecre":
+                _admin_modo_padre.discard(telefono)
+                await proveedor.enviar_mensaje(telefono, "Modo secre ✅\nSolo comandos admin.")
+                return
+            if telefono not in _admin_modo_padre:
+                # Guardar mensaje y espejear en Telegram, pero no responder
+                logger.info(f"[ADMIN] Mensaje ignorado (modo secre): {texto[:50]}")
                 return
 
         # ── Cancelar timers pendientes (NO el diagnóstico — ese se envía siempre)
