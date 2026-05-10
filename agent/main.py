@@ -1518,6 +1518,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen anuncios hoy` / `ayer` / `[mes]`\n"
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
                 "• `resumen asis` / `resumen asis 10/5` — quién vino (presentes por turno)\n"
+                "• `resumen prueba` / `resumen prueba 9/5` — dashboard pruebas (asis+pagos+seguimiento)\n"
+                "• `resumen seguimiento` / `seguimiento 9/5` — estado mensajes personalizados\n"
                 "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
                 "✅ *Asistencia:*\n"
@@ -1722,6 +1724,44 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen asistencia: {e}")
             return
 
+        # ── Comando resumen prueba (solo admin) ────────────────────────────
+        # Acepta: "resumen prueba", "resumen prueba 9/5"
+        if telefono == admin_phone and "resumen" in _texto_cmd and "prueba" in _texto_cmd:
+            _fecha_pr = None
+            _m_fecha_pr = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_pr:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_pr = _date_cls(_anio, int(_m_fecha_pr.group(2)), int(_m_fecha_pr.group(1)))
+                except ValueError:
+                    pass
+            try:
+                await _generar_resumen_prueba(telefono, fecha_override=_fecha_pr)
+            except Exception as e:
+                logger.error(f"[RESUMEN PRUEBA] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+            return
+
+        # ── Comando resumen seguimiento (solo admin) ─────────────────────
+        # Acepta: "resumen seguimiento", "seguimiento 9/5"
+        if telefono == admin_phone and ("seguimiento" in _texto_cmd or "seguim" in _texto_cmd):
+            _fecha_seg = None
+            _m_fecha_seg = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_seg:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_seg = _date_cls(_anio, int(_m_fecha_seg.group(2)), int(_m_fecha_seg.group(1)))
+                except ValueError:
+                    pass
+            try:
+                await _generar_resumen_seguimiento(telefono, fecha_override=_fecha_seg)
+            except Exception as e:
+                logger.error(f"[RESUMEN SEG] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+            return
+
         # ── Comando resumen followup (solo admin) ──────────────────────────
         if telefono == admin_phone and "resumen" in _texto_cmd and ("followup" in _texto_cmd or "follow" in _texto_cmd or "fu" in _texto_cmd.split()):
             try:
@@ -1729,6 +1769,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESUMEN FU] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen followup: {e}")
+            return
+
+        # ── Comando resumen seguimiento (solo admin) ─────────────────────
+        # Acepta: "resumen seguimiento", "seguimiento 9/5"
+        if telefono == admin_phone and ("seguimiento" in _texto_cmd or "seguim" in _texto_cmd):
+            _fecha_seg = None
+            _m_fecha_seg = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_seg:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_seg = _date_cls(_anio, int(_m_fecha_seg.group(2)), int(_m_fecha_seg.group(1)))
+                except ValueError:
+                    pass
+            try:
+                await _generar_resumen_seguimiento(telefono, fecha_override=_fecha_seg)
+            except Exception as e:
+                logger.error(f"[RESUMEN SEG] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
             return
 
         # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
@@ -4086,6 +4145,229 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
 
     lineas.append(f"*TOTAL: {total_presentes} presentes, {total_ausentes} ausentes*")
     lineas.append(f"Aurora: {total_aurora} | Fenix (prueba): {total_fenix}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_resumen_prueba(telefono: str, fecha_override=None):
+    """
+    Dashboard de PRUEBA FENIX para un sábado:
+    - Asistencia por turno
+    - Total pagos prueba
+    - Inscriptos
+    - Seguimiento enviado/descartado/pendiente
+    """
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import _get_records, _PRUEBAS
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    if fecha_override:
+        sabado = fecha_override
+    else:
+        dias_desde_sabado = (hoy.weekday() - 5) % 7
+        if dias_desde_sabado == 0 and hoy.weekday() != 5:
+            dias_desde_sabado = 7
+        sabado = hoy - timedelta(days=dias_desde_sabado)
+
+    fecha_iso = sabado.isoformat()
+    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+
+    # Obtener todas las pruebas de esa fecha
+    pruebas_t = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_texto}'", max_records=50)
+    pruebas_i = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
+    _seen = set()
+    pruebas = []
+    for p in pruebas_t + pruebas_i:
+        if p["id"] not in _seen:
+            _seen.add(p["id"])
+            pruebas.append(p)
+
+    # Filtrar cancelados
+    pruebas = [p for p in pruebas if p.get("fields", {}).get("CONVERSION") != "CANCELADO"]
+
+    if not pruebas:
+        await proveedor.enviar_mensaje(telefono, f"No hay pruebas para el {sabado.day}/{sabado.month}.")
+        return
+
+    # Obtener seguimiento de esa fecha
+    seg_records = await _get_records("SEGUIMIENTO FENIX", formula=f"DATESTR({{FECHA}})='{fecha_iso}'", max_records=50)
+    # Indexar seguimiento por teléfono
+    seg_por_tel = {}
+    for s in seg_records:
+        sf = s.get("fields", {})
+        tel = sf.get("TELEFONO", "")
+        if tel:
+            seg_por_tel[tel] = sf
+
+    # Agrupar por turno
+    turnos_data = {"9:30": [], "11:00": [], "15:30": []}
+    for p in pruebas:
+        f = p.get("fields", {})
+        hora = (f.get("HORA") or "").strip().replace("h", "").replace("hs", "")
+        # Normalizar
+        for t in turnos_data:
+            if hora == t or hora == t.split(":")[0] or hora.lstrip("0") == t:
+                hora = t
+                break
+        if hora not in turnos_data:
+            hora = "15:30"  # fallback
+        turnos_data[hora].append(f)
+
+    total_presentes = 0
+    total_ausentes = 0
+    total_pagaron = 0
+    total_inscriptos = 0
+    total_seg_enviado = 0
+    total_seg_descartado = 0
+    total_seg_pendiente = 0
+    monto_total = 0
+
+    lineas = [f"🔥 *RESUMEN PRUEBA — SÁB {sabado.day}/{sabado.month}*\n"]
+
+    for hora in ["9:30", "11:00", "15:30"]:
+        items = turnos_data[hora]
+        if not items:
+            continue
+
+        lineas.append(f"⏰ *{hora}h* ({len(items)})")
+
+        for f in items:
+            nombre = (f.get("NOMBRE HIJO") or "?").strip().split()[0] if f.get("NOMBRE HIJO") else "?"
+            apellido = (f.get("APELLIDO HIJO") or "").strip().split()[0] if f.get("APELLIDO HIJO") else ""
+            nombre_full = f"{nombre} {apellido}".strip()
+            edad = f.get("EDAD HIJO", "")
+            edad_str = f" ({edad})" if edad else ""
+            presente = f.get("PRESENTE", False)
+            conversion = f.get("CONVERSION", "")
+            monto = f.get("MONTO", 0) or 0
+            inscripcion = f.get("INSCRIPCION", False)
+            tel = f.get("TELEFONO", "")
+
+            # Estado asistencia
+            asis = "✅" if presente else "❌"
+            if presente:
+                total_presentes += 1
+            else:
+                total_ausentes += 1
+
+            # Estado pago
+            pago_str = ""
+            if conversion == "PAGO" or monto > 0:
+                total_pagaron += 1
+                monto_total += monto
+                pago_str = f" 💰{monto // 1000}mil" if monto > 0 else " 💰"
+
+            # Inscripción
+            insc_str = ""
+            if inscripcion:
+                total_inscriptos += 1
+                insc_str = " 🎓"
+
+            # Seguimiento
+            seg_str = ""
+            seg = seg_por_tel.get(tel, {})
+            if seg:
+                if seg.get("ENVIADO"):
+                    seg_str = " 📩"
+                    total_seg_enviado += 1
+                elif seg.get("DESCARTADO"):
+                    seg_str = " 🚫"
+                    total_seg_descartado += 1
+                else:
+                    seg_str = " ⏳"
+                    total_seg_pendiente += 1
+            else:
+                # No tiene registro de seguimiento
+                total_seg_pendiente += 1
+                seg_str = " ⏳"
+
+            lineas.append(f"   {asis} {nombre_full}{edad_str}{pago_str}{insc_str}{seg_str}")
+
+        lineas.append("")
+
+    total = total_presentes + total_ausentes
+    lineas.append(f"📊 *TOTALES*")
+    lineas.append(f"👧 Niños: {total}")
+    lineas.append(f"✅ Vinieron: {total_presentes} | ❌ No vinieron: {total_ausentes}")
+    lineas.append(f"💰 Pagaron prueba: {total_pagaron} ({monto_total // 1000}mil)")
+    lineas.append(f"🎓 Inscriptos: {total_inscriptos}")
+    lineas.append(f"📩 Seguimiento enviado: {total_seg_enviado}")
+    lineas.append(f"🚫 Descartados: {total_seg_descartado}")
+    lineas.append(f"⏳ Falta seguimiento: {total_seg_pendiente}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_resumen_seguimiento(telefono: str, fecha_override=None):
+    """Resumen de mensajes personalizados: enviados, descartados, pendientes."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import _get_records
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    if fecha_override:
+        sabado = fecha_override
+    else:
+        # Último sábado
+        dias_desde_sabado = (hoy.weekday() - 5) % 7
+        if dias_desde_sabado == 0 and hoy.weekday() != 5:
+            dias_desde_sabado = 7
+        sabado = hoy - timedelta(days=dias_desde_sabado)
+
+    fecha_iso = sabado.isoformat()
+    records = await _get_records("SEGUIMIENTO FENIX", formula=f"DATESTR({{FECHA}})='{fecha_iso}'", max_records=50)
+
+    if not records:
+        await proveedor.enviar_mensaje(telefono, f"No hay seguimiento para el {sabado.day}/{sabado.month}.")
+        return
+
+    enviados = []
+    descartados = []
+    pendientes = []
+
+    for r in records:
+        f = r.get("fields", {})
+        msg = f.get("MENSAJE", "")
+        if msg.startswith("Hola "):
+            nombre = msg.split("!")[0].replace("Hola ", "")
+        else:
+            nombre = f.get("TELEFONO", "?")
+        turno = f.get("TURNO", "")
+        linea = f"{nombre} ({turno})"
+
+        if f.get("ENVIADO"):
+            enviados.append(linea)
+        elif f.get("DESCARTADO"):
+            descartados.append(linea)
+        else:
+            pendientes.append(linea)
+
+    lineas = [f"📋 *SEGUIMIENTO — SÁB {sabado.day}/{sabado.month}*\n"]
+
+    if enviados:
+        lineas.append(f"✅ *Enviados ({len(enviados)}):*")
+        for l in enviados:
+            lineas.append(f"   {l}")
+        lineas.append("")
+
+    if descartados:
+        lineas.append(f"❌ *Descartados ({len(descartados)}):*")
+        for l in descartados:
+            lineas.append(f"   {l}")
+        lineas.append("")
+
+    if pendientes:
+        lineas.append(f"⏳ *Pendientes ({len(pendientes)}):*")
+        for l in pendientes:
+            lineas.append(f"   {l}")
+        lineas.append("")
+
+    lineas.append(f"*Total: {len(records)}* — ✅{len(enviados)} ❌{len(descartados)} ⏳{len(pendientes)}")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
