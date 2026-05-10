@@ -1577,15 +1577,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando cargar familia (solo admin) ───────────────────────────
         if telefono == admin_phone and texto.lower().strip().startswith("cargar familia"):
-            _nombre_buscar = texto.strip()[len("cargar familia"):].strip()
-            if not _nombre_buscar:
-                await proveedor.enviar_mensaje(telefono, "Usá: cargar familia [nombre padre]\nEj: cargar familia Ivan Lafuente")
+            _resto = texto.strip()[len("cargar familia"):].strip()
+            if not _resto:
+                await proveedor.enviar_mensaje(telefono, "Usá: cargar familia [nombre] [plan] [monto] [matricula]\nEj: cargar familia Diana Jara trimestral full monto 690 matricula 50 sub")
                 return
             try:
-                await _iniciar_inscripcion(telefono, _nombre_buscar)
+                await _iniciar_inscripcion(telefono, _resto)
             except Exception as e:
                 logger.error(f"[INSCRIPCION] Error: {e}")
-                await proveedor.enviar_mensaje(telefono, f"Error buscando prueba: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
             return
 
         # ── Comando asistencia (solo admin) ───────────────────────────────
@@ -2769,14 +2769,8 @@ async def _procesar_confirmacion_reserva(
 
 # ── Cargar familia (comando admin) ────────────────────────────────────────────
 
-_PLAN_MAP = {
-    "QM": "QUINCENAL MENSUAL",
-    "SM": "SEMANAL MENSUAL",
-    "QT": "QUINCENAL TRIMESTRAL",
-    "ST": "SEMANAL TRIMESTRAL",
-}
 _METODO_MAP = {
-    "SUB": "SUSCRIPCION", "SUSCRIPCION": "SUSCRIPCION",
+    "SUB": "SUSCRIPCION", "SUSCRIPCION": "SUSCRIPCION", "SUSCRI": "SUSCRIPCION",
     "TRANS": "TRANSFER", "TRANSFER": "TRANSFER", "TRANSFERENCIA": "TRANSFER",
     "DEB": "DEB", "DEBITO": "DEB",
     "CRED": "CRED", "CREDITO": "CRED",
@@ -2784,15 +2778,129 @@ _METODO_MAP = {
 }
 
 
-async def _iniciar_inscripcion(admin_phone: str, nombre_buscar: str):
-    """Busca en PRUEBA FENIX por nombre padre y muestra formulario de inscripción."""
+def _parsear_inscripcion(texto: str) -> dict:
+    """
+    Parsea texto libre de inscripción. Extrae plan, método, monto, matrícula.
+    Acepta cualquier orden, con o sin keywords explícitos.
+    Retorna dict con las claves encontradas (puede estar incompleto).
+    """
+    t = texto.lower().replace(",", " ").replace(".", " ")
+
+    result = {}
+
+    # ── Plan: detectar por keywords naturales ──
+    # trimestral full/todos/semanal/4 = ST
+    # trimestral dos/quincenal/2 = QT
+    # mensual full/todos/semanal/4 = SM
+    # mensual dos/quincenal/2 = QM
+    # También acepta códigos: QM, SM, QT, ST
+    if re.search(r'\b(st)\b', t):
+        result["plan"] = "SEMANAL TRIMESTRAL"
+    elif re.search(r'\b(qt)\b', t):
+        result["plan"] = "QUINCENAL TRIMESTRAL"
+    elif re.search(r'\b(sm)\b', t):
+        result["plan"] = "SEMANAL MENSUAL"
+    elif re.search(r'\b(qm)\b', t):
+        result["plan"] = "QUINCENAL MENSUAL"
+    # Primero buscar "dos/quincenal" (más específico), después "full/todos"
+    elif re.search(r'trimestral.{0,15}\b(dos|quincenal)\b', t):
+        result["plan"] = "QUINCENAL TRIMESTRAL"
+    elif re.search(r'\b(dos|quincenal)\b.{0,15}trimestral', t):
+        result["plan"] = "QUINCENAL TRIMESTRAL"
+    elif re.search(r'trimestral.{0,15}\b(full|todos|todas|completo|semanal)\b', t):
+        result["plan"] = "SEMANAL TRIMESTRAL"
+    elif re.search(r'\b(full|todos|todas|completo|semanal)\b.{0,15}trimestral', t):
+        result["plan"] = "SEMANAL TRIMESTRAL"
+    elif re.search(r'\btrimestral\b', t):
+        # Solo "trimestral" sin calificador → asumir full (el más común)
+        result["plan"] = "SEMANAL TRIMESTRAL"
+    elif re.search(r'mensual.{0,15}\b(dos|quincenal)\b', t):
+        result["plan"] = "QUINCENAL MENSUAL"
+    elif re.search(r'\b(dos|quincenal)\b.{0,15}mensual', t):
+        result["plan"] = "QUINCENAL MENSUAL"
+    elif re.search(r'mensual.{0,15}\b(full|todos|todas|completo|semanal)\b', t):
+        result["plan"] = "SEMANAL MENSUAL"
+    elif re.search(r'\b(full|todos|todas|completo|semanal)\b.{0,15}mensual', t):
+        result["plan"] = "SEMANAL MENSUAL"
+    elif re.search(r'\bmensual\b', t):
+        result["plan"] = "SEMANAL MENSUAL"
+    elif re.search(r'\btrimestral\b', t):
+        # Solo "trimestral" sin más → pedir aclaración
+        pass
+    elif re.search(r'\bmensual\b', t):
+        pass
+
+    # ── Método de pago ──
+    for keyword, metodo in _METODO_MAP.items():
+        if keyword.lower() in t:
+            result["metodo"] = metodo
+            break
+
+    # ── Monto y matrícula: buscar "monto X" y "matricula X" ──
+    m_monto = re.search(r'monto\s+(\d+)', t)
+    if m_monto:
+        result["monto"] = int(m_monto.group(1))
+
+    m_matri = re.search(r'matri(?:cula)?\s+(\d+)', t)
+    if m_matri:
+        result["matricula"] = int(m_matri.group(1))
+
+    # Si no encontró con keyword, buscar números sueltos y asignar por contexto
+    if "monto" not in result or "matricula" not in result:
+        nums = re.findall(r'\b(\d{2,4})\b', t)
+        # Filtrar números que ya se asignaron
+        nums_int = [int(n) for n in nums]
+        assigned = {result.get("monto"), result.get("matricula")}
+        remaining = [n for n in nums_int if n not in assigned and n > 10]
+        if remaining and "monto" not in result:
+            result["monto"] = max(remaining)  # el más grande es el monto
+            remaining.remove(result["monto"])
+        if remaining and "matricula" not in result:
+            result["matricula"] = remaining[0]
+
+    # Normalizar montos a guaraníes (si < 10000, multiplicar por 1000)
+    for key in ("monto", "matricula"):
+        if key in result and result[key] < 10000:
+            result[key] = result[key] * 1000
+
+    return result
+
+
+async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
+    """
+    Parsea texto libre: extrae nombre + datos de inscripción.
+    Si tiene todo, ejecuta directo. Si falta algo, pide lo que falta.
+    """
     from agent.airtable_client import _get_records, _PRUEBAS
 
-    # Buscar por nombre o apellido del padre
-    _nombre_lower = nombre_buscar.lower()
-    pruebas = await _get_records(_PRUEBAS, formula="", max_records=100)
+    # Extraer datos del texto
+    parsed = _parsear_inscripcion(texto_completo)
 
-    # Filtrar por coincidencia en nombre completo del padre
+    # Buscar nombre: todo lo que no sea keyword de plan/método/monto
+    _keywords = {
+        "trimestral", "mensual", "full", "todos", "todas", "semanal", "quincenal",
+        "dos", "completo", "monto", "matricula", "matri",
+        "sub", "suscripcion", "suscri", "trans", "transfer", "transferencia",
+        "deb", "debito", "cred", "credito", "efe", "efectivo", "cash",
+        "qm", "sm", "qt", "st", "mil", "bi",
+    }
+    palabras = texto_completo.strip().split()
+    nombre_parts = []
+    for p in palabras:
+        p_clean = re.sub(r'[,.:;!?]', '', p).lower()
+        if p_clean in _keywords or p_clean.isdigit():
+            break
+        nombre_parts.append(p)
+    nombre_buscar = " ".join(nombre_parts).strip()
+
+    if not nombre_buscar:
+        await proveedor.enviar_mensaje(admin_phone, "No entendí el nombre. Ej: cargar familia Diana Jara trimestral full monto 690 matricula 50")
+        return
+
+    # Buscar en PRUEBA FENIX
+    pruebas = await _get_records(_PRUEBAS, formula="", max_records=100)
+    _nombre_lower = nombre_buscar.lower()
+
     matches = []
     for p in pruebas:
         f = p.get("fields", {})
@@ -2801,7 +2909,6 @@ async def _iniciar_inscripcion(admin_phone: str, nombre_buscar: str):
             matches.append(p)
 
     if not matches:
-        # Intentar por nombre del hijo
         for p in pruebas:
             f = p.get("fields", {})
             hijo_completo = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip().lower()
@@ -2809,156 +2916,171 @@ async def _iniciar_inscripcion(admin_phone: str, nombre_buscar: str):
                 matches.append(p)
 
     if not matches:
-        await proveedor.enviar_mensaje(admin_phone, f"No encontré ninguna prueba para '{nombre_buscar}'")
+        await proveedor.enviar_mensaje(admin_phone, f"No encontré prueba para '{nombre_buscar}'")
         return
 
     if len(matches) > 1:
-        # Mostrar opciones
-        msg = f"Encontré {len(matches)} pruebas:\n\n"
-        for i, m in enumerate(matches, 1):
-            f = m.get("fields", {})
-            msg += f"{i}. {f.get('NOMBRE', '')} {f.get('APELLIDO', '')} → hijo: {f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')} ({f.get('EDAD HIJO', '?')})\n"
-        msg += "\nEscribí el número para elegir:"
-        _inscripcion_pendiente[admin_phone] = {"step": "elegir", "matches": matches}
+        # Dedup por teléfono (hermanos = mismo tel)
+        _tels_vistos = set()
+        matches_uniq = []
+        for m in matches:
+            _tel = m.get("fields", {}).get("TELEFONO", "")
+            if _tel not in _tels_vistos:
+                _tels_vistos.add(_tel)
+                matches_uniq.append(m)
+        if len(matches_uniq) > 1:
+            msg = f"Encontré {len(matches_uniq)} familias:\n\n"
+            for i, m in enumerate(matches_uniq, 1):
+                f = m.get("fields", {})
+                msg += f"{i}. {f.get('NOMBRE', '')} {f.get('APELLIDO', '')} → {f.get('NOMBRE HIJO', '')} ({f.get('TELEFONO', '')})\n"
+            msg += "\nEscribí el número para elegir:"
+            _inscripcion_pendiente[admin_phone] = {"step": "elegir", "matches": matches_uniq, "parsed": parsed}
+            await proveedor.enviar_mensaje(admin_phone, msg)
+            return
+        matches = matches_uniq
+
+    prueba = matches[0]
+    tel = prueba.get("fields", {}).get("TELEFONO", "")
+
+    # Buscar todas las pruebas de este teléfono (hermanos)
+    todas_pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
+
+    # Si tenemos todo → ejecutar directo
+    faltantes = []
+    if "plan" not in parsed:
+        faltantes.append("PLAN (ej: trimestral full, mensual dos, QT, SM...)")
+    if "monto" not in parsed:
+        faltantes.append("MONTO (en miles, ej: 690)")
+    if "matricula" not in parsed:
+        faltantes.append("MATRICULA (en miles, ej: 50)")
+
+    if faltantes:
+        # Mostrar lo que encontró y pedir lo que falta
+        fp = prueba.get("fields", {})
+        hijos_txt = ", ".join(
+            f"{op.get('fields', {}).get('NOMBRE HIJO', '')} ({op.get('fields', {}).get('EDAD HIJO', '?')})"
+            for op in todas_pruebas if op.get("fields", {}).get("NOMBRE HIJO")
+        )
+        msg = (
+            f"📋 Encontré: {fp.get('NOMBRE', '')} {fp.get('APELLIDO', '')} ({tel})\n"
+            f"👶 {hijos_txt}\n\n"
+        )
+        if parsed.get("plan"):
+            msg += f"✅ Plan: {parsed['plan']}\n"
+        if parsed.get("monto"):
+            msg += f"✅ Monto: {parsed['monto'] // 1000}mil\n"
+        if parsed.get("matricula"):
+            msg += f"✅ Matrícula: {parsed['matricula'] // 1000}mil\n"
+        if parsed.get("metodo"):
+            msg += f"✅ Método: {parsed['metodo']}\n"
+        msg += f"\nFalta:\n" + "\n".join(f"• {f}" for f in faltantes)
+        msg += "\n\nCompletá lo que falta (texto libre):"
+
+        _inscripcion_pendiente[admin_phone] = {
+            "step": "completar",
+            "prueba": prueba,
+            "todas_pruebas": todas_pruebas,
+            "parsed": parsed,
+        }
         await proveedor.enviar_mensaje(admin_phone, msg)
         return
 
-    # Solo un match — mostrar formulario
-    await _mostrar_formulario_inscripcion(admin_phone, matches[0])
-
-
-async def _mostrar_formulario_inscripcion(admin_phone: str, prueba: dict):
-    """Muestra el formulario de inscripción pre-llenado con datos de PRUEBA FENIX."""
-    f = prueba.get("fields", {})
-    tel = f.get("TELEFONO", "?")
-    nombre_padre = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
-    nombre_hijo = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
-    edad = f.get("EDAD HIJO", "?")
-    concepto = f.get("CONCEPTO", "?")
-    conversion = f.get("CONVERSION", "?")
-    fn = f.get("FECHA NACIMIENTO", "")
-    genero = f.get("GENERO", "")
-
-    # Buscar si tiene más hijos en PRUEBA (mismo teléfono)
-    from agent.airtable_client import _get_records, _PRUEBAS
-    otras_pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
-    hijos_info = []
-    for op in otras_pruebas:
-        of = op.get("fields", {})
-        h_nombre = f"{of.get('NOMBRE HIJO', '')} {of.get('APELLIDO HIJO', '')}".strip()
-        h_edad = of.get("EDAD HIJO", "?")
-        h_fn = of.get("FECHA NACIMIENTO", "")
-        h_genero = of.get("GENERO", "")
-        if h_nombre:
-            hijos_info.append({"nombre": h_nombre, "edad": h_edad, "fn": h_fn, "genero": h_genero})
-
-    hijos_txt = ""
-    for h in hijos_info:
-        hijos_txt += f"\n  👶 {h['nombre']} ({h['edad']} años)"
-
-    msg = (
-        f"📋 *INSCRIPCIÓN*\n\n"
-        f"De PRUEBA FENIX:\n"
-        f"👤 Padre: {nombre_padre} ({tel})\n"
-        f"👶 Hijo(s):{hijos_txt}\n"
-        f"💰 Prueba: {concepto} ({conversion})\n\n"
-        f"Completá y enviá:\n"
-        f"PLAN: [QM/SM/QT/ST]\n"
-        f"METODO: [sub/trans/deb/cred/efe]\n"
-        f"MONTO: [en miles]\n"
-        f"MATRICULA: [en miles]\n\n"
-        f"_QM=Quincenal Mensual, SM=Semanal Mensual_\n"
-        f"_QT=Quincenal Trim, ST=Semanal Trim_"
-    )
-
-    _inscripcion_pendiente[admin_phone] = {
-        "step": "formulario",
-        "prueba": prueba,
-        "todas_pruebas": otras_pruebas,
-        "hijos_info": hijos_info,
-    }
-    await proveedor.enviar_mensaje(admin_phone, msg)
+    # Todo completo → ejecutar
+    metodo = parsed.get("metodo", "TRANSFER")
+    await _ejecutar_inscripcion(admin_phone, prueba, todas_pruebas, parsed["plan"], metodo, parsed["monto"], parsed["matricula"])
 
 
 async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
-    """Procesa la respuesta del admin al formulario de inscripción."""
-    from agent.airtable_client import (
-        _get_records, _post, _patch, _PRUEBAS, _LEADS, _FAMILIAS, _NINOS,
-        crear_familia, crear_nino,
-    )
-
+    """Procesa respuestas pendientes de inscripción (elegir match o completar datos)."""
     datos = _inscripcion_pendiente.get(admin_phone)
     if not datos:
         return
 
-    # Paso 1: elegir entre múltiples matches
+    # Elegir entre múltiples matches
     if datos["step"] == "elegir":
         try:
             idx = int(texto.strip()) - 1
             matches = datos["matches"]
+            parsed = datos.get("parsed", {})
             if 0 <= idx < len(matches):
-                await _mostrar_formulario_inscripcion(admin_phone, matches[idx])
+                _inscripcion_pendiente.pop(admin_phone, None)
+                prueba = matches[idx]
+                tel = prueba.get("fields", {}).get("TELEFONO", "")
+                from agent.airtable_client import _get_records, _PRUEBAS
+                todas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
+                # Re-iniciar con los datos parseados originales
+                faltantes = []
+                if "plan" not in parsed:
+                    faltantes.append("PLAN")
+                if "monto" not in parsed:
+                    faltantes.append("MONTO")
+                if "matricula" not in parsed:
+                    faltantes.append("MATRICULA")
+                if faltantes:
+                    _inscripcion_pendiente[admin_phone] = {
+                        "step": "completar",
+                        "prueba": prueba,
+                        "todas_pruebas": todas,
+                        "parsed": parsed,
+                    }
+                    await proveedor.enviar_mensaje(admin_phone, f"Falta: {', '.join(faltantes)}\nCompletá (texto libre):")
+                else:
+                    metodo = parsed.get("metodo", "TRANSFER")
+                    await _ejecutar_inscripcion(admin_phone, prueba, todas, parsed["plan"], metodo, parsed["monto"], parsed["matricula"])
             else:
-                await proveedor.enviar_mensaje(admin_phone, f"Número inválido. Elegí entre 1 y {len(matches)}")
+                await proveedor.enviar_mensaje(admin_phone, f"Elegí entre 1 y {len(matches)}")
         except ValueError:
             _inscripcion_pendiente.pop(admin_phone, None)
-            await proveedor.enviar_mensaje(admin_phone, "Cancelado. Usá 'cargar familia [nombre]' para reintentar.")
+            await proveedor.enviar_mensaje(admin_phone, "Cancelado.")
         return
 
-    # Paso 2: procesar formulario
-    if datos["step"] != "formulario":
+    # Completar datos faltantes
+    if datos["step"] == "completar":
+        nuevos = _parsear_inscripcion(texto)
+        parsed = datos["parsed"]
+        # Merge: lo nuevo sobreescribe
+        parsed.update(nuevos)
+        datos["parsed"] = parsed
+
+        faltantes = []
+        if "plan" not in parsed:
+            faltantes.append("PLAN (ej: trimestral full, mensual dos)")
+        if "monto" not in parsed:
+            faltantes.append("MONTO (en miles)")
+        if "matricula" not in parsed:
+            faltantes.append("MATRICULA (en miles)")
+
+        if faltantes:
+            msg = "Todavía falta:\n" + "\n".join(f"• {f}" for f in faltantes)
+            await proveedor.enviar_mensaje(admin_phone, msg)
+            return
+
+        # Todo completo
         _inscripcion_pendiente.pop(admin_phone, None)
+        metodo = parsed.get("metodo", "TRANSFER")
+        await _ejecutar_inscripcion(
+            admin_phone, datos["prueba"], datos["todas_pruebas"],
+            parsed["plan"], metodo, parsed["monto"], parsed["matricula"]
+        )
         return
 
-    # Parsear respuesta: PLAN: XX / METODO: XX / MONTO: XX / MATRICULA: XX
-    lineas = texto.strip().upper().replace(":", " ").split("\n")
-    parsed = {}
-    for linea in lineas:
-        parts = linea.strip().split()
-        if len(parts) >= 2:
-            key = parts[0]
-            val = " ".join(parts[1:])
-            parsed[key] = val
+    _inscripcion_pendiente.pop(admin_phone, None)
 
-    plan_code = parsed.get("PLAN", "").strip()
-    metodo_code = parsed.get("METODO", parsed.get("MÉTODO", "")).strip()
-    monto_str = parsed.get("MONTO", "0").strip().replace("MIL", "").replace(".", "").replace(",", "")
-    matricula_str = parsed.get("MATRICULA", parsed.get("MATRÍCULA", "0")).strip().replace("MIL", "").replace(".", "").replace(",", "")
 
-    # Validar plan
-    plan = _PLAN_MAP.get(plan_code)
-    if not plan:
-        await proveedor.enviar_mensaje(admin_phone, f"Plan '{plan_code}' no válido. Usá: QM, SM, QT, ST")
-        return  # no pop, que reintente
+async def _ejecutar_inscripcion(
+    admin_phone: str, prueba: dict, todas_pruebas: list[dict],
+    plan: str, metodo: str, monto: int, matricula: int
+):
+    """Crea FAMILIA + NIÑOS + PAGOS + marca INSCRIPTO."""
+    from agent.airtable_client import (
+        _get_records, _post, _patch, _PRUEBAS, _LEADS, _FAMILIAS,
+        crear_familia, crear_nino,
+    )
 
-    # Validar método
-    metodo = _METODO_MAP.get(metodo_code)
-    if not metodo:
-        await proveedor.enviar_mensaje(admin_phone, f"Método '{metodo_code}' no válido. Usá: sub, trans, deb, cred, efe")
-        return
-
-    # Parsear montos
-    try:
-        monto = int(monto_str) * 1000 if int(monto_str) < 10000 else int(monto_str)
-    except ValueError:
-        await proveedor.enviar_mensaje(admin_phone, f"Monto '{monto_str}' no válido")
-        return
-    try:
-        matricula = int(matricula_str) * 1000 if int(matricula_str) < 10000 else int(matricula_str)
-    except ValueError:
-        await proveedor.enviar_mensaje(admin_phone, f"Matrícula '{matricula_str}' no válido")
-        return
-
-    # Datos de la prueba
-    prueba = datos["prueba"]
     fp = prueba.get("fields", {})
     tel = fp.get("TELEFONO", "")
     nombre_padre = fp.get("NOMBRE", "")
     apellido_padre = fp.get("APELLIDO", "")
-    todas_pruebas = datos.get("todas_pruebas", [prueba])
-    hijos_info = datos.get("hijos_info", [])
-
-    _inscripcion_pendiente.pop(admin_phone, None)
 
     # ── 1. Crear FAMILIA ──────────────────────────────────────────────
     familia_id = await crear_familia({
@@ -2972,7 +3094,6 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
         await proveedor.enviar_mensaje(admin_phone, "Error creando familia en Airtable")
         return
 
-    # Setear PLAN, METODO PAGO, ESTADO PLAN
     await _patch(_FAMILIAS, familia_id, {
         "PLAN": plan,
         "METODO PAGO": metodo,
@@ -2997,25 +3118,22 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
 
-    # ── 3. Crear PAGOS (matrícula + plan) ─────────────────────────────
+    # ── 3. Crear PAGOS ───────────────────────────────────────────────
     _pagos_tabla = "PAGOS"
     pagos_creados = []
 
-    # Mapear método pago a opciones de PAGOS (distintas a FAMILIAS)
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",
         "DEB": "DEBIT CARD", "CRED": "CREDIT CARD", "EFECTIVO": "EFECTIVO",
     }
     metodo_pago_tabla = _metodo_pagos.get(metodo, "TRANSFER")
 
-    # Mapear plan a concepto en PAGOS
     _concepto_map = {
         "QUINCENAL MENSUAL": "F.MENSUAL250",
         "SEMANAL MENSUAL": "F.MENSUAL 350",
         "QUINCENAL TRIMESTRAL": "F.TRI 450",
         "SEMANAL TRIMESTRAL": "F.TRI 690",
     }
-    # Mapear matrícula a concepto
     _matri_concepto = "F.140/MATRICULA" if matricula <= 140_000 else "F.200/MATRICULA"
 
     if matricula > 0:
@@ -3043,23 +3161,19 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
 
-    # ── 4. Marcar INSCRIPTO en PRUEBA y LEAD ─────────────────────────
+    # ── 4. Marcar INSCRIPTO ──────────────────────────────────────────
     for op in todas_pruebas:
         await _patch(_PRUEBAS, op["id"], {
             "CONVERSION": "INSCRIPTO",
             "FAMILIA": [familia_id],
         })
 
-    # Actualizar LEAD
     leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
     for lead in leads:
         await _patch(_LEADS, lead["id"], {
             "CONVERSION": "INSCRIPTO",
             "FAMILIA": [familia_id],
         })
-
-    # ── 5. Vincular PRUEBA FENIX a FAMILIA ───────────────────────────
-    # Ya hecho arriba al patchear PRUEBA con FAMILIA
 
     # ── Confirmar ─────────────────────────────────────────────────────
     msg = (
@@ -3074,7 +3188,7 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
         f"LEAD → INSCRIPTO ✅"
     )
     await proveedor.enviar_mensaje(admin_phone, msg)
-    logger.info(f"[INSCRIPCION] Familia creada: {nombre_padre} {apellido_padre} ({tel}) plan={plan}")
+    logger.info(f"[INSCRIPCION] Familia creada: {nombre_padre} {apellido_padre} ({tel}) plan={plan} monto={monto} matri={matricula}")
 
 
 # ── Follow-up leads (tracking + loop diario) ────────────────────────────────
