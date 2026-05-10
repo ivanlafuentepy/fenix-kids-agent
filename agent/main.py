@@ -4249,6 +4249,22 @@ async def _generar_resumen_prueba(telefono: str, fecha_override=None):
         inscripcion = f.get("INSCRIPCION", False)
         nombre_padre = f"{f.get('NOMBRE RESPONSABLE', '')} {f.get('APELLIDO RESPONSABLE', '')}".strip()
 
+        # Si no tiene nombre, buscar en seguimiento (tiene el nombre en el mensaje)
+        if not nombre_padre and tel in seg_por_tel:
+            _seg_msg = seg_por_tel[tel].get("MENSAJE", "")
+            if _seg_msg.startswith("Hola "):
+                nombre_padre = _seg_msg.split("!")[0].replace("Hola ", "")
+
+        # Si sigue sin nombre, buscar en LEADS
+        if not nombre_padre:
+            try:
+                _leads = await _get_records("LEADS FENIX", formula=f"{{TELEFONO}}='{tel}'", max_records=1)
+                if _leads:
+                    _lf = _leads[0].get("fields", {})
+                    nombre_padre = _lf.get("NOMBRE RESPONSABLE", "")
+            except Exception:
+                pass
+
         if tel not in familias:
             familias[tel] = {
                 "padre": nombre_padre,
@@ -4345,11 +4361,14 @@ async def _generar_resumen_prueba(telefono: str, fecha_override=None):
 
         lineas.append("")
 
+    recaudado_total = monto_prueba_total + monto_inscripcion_total
+
     lineas.append(f"📊 *TOTALES*")
     lineas.append(f"👨‍👩‍👧 Familias: {len(familias)} | Niños: {total_ninos}")
     lineas.append(f"✅ Vinieron: {total_presentes} | ❌ No vinieron: {total_ausentes}")
     lineas.append(f"💰 Pagaron prueba: {total_pagaron_prueba} ({monto_prueba_total // 1000}mil)")
-    lineas.append(f"🎓 Inscriptos: {total_inscriptos}")
+    lineas.append(f"🎓 Inscriptos: {total_inscriptos} ({monto_inscripcion_total // 1000}mil)")
+    lineas.append(f"💵 *Recaudado total: {recaudado_total // 1000}mil*")
     lineas.append(f"📩 Seguimiento: {total_seg_enviado} | 🚫 {total_seg_descartado} | ⏳ {total_seg_pendiente}")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
