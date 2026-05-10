@@ -159,6 +159,13 @@ _asistencia_pendiente: dict[str, list[dict]] = {}
 # Estado de inscripción pendiente: {telefono_admin: {datos de prueba fenix...}}
 _inscripcion_pendiente: dict[str, dict] = {}
 
+# Estado de sesión de fotos (reconocimiento facial):
+# {telefono: {"turno": "9:30", "media_ids": [...], "resultados": [...]}}
+_fotos_sesion: dict[str, dict] = {}
+
+# Estado de registro de cara pendiente: {telefono: "nombre del niño"}
+_cara_pendiente: dict[str, str] = {}
+
 
 async def _delay_humano(texto: str):
     """Simula tiempo de tipeo para que el agente no parezca un bot."""
@@ -1517,6 +1524,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `asistencia` — lista completa todos los turnos\n\n"
                 "👨‍👩‍👧 *Inscripción:*\n"
                 "• `cargar familia [nombre padre]` — inscribir familia desde PRUEBA\n\n"
+                "📸 *Fotos (reconocimiento facial):*\n"
+                "• `fotos 9:30` / `fotos 11` / `fotos 15:30` — modo fotos de clase\n"
+                "• `registrar cara [nombre]` — registrar cara de un niño nuevo\n\n"
                 "🔄 *Reset:*\n"
                 "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
                 "• `modo alumno` — reset conversación, simular padre inscripto\n"
@@ -1573,6 +1583,53 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[INSCRIPCION] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error procesando inscripción: {e}")
                 _inscripcion_pendiente.pop(telefono, None)
+            return
+
+        # ── Modo fotos: acumular imágenes para reconocimiento facial ─────
+        if telefono == admin_phone and telefono in _fotos_sesion:
+            sesion_actual = _fotos_sesion[telefono]
+            # Esperando confirmación del resumen
+            if sesion_actual.get("_esperando_confirmacion"):
+                _resp = texto.lower().strip()
+                if _resp in ("si", "sí", "dale", "confirmo", "ok"):
+                    await _confirmar_fotos(telefono)
+                    return
+                elif _resp in ("no", "cancelar", "na"):
+                    _fotos_sesion.pop(telefono, None)
+                    await proveedor.enviar_mensaje(telefono, "Sesión de fotos cancelada.")
+                    return
+                # Cualquier otra cosa — cancelar y seguir
+                _fotos_sesion.pop(telefono, None)
+            # Acumulando fotos
+            elif texto == "[imagen]" and msg.media_id:
+                await _acumular_foto(telefono, msg.media_id)
+                return
+            elif texto.lower().strip() in ("listo", "ya", "eso es todo", "fin"):
+                await _finalizar_fotos(telefono)
+                return
+            # Si escribe otra cosa que no es imagen, finalizar y seguir
+            elif texto != "[imagen]":
+                await _finalizar_fotos(telefono)
+                # No hacer return — que siga procesando el texto como comando normal
+
+        # ── Comando "fotos [turno]" — iniciar modo fotos (solo admin) ─────
+        if telefono == admin_phone and re.match(r'^fotos\b', texto.lower().strip()):
+            await _iniciar_modo_fotos(telefono, texto)
+            return
+
+        # ── Comando "registrar cara [nombre]" (solo admin) ────────────────
+        if telefono == admin_phone and texto.lower().strip().startswith("registrar cara"):
+            _nombre_cara = texto.strip()[len("registrar cara"):].strip()
+            if _nombre_cara:
+                _cara_pendiente[telefono] = _nombre_cara
+                await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_nombre_cara} para registrar su cara")
+            else:
+                await proveedor.enviar_mensaje(telefono, "Usá: registrar cara [nombre del niño]")
+            return
+
+        # ── Recibir foto para registrar cara ──────────────────────────────
+        if telefono == admin_phone and telefono in _cara_pendiente and texto == "[imagen]" and msg.media_id:
+            await _procesar_registro_cara(telefono, msg.media_id)
             return
 
         # ── Comando cargar familia (solo admin) ───────────────────────────
@@ -5074,3 +5131,253 @@ async def _followup_video_oneshot():
             logger.error(f"[FOLLOWUP-VIDEO] Error con {telefono}: {e}")
 
     logger.info(f"[FOLLOWUP-VIDEO] Completado: {enviados}/{len(telefonos_ventana)} enviados")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# MODO FOTOS — Reconocimiento facial de niños en fotos de clase
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+async def _iniciar_modo_fotos(telefono: str, texto: str):
+    """
+    Inicia una sesión de fotos para reconocimiento facial.
+    Detecta: "fotos 9:30", "fotos 11", "fotos 15:30", "fotos clase"
+    """
+    # Extraer turno del texto
+    turno = ""
+    m = re.search(r'(\d{1,2}[:.]\d{2}|\d{1,2})', texto)
+    if m:
+        turno = m.group(1).replace(".", ":")
+        if turno in ("9", "930"):
+            turno = "9:30"
+        elif turno in ("11", "1100"):
+            turno = "11:00"
+        elif turno in ("15", "1530"):
+            turno = "15:30"
+
+    _fotos_sesion[telefono] = {
+        "turno": turno,
+        "media_ids": [],
+        "resultados": {},  # {nino_id: {"nombre": str, "fotos": int}}
+        "no_identificadas": 0,
+        "total_fotos": 0,
+    }
+
+    msg_inicio = f"📸 Modo fotos activado"
+    if turno:
+        msg_inicio += f" para la clase de {turno}"
+    msg_inicio += ".\n\nMandá las fotos y cuando termines escribí *listo*."
+
+    await proveedor.enviar_mensaje(telefono, msg_inicio)
+    logger.info(f"[FOTOS] Sesión iniciada para {telefono}, turno={turno or 'sin especificar'}")
+
+
+async def _acumular_foto(telefono: str, media_id: str):
+    """
+    Recibe una foto durante el modo fotos, la descarga y busca caras.
+    """
+    sesion = _fotos_sesion.get(telefono)
+    if not sesion:
+        return
+
+    sesion["media_ids"].append(media_id)
+    sesion["total_fotos"] += 1
+    foto_num = sesion["total_fotos"]
+
+    # Descargar imagen
+    image_bytes = await proveedor.descargar_media(media_id)
+    if not image_bytes:
+        logger.warning(f"[FOTOS] No se pudo descargar media {media_id}")
+        return
+
+    # Buscar caras con Rekognition
+    try:
+        from agent.face_recognition import identificar_ninos
+        matches = await identificar_ninos(image_bytes)
+
+        if matches:
+            for match in matches:
+                nino_id = match["nino_id"]
+                if nino_id not in sesion["resultados"]:
+                    # Obtener nombre del niño
+                    from agent.airtable_client import obtener_nombre_nino
+                    nino_info = await obtener_nombre_nino(nino_id)
+                    nombre = ""
+                    if nino_info:
+                        nombre = nino_info.get("apodo") or nino_info.get("nombre", "")
+                        apellido = nino_info.get("apellido", "")
+                        if apellido:
+                            nombre = f"{nombre} {apellido}"
+                    sesion["resultados"][nino_id] = {"nombre": nombre or nino_id, "fotos": 0}
+                sesion["resultados"][nino_id]["fotos"] += 1
+        else:
+            sesion["no_identificadas"] += 1
+
+        # Feedback breve cada 5 fotos
+        if foto_num % 5 == 0:
+            n_ninos = len(sesion["resultados"])
+            await proveedor.enviar_mensaje(telefono, f"📸 {foto_num} fotos recibidas, {n_ninos} niño(s) identificados...")
+
+    except Exception as e:
+        logger.error(f"[FOTOS] Error procesando foto {foto_num}: {e}")
+        sesion["no_identificadas"] += 1
+
+
+async def _finalizar_fotos(telefono: str):
+    """
+    Cierra la sesión de fotos y muestra el resumen de niños identificados.
+    """
+    sesion = _fotos_sesion.pop(telefono, None)
+    if not sesion:
+        return
+
+    total = sesion["total_fotos"]
+    resultados = sesion["resultados"]
+    no_id = sesion["no_identificadas"]
+
+    if total == 0:
+        await proveedor.enviar_mensaje(telefono, "No recibí fotos. Modo fotos desactivado.")
+        return
+
+    # Armar resumen
+    lineas = [f"📸 *Resumen: {total} fotos procesadas*\n"]
+
+    if resultados:
+        # Ordenar por cantidad de fotos (más apariciones primero)
+        ordenados = sorted(resultados.items(), key=lambda x: x[1]["fotos"], reverse=True)
+        lineas.append(f"✅ *{len(resultados)} niño(s) identificados:*")
+        for i, (nino_id, data) in enumerate(ordenados, 1):
+            lineas.append(f"  {i}. {data['nombre']} ({data['fotos']} foto{'s' if data['fotos'] > 1 else ''})")
+
+    if no_id > 0:
+        lineas.append(f"\n⚠️ {no_id} foto(s) sin cara identificada")
+
+    lineas.append("\n¿Confirmo y vinculo en Airtable? (si/no)")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+    # Guardar sesión temporalmente para la confirmación
+    _fotos_sesion[telefono] = {
+        **sesion,
+        "_esperando_confirmacion": True,
+    }
+
+    logger.info(f"[FOTOS] Sesión finalizada: {total} fotos, {len(resultados)} niños, {no_id} sin ID")
+
+
+async def _confirmar_fotos(telefono: str):
+    """
+    Confirma la sesión de fotos y crea registros en CONTENIDO FENIX.
+    """
+    sesion = _fotos_sesion.pop(telefono, None)
+    if not sesion:
+        return
+
+    resultados = sesion.get("resultados", {})
+    turno = sesion.get("turno", "")
+
+    if not resultados:
+        await proveedor.enviar_mensaje(telefono, "No hay niños para vincular.")
+        return
+
+    # Crear registro en CONTENIDO FENIX con los niños vinculados
+    from agent.airtable_client import _post, _CONTENIDO
+    from datetime import datetime
+
+    nino_ids = list(resultados.keys())
+    titulo = f"Fotos clase {turno}" if turno else "Fotos de clase"
+    titulo += f" — {datetime.now().strftime('%d/%m/%Y')}"
+
+    campos = {
+        "TITULO": titulo,
+        "NIÑOS FENIX": nino_ids,
+        "NOTIFICADO": False,
+    }
+
+    registro = await _post(_CONTENIDO, campos)
+    if registro:
+        nombres = [data["nombre"] for data in resultados.values()]
+        await proveedor.enviar_mensaje(
+            telefono,
+            f"✅ Listo! Registro creado en CONTENIDO FENIX con {len(nino_ids)} niño(s): {', '.join(nombres)}\n\n"
+            f"Cuando publiques el posteo, agregá el LINK al registro de Airtable y los padres recibirán WhatsApp automático."
+        )
+        logger.info(f"[FOTOS] CONTENIDO FENIX creado: {titulo}, {len(nino_ids)} niños")
+    else:
+        await proveedor.enviar_mensaje(telefono, "❌ Error creando registro en Airtable. Revisá los logs.")
+
+
+async def _procesar_registro_cara(telefono: str, media_id: str):
+    """
+    Registra la cara de un niño en Rekognition.
+    Busca al niño por nombre/apodo en NIÑOS FENIX de Airtable.
+    """
+    nombre_buscar = _cara_pendiente.pop(telefono, "")
+    if not nombre_buscar:
+        return
+
+    # Descargar imagen
+    image_bytes = await proveedor.descargar_media(media_id)
+    if not image_bytes:
+        await proveedor.enviar_mensaje(telefono, "❌ No pude descargar la foto")
+        return
+
+    # Buscar niño en Airtable por nombre/apodo
+    from agent.airtable_client import _get_records, _NINOS, _patch
+    nombre_norm = nombre_buscar.lower().strip()
+
+    # Buscar por apodo o nombre
+    records = await _get_records(
+        _NINOS,
+        formula=f"OR(LOWER({{APODO}})='{nombre_norm}', LOWER({{NOMBRE}})='{nombre_norm}')",
+        max_records=5,
+    )
+
+    if not records:
+        # Intentar búsqueda parcial
+        records = await _get_records(
+            _NINOS,
+            formula=f"OR(FIND('{nombre_norm}', LOWER({{APODO}})), FIND('{nombre_norm}', LOWER({{NOMBRE}})))",
+            max_records=5,
+        )
+
+    if not records:
+        await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS FENIX")
+        return
+
+    if len(records) > 1:
+        # Múltiples matches — mostrar opciones
+        opciones = []
+        for r in records:
+            f = r.get("fields", {})
+            opciones.append(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')} ({f.get('APODO', '-')})")
+        await proveedor.enviar_mensaje(
+            telefono,
+            f"Encontré {len(records)} niños:\n" + "\n".join(f"  {i+1}. {o}" for i, o in enumerate(opciones)) +
+            "\n\nUsá el nombre completo para ser más específico."
+        )
+        return
+
+    # Un solo match — registrar cara
+    nino_record = records[0]
+    nino_id = nino_record["id"]
+    fields = nino_record.get("fields", {})
+    nombre_display = fields.get("APODO") or fields.get("NOMBRE", "")
+
+    from agent.face_recognition import registrar_cara, actualizar_cara
+
+    # Si ya tiene FACE_ID, actualizar
+    face_id_existente = fields.get("FACE_ID", "")
+    if face_id_existente:
+        face_id = await actualizar_cara(nino_id, image_bytes)
+        accion = "actualizada"
+    else:
+        face_id = await registrar_cara(nino_id, image_bytes)
+        accion = "registrada"
+
+    if face_id:
+        # Guardar FACE_ID en Airtable
+        await _patch(_NINOS, nino_id, {"FACE_ID": face_id})
+        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} (FaceId: {face_id[:8]}...)")
+    else:
+        await proveedor.enviar_mensaje(telefono, f"❌ No se detectó una cara clara en la foto de {nombre_display}. Probá con otra foto.")

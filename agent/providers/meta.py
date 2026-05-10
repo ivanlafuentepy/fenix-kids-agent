@@ -303,3 +303,44 @@ class ProveedorMeta(ProveedorWhatsApp):
             if r.status_code != 200:
                 logger.error(f"Error Meta API: {r.status_code} — {r.text}")
             return r.status_code == 200
+
+    async def descargar_media(self, media_id: str) -> bytes | None:
+        """
+        Descarga los bytes de un media de WhatsApp (imagen, audio, video).
+
+        Meta Cloud API requiere dos pasos:
+          1. GET /{media_id} → URL real del archivo
+          2. GET {url} → bytes del archivo
+
+        Returns:
+            bytes del archivo o None si falla.
+        """
+        if not self.access_token:
+            logger.warning("[Meta] No hay access_token para descargar media")
+            return None
+
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            # Paso 1: obtener URL
+            r = await client.get(
+                f"https://graph.facebook.com/{self.api_version}/{media_id}",
+                headers=headers,
+            )
+            if r.status_code != 200:
+                logger.error(f"[Meta] Error obteniendo URL de media {media_id}: {r.status_code}")
+                return None
+
+            media_url = r.json().get("url")
+            if not media_url:
+                logger.error(f"[Meta] No se obtuvo URL para media {media_id}")
+                return None
+
+            # Paso 2: descargar bytes
+            r = await client.get(media_url, headers=headers)
+            if r.status_code != 200:
+                logger.error(f"[Meta] Error descargando media: {r.status_code}")
+                return None
+
+            logger.info(f"[Meta] Media descargado: {media_id} ({len(r.content)} bytes)")
+            return r.content
