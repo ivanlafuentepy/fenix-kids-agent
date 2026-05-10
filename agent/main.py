@@ -4203,101 +4203,154 @@ async def _generar_resumen_prueba(telefono: str, fecha_override=None):
         if tel:
             seg_por_tel[tel] = sf
 
-    # Agrupar por turno
-    turnos_data = {"9:30": [], "11:00": [], "15:30": []}
+    # Leer pagos vinculados de cada prueba
+    import httpx
+    from agent.airtable_client import _BASE_URL, _headers
+
+    async with httpx.AsyncClient() as _hc:
+        for p in pruebas:
+            f = p.get("fields", {})
+            pagos_ids = f.get("PAGOS", [])
+            monto_total = 0
+            monto_inscripcion = 0
+            for pid in pagos_ids:
+                try:
+                    r = await _hc.get(f"{_BASE_URL}/PAGOS/{pid}", headers=_headers(), timeout=10)
+                    if r.status_code == 200:
+                        pf = r.json().get("fields", {})
+                        m = pf.get("MONTO", 0) or 0
+                        concepto = pf.get("CONCEPTO", "")
+                        if "PRUEBA" in concepto:
+                            monto_total += m
+                        else:
+                            monto_inscripcion += m
+                except Exception:
+                    pass
+            f["_monto_prueba"] = monto_total
+            f["_monto_inscripcion"] = monto_inscripcion
+
+    # Agrupar por teléfono (familia) y turno
+    familias = {}
     for p in pruebas:
         f = p.get("fields", {})
+        tel = f.get("TELEFONO", "?")
         hora = (f.get("HORA") or "").strip().replace("h", "").replace("hs", "")
-        # Normalizar
-        for t in turnos_data:
+        for t in ["9:30", "11:00", "15:30"]:
             if hora == t or hora == t.split(":")[0] or hora.lstrip("0") == t:
                 hora = t
                 break
-        if hora not in turnos_data:
-            hora = "15:30"  # fallback
-        turnos_data[hora].append(f)
+        if hora not in ["9:30", "11:00", "15:30"]:
+            hora = "15:30"
 
+        nombre_hijo = (f.get("NOMBRE HIJO") or "?").strip()
+        edad = f.get("EDAD HIJO", "")
+        presente = f.get("PRESENTE", False)
+        conversion = f.get("CONVERSION", "")
+        inscripcion = f.get("INSCRIPCION", False)
+        nombre_padre = f"{f.get('NOMBRE RESPONSABLE', '')} {f.get('APELLIDO RESPONSABLE', '')}".strip()
+
+        if tel not in familias:
+            familias[tel] = {
+                "padre": nombre_padre,
+                "turno": hora,
+                "hijos": [],
+                "monto_prueba": 0,
+                "monto_inscripcion": 0,
+                "conversion": conversion,
+                "inscripcion": inscripcion,
+            }
+        familias[tel]["hijos"].append({
+            "nombre": nombre_hijo,
+            "edad": edad,
+            "presente": presente,
+        })
+        familias[tel]["monto_prueba"] += f.get("_monto_prueba", 0)
+        familias[tel]["monto_inscripcion"] += f.get("_monto_inscripcion", 0)
+        _conv_order = {"CONSULTA": 0, "AGENDA": 1, "PAGO": 2, "INSCRIPTO": 3}
+        if _conv_order.get(conversion, 0) > _conv_order.get(familias[tel]["conversion"], 0):
+            familias[tel]["conversion"] = conversion
+        if inscripcion:
+            familias[tel]["inscripcion"] = True
+
+    total_ninos = 0
     total_presentes = 0
     total_ausentes = 0
-    total_pagaron = 0
+    total_pagaron_prueba = 0
     total_inscriptos = 0
     total_seg_enviado = 0
     total_seg_descartado = 0
     total_seg_pendiente = 0
-    monto_total = 0
+    monto_prueba_total = 0
+    monto_inscripcion_total = 0
 
     lineas = [f"🔥 *RESUMEN PRUEBA — SÁB {sabado.day}/{sabado.month}*\n"]
 
+    # Agrupar familias por turno
     for hora in ["9:30", "11:00", "15:30"]:
-        items = turnos_data[hora]
-        if not items:
+        fams_turno = [(tel, fam) for tel, fam in familias.items() if fam["turno"] == hora]
+        if not fams_turno:
             continue
 
-        lineas.append(f"⏰ *{hora}h* ({len(items)})")
+        n_hijos_turno = sum(len(fam["hijos"]) for _, fam in fams_turno)
+        lineas.append(f"⏰ *{hora}h* ({n_hijos_turno} niños, {len(fams_turno)} familias)")
 
-        for f in items:
-            nombre = (f.get("NOMBRE HIJO") or "?").strip().split()[0] if f.get("NOMBRE HIJO") else "?"
-            apellido = (f.get("APELLIDO HIJO") or "").strip().split()[0] if f.get("APELLIDO HIJO") else ""
-            nombre_full = f"{nombre} {apellido}".strip()
-            edad = f.get("EDAD HIJO", "")
-            edad_str = f" ({edad})" if edad else ""
-            presente = f.get("PRESENTE", False)
-            conversion = f.get("CONVERSION", "")
-            monto = f.get("MONTO", 0) or 0
-            inscripcion = f.get("INSCRIPCION", False)
-            tel = f.get("TELEFONO", "")
-
-            # Estado asistencia
-            asis = "✅" if presente else "❌"
-            if presente:
-                total_presentes += 1
-            else:
-                total_ausentes += 1
-
-            # Estado pago
-            pago_str = ""
-            if conversion == "PAGO" or monto > 0:
-                total_pagaron += 1
-                monto_total += monto
-                pago_str = f" 💰{monto // 1000}mil" if monto > 0 else " 💰"
-
-            # Inscripción
-            insc_str = ""
-            if inscripcion:
-                total_inscriptos += 1
-                insc_str = " 🎓"
+        for tel, fam in fams_turno:
+            padre = fam["padre"] or tel
+            conversion = fam["conversion"]
+            monto_pr = fam["monto_prueba"]
+            monto_insc = fam["monto_inscripcion"]
+            inscripto = fam["inscripcion"] or conversion == "INSCRIPTO"
 
             # Seguimiento
-            seg_str = ""
             seg = seg_por_tel.get(tel, {})
             if seg:
                 if seg.get("ENVIADO"):
-                    seg_str = " 📩"
+                    seg_ico = "📩"
                     total_seg_enviado += 1
                 elif seg.get("DESCARTADO"):
-                    seg_str = " 🚫"
+                    seg_ico = "🚫"
                     total_seg_descartado += 1
                 else:
-                    seg_str = " ⏳"
+                    seg_ico = "⏳"
                     total_seg_pendiente += 1
             else:
-                # No tiene registro de seguimiento
+                seg_ico = "⏳"
                 total_seg_pendiente += 1
-                seg_str = " ⏳"
 
-            lineas.append(f"   {asis} {nombre_full}{edad_str}{pago_str}{insc_str}{seg_str}")
+            # Línea padre
+            padre_info = f"   *{padre}*"
+            if monto_pr > 0:
+                padre_info += f" | prueba {monto_pr // 1000}mil"
+                total_pagaron_prueba += 1
+                monto_prueba_total += monto_pr
+            if inscripto:
+                total_inscriptos += 1
+                padre_info += f" | 🎓 INSCRIPTO"
+                if monto_insc > 0:
+                    padre_info += f" {monto_insc // 1000}mil"
+                    monto_inscripcion_total += monto_insc
+            padre_info += f" {seg_ico}"
+            lineas.append(padre_info)
+
+            # Líneas hijos
+            for h in fam["hijos"]:
+                total_ninos += 1
+                asis = "✅" if h["presente"] else "❌"
+                if h["presente"]:
+                    total_presentes += 1
+                else:
+                    total_ausentes += 1
+                edad_str = f" ({h['edad']})" if h["edad"] else ""
+                lineas.append(f"      {asis} {h['nombre']}{edad_str}")
 
         lineas.append("")
 
-    total = total_presentes + total_ausentes
     lineas.append(f"📊 *TOTALES*")
-    lineas.append(f"👧 Niños: {total}")
+    lineas.append(f"👨‍👩‍👧 Familias: {len(familias)} | Niños: {total_ninos}")
     lineas.append(f"✅ Vinieron: {total_presentes} | ❌ No vinieron: {total_ausentes}")
-    lineas.append(f"💰 Pagaron prueba: {total_pagaron} ({monto_total // 1000}mil)")
+    lineas.append(f"💰 Pagaron prueba: {total_pagaron_prueba} ({monto_prueba_total // 1000}mil)")
     lineas.append(f"🎓 Inscriptos: {total_inscriptos}")
-    lineas.append(f"📩 Seguimiento enviado: {total_seg_enviado}")
-    lineas.append(f"🚫 Descartados: {total_seg_descartado}")
-    lineas.append(f"⏳ Falta seguimiento: {total_seg_pendiente}")
+    lineas.append(f"📩 Seguimiento: {total_seg_enviado} | 🚫 {total_seg_descartado} | ⏳ {total_seg_pendiente}")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
