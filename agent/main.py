@@ -1599,9 +1599,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Comando resumen reservas (solo admin) ─────────────────────────
+        # Acepta: "resumen reservas", "resumen reservas 23/5", "resumen reservas 16/5"
         if telefono == admin_phone and "resumen" in _texto_cmd and "reserva" in _texto_cmd:
+            _fecha_override = None
+            _m_fecha_res = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_res:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_override = _date_cls(_anio, int(_m_fecha_res.group(2)), int(_m_fecha_res.group(1)))
+                except ValueError:
+                    pass
             try:
-                await _generar_resumen_reservas(telefono)
+                await _generar_resumen_reservas(telefono, fecha_override=_fecha_override)
             except Exception as e:
                 logger.error(f"[RESUMEN RESERVAS] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen reservas: {e}")
@@ -2986,8 +2996,9 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
     return f"{_MESES_NOMBRE[hoy.month]} {hoy.year}", desde, ultimo.isoformat()
 
 
-async def _generar_resumen_reservas(telefono: str):
-    """Genera resumen de reservas del sábado más cercano, agrupado por turno.
+async def _generar_resumen_reservas(telefono: str, fecha_override=None):
+    """Genera resumen de reservas de un sábado, agrupado por turno.
+    Si fecha_override es None, usa el sábado más cercano.
     Separa AURORA (alumnos inscriptos) y FENIX (clases de prueba)."""
     from datetime import date, timedelta, datetime, timezone
     from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
@@ -2996,11 +3007,14 @@ async def _generar_resumen_reservas(telefono: str):
     _PY_TZ = timezone(timedelta(hours=-3))
     hoy = datetime.now(_PY_TZ).date()
 
-    # Calcular el sábado más cercano (hoy si es sábado, sino el próximo)
-    dias_hasta_sabado = (5 - hoy.weekday()) % 7
-    if dias_hasta_sabado == 0 and hoy.weekday() != 5:
-        dias_hasta_sabado = 7
-    sabado = hoy + timedelta(days=dias_hasta_sabado)
+    if fecha_override:
+        sabado = fecha_override
+    else:
+        # Calcular el sábado más cercano (hoy si es sábado, sino el próximo)
+        dias_hasta_sabado = (5 - hoy.weekday()) % 7
+        if dias_hasta_sabado == 0 and hoy.weekday() != 5:
+            dias_hasta_sabado = 7
+        sabado = hoy + timedelta(days=dias_hasta_sabado)
     fecha_iso = sabado.isoformat()
 
     _DIAS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
