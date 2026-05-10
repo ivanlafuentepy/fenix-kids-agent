@@ -512,7 +512,7 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
         _fn = datos_nino["fecha_nacimiento"].strip()
         try:
             from datetime import datetime as _dt
-            for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d"):
+            for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
                 try:
                     _parsed = _dt.strptime(_fn, fmt)
                     _fn = _parsed.strftime("%Y-%m-%d")
@@ -931,6 +931,16 @@ async def crear_prueba_fenix(
     # Deducir género del nombre del hijo
     genero = _deducir_genero(nombre_hijo)
 
+    # Normalizar fecha de nacimiento a ISO
+    _fn_norm = fecha_nacimiento
+    if _fn_norm:
+        for _fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
+            try:
+                _fn_norm = datetime.strptime(_fn_norm.strip(), _fmt).strftime("%Y-%m-%d")
+                break
+            except ValueError:
+                continue
+
     campos = {
         "TELEFONO": telefono,
         "NOMBRE": nombre_responsable,
@@ -939,7 +949,7 @@ async def crear_prueba_fenix(
         "APELLIDO HIJO": apellido_hijo,
         "FECHA RESERVA": fecha_reserva,
         "HORA": hora,
-        "FECHA NACIMIENTO": fecha_nacimiento,
+        "FECHA NACIMIENTO": _fn_norm,
         "CONVERSION": conversion,
         "CONCEPTO": concepto,
         "METODO DE PAGO": [metodo_pago] if metodo_pago else [],
