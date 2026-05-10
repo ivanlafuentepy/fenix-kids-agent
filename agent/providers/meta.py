@@ -60,6 +60,7 @@ class ProveedorMeta(ProveedorWhatsApp):
 
                     media_id = None
                     es_boton = False
+                    btn_id = None
                     if tipo == "text":
                         texto = msg.get("text", {}).get("body", "")
                     elif tipo == "image":
@@ -76,6 +77,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                         _interactive = msg.get("interactive", {})
                         _btn_reply = _interactive.get("button_reply", {})
                         texto = _btn_reply.get("title", "") or _btn_reply.get("id", "")
+                        btn_id = _btn_reply.get("id", "")
                         es_boton = True
                     elif tipo == "button":
                         # Quick reply de template
@@ -100,6 +102,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                             es_propio=False,
                             media_id=media_id,
                             es_boton=es_boton,
+                            btn_id=btn_id,
                             ctwa_clid=_ctwa_clid,
                         ))
         return mensajes

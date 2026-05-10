@@ -1753,6 +1753,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Botones del admin (confirmar/rechazar pago) ────────────────────
         if telefono == admin_phone and msg.es_boton:
             btn_titulo = texto.lower().strip()
+            # Botones de seguimiento (seg_enviado_recXXX / seg_descartado_recXXX)
+            btn_raw_id = getattr(msg, 'btn_id', '') or ''
+            if btn_raw_id.startswith("seg_enviado_") or btn_raw_id.startswith("seg_descartado_"):
+                await _procesar_boton_seguimiento(btn_raw_id)
+                return
             if "confirmar" in btn_titulo or "rechazar" in btn_titulo:
                 await _procesar_boton_pago(btn_titulo)
                 return
@@ -5540,3 +5545,31 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} (FaceId: {face_id[:8]}...)")
     else:
         await proveedor.enviar_mensaje(telefono, f"❌ No se detectó una cara clara en la foto de {nombre_display}. Probá con otra foto.")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# BOTONES SEGUIMIENTO — marca ENVIADO o DESCARTADO en SEGUIMIENTO FENIX
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+async def _procesar_boton_seguimiento(btn_id: str):
+    """Procesa click en botón de seguimiento: seg_enviado_recXXX o seg_descartado_recXXX."""
+    from agent.airtable_client import _patch
+
+    _SEGUIMIENTO = "SEGUIMIENTO FENIX"
+
+    if btn_id.startswith("seg_enviado_"):
+        record_id = btn_id[len("seg_enviado_"):]
+        ok = await _patch(_SEGUIMIENTO, record_id, {"ENVIADO": True})
+        if ok:
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "✅ Marcado como enviado")
+        else:
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Error marcando en Airtable")
+
+    elif btn_id.startswith("seg_descartado_"):
+        record_id = btn_id[len("seg_descartado_"):]
+        ok = await _patch(_SEGUIMIENTO, record_id, {"DESCARTADO": True})
+        if ok:
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Marcado como descartado")
+        else:
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Error marcando en Airtable")
