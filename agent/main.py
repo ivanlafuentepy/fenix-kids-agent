@@ -4292,23 +4292,19 @@ async def _generar_resumen_prueba(telefono: str, fecha_override=None):
             familias[tel]["familia_id"] = familia_ids[0]
 
     # Buscar pagos de inscripción por familia_id
-    async with httpx.AsyncClient() as _hc2:
-        for tel, fam in familias.items():
-            if (fam["conversion"] == "INSCRIPTO" or fam["inscripcion"]) and fam.get("familia_id"):
-                fam_id = fam["familia_id"]
-                try:
-                    # Obtener todos los pagos y filtrar por FAMILIA FENIX
-                    _pagos_all = await _get_records("PAGOS", max_records=100)
-                    for pg in _pagos_all:
-                        pf = pg.get("fields", {})
-                        fam_links = pf.get("FAMILIA FENIX", []) or []
-                        if fam_id in fam_links:
-                            concepto = pf.get("CONCEPTO", "")
-                            m = pf.get("MONTO", 0) or 0
-                            if "PRUEBA" not in concepto:
-                                fam["monto_inscripcion"] += m
-                except Exception:
-                    pass
+    # Filtrar por FUENTE=FENIX para no traer pagos de Dorita (base compartida)
+    _pagos_fenix = await _get_records("PAGOS", formula="{FUENTE}='FENIX KIDS ACADEMY'", max_records=100)
+    for tel, fam in familias.items():
+        if (fam["conversion"] == "INSCRIPTO" or fam["inscripcion"]) and fam.get("familia_id"):
+            fam_id = fam["familia_id"]
+            for pg in _pagos_fenix:
+                pf = pg.get("fields", {})
+                fam_links = pf.get("FAMILIA FENIX", []) or []
+                if fam_id in fam_links:
+                    concepto = pf.get("CONCEPTO", "")
+                    m = pf.get("MONTO", 0) or 0
+                    if "PRUEBA" not in concepto:
+                        fam["monto_inscripcion"] += m
 
     total_ninos = 0
     total_presentes = 0
