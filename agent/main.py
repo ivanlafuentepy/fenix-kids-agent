@@ -4020,8 +4020,8 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
                             if rn.status_code != 200:
                                 continue
                             nf = rn.json().get("fields", {})
-                            nombre = (nf.get("APODO") or nf.get("NOMBRE", "?")).split()[0]
-                            apellido = (nf.get("APELLIDO") or "").split()[0]
+                            nombre = (nf.get("APODO") or nf.get("NOMBRE") or "?").strip().split()[0] if (nf.get("APODO") or nf.get("NOMBRE")) else "?"
+                            apellido = (nf.get("APELLIDO") or "").strip().split()[0] if nf.get("APELLIDO") else ""
                             nombre_full = f"{nombre} {apellido}".strip()
                             edad = str(nf.get("EDAD", "")) if nf.get("EDAD") else ""
                             edad_str = f" ({edad})" if edad else ""
@@ -4044,8 +4044,8 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
             f = p.get("fields", {})
             if f.get("CONVERSION") == "CANCELADO":
                 continue
-            nombre = (f.get("NOMBRE HIJO") or "?").split()[0]
-            apellido = (f.get("APELLIDO HIJO") or "").split()[0]
+            nombre = (f.get("NOMBRE HIJO") or "?").strip().split()[0] if f.get("NOMBRE HIJO") else "?"
+            apellido = (f.get("APELLIDO HIJO") or "").strip().split()[0] if f.get("APELLIDO HIJO") else ""
             nombre_full = f"{nombre} {apellido}".strip()
             edad = f.get("EDAD HIJO", "")
             edad_str = f" ({edad})" if edad else ""
