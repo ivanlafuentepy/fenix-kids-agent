@@ -2979,22 +2979,26 @@ async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
         await proveedor.enviar_mensaje(admin_phone, "No entendí el nombre. Ej: cargar familia Diana Jara trimestral full monto 690 matricula 50")
         return
 
-    # Buscar en PRUEBA FENIX
+    # Buscar en PRUEBA FENIX — normalizar tildes para comparación
+    import unicodedata
+    def _sin_tildes(s: str) -> str:
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+
     pruebas = await _get_records(_PRUEBAS, formula="", max_records=100)
-    _nombre_lower = nombre_buscar.lower()
+    _nombre_norm = _sin_tildes(nombre_buscar)
 
     matches = []
     for p in pruebas:
         f = p.get("fields", {})
-        nombre_completo = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip().lower()
-        if _nombre_lower in nombre_completo or nombre_completo in _nombre_lower:
+        nombre_completo = _sin_tildes(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip())
+        if _nombre_norm in nombre_completo or nombre_completo in _nombre_norm:
             matches.append(p)
 
     if not matches:
         for p in pruebas:
             f = p.get("fields", {})
-            hijo_completo = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip().lower()
-            if _nombre_lower in hijo_completo:
+            hijo_completo = _sin_tildes(f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip())
+            if _nombre_norm in hijo_completo:
                 matches.append(p)
 
     if not matches:
