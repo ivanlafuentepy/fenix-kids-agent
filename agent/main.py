@@ -3968,10 +3968,11 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
     """
     Genera resumen de quién VINO a clase (PRESENTE=true), por turno.
     Separa inscriptos (Aurora/RESERVAS) y pruebas (Fenix/PRUEBA FENIX).
-    Si fecha_override=None, usa el sábado más reciente (ayer o el anterior).
+    Si fecha_override=None, usa el sábado más reciente.
     """
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS, _RESERVAS
+    from agent.airtable_client import _get_records, _PRUEBAS, _RESERVAS, _HORARIOS, _NINOS, _BASE_URL, _headers
+    import httpx
 
     _PY_TZ = timezone(timedelta(hours=-3))
     hoy = datetime.now(_PY_TZ).date()
@@ -3979,8 +3980,9 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
     if fecha_override:
         sabado = fecha_override
     else:
-        # El sábado más reciente (si hoy es domingo, ayer; si es lunes, anteayer, etc.)
         dias_desde_sabado = (hoy.weekday() - 5) % 7
+        if dias_desde_sabado == 0 and hoy.weekday() != 5:
+            dias_desde_sabado = 7
         sabado = hoy - timedelta(days=dias_desde_sabado)
 
     fecha_iso = sabado.isoformat()
@@ -4000,38 +4002,45 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
         presentes_turno = []
         ausentes_turno = []
 
-        # ── Inscriptos (RESERVAS FENIX) ──
-        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
-        for n in ninos_aurora:
-            nombre = (n.get("apodo") or n.get("nombre", "?")).split()[0]
-            apellido = (n.get("apellido") or "").split()[0]
-            nombre_full = f"{nombre} {apellido}".strip()
-            edad = n.get("edad", "")
-            edad_str = f" ({edad})" if edad else ""
-            reserva_id = n.get("reserva_id", "")
-            # Verificar PRESENTE en la reserva
-            presente = False
-            if reserva_id:
-                _res = await _get_records(_RESERVAS, formula=f"RECORD_ID()='{reserva_id}'", max_records=1)
-                if _res:
-                    presente = _res[0].get("fields", {}).get("PRESENTE", False)
-            if presente:
-                presentes_turno.append(f"✅ {nombre_full}{edad_str}")
-                total_aurora += 1
-            else:
-                ausentes_turno.append(f"❌ {nombre_full}{edad_str}")
+        # ── Inscriptos (RESERVAS FENIX) ── buscar horario → reservas → verificar PRESENTE
+        horarios = await _get_records(_HORARIOS, formula=f"AND(DATESTR({{FECHA}})='{fecha_iso}', {{HORA}}='{hora}')", max_records=1)
+        if horarios:
+            reserva_ids = horarios[0].get("fields", {}).get("RESERVAS FENIX", [])
+            async with httpx.AsyncClient() as client:
+                for res_id in reserva_ids:
+                    try:
+                        r = await client.get(f"{_BASE_URL}/{_RESERVAS}/{res_id}", headers=_headers(), timeout=10)
+                        if r.status_code != 200:
+                            continue
+                        res_f = r.json().get("fields", {})
+                        presente = res_f.get("PRESENTE", False)
+                        nino_ids = res_f.get("NINO", [])
+                        for nino_id in nino_ids:
+                            rn = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
+                            if rn.status_code != 200:
+                                continue
+                            nf = rn.json().get("fields", {})
+                            nombre = (nf.get("APODO") or nf.get("NOMBRE", "?")).split()[0]
+                            apellido = (nf.get("APELLIDO") or "").split()[0]
+                            nombre_full = f"{nombre} {apellido}".strip()
+                            edad = str(nf.get("EDAD", "")) if nf.get("EDAD") else ""
+                            edad_str = f" ({edad})" if edad else ""
+                            if presente:
+                                presentes_turno.append(f"✅ {nombre_full}{edad_str}")
+                                total_aurora += 1
+                            else:
+                                ausentes_turno.append(f"❌ {nombre_full}{edad_str}")
+                    except Exception as e:
+                        logger.warning(f"[RESUMEN ASIS] Error reserva {res_id}: {e}")
 
         # ── Pruebas (PRUEBA FENIX) ──
         pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
         pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
         _seen = set()
-        pruebas_all = []
         for p in pruebas + pruebas_iso:
-            if p["id"] not in _seen:
-                _seen.add(p["id"])
-                pruebas_all.append(p)
-
-        for p in pruebas_all:
+            if p["id"] in _seen:
+                continue
+            _seen.add(p["id"])
             f = p.get("fields", {})
             if f.get("CONVERSION") == "CANCELADO":
                 continue
@@ -4048,7 +4057,7 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
                 ausentes_turno.append(f"❌ {nombre_full}{edad_str} 🔥")
 
         n_presentes = len(presentes_turno)
-        n_total = len(presentes_turno) + len(ausentes_turno)
+        n_total = n_presentes + len(ausentes_turno)
         total_presentes += n_presentes
         total_ausentes += len(ausentes_turno)
 
