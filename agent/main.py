@@ -1170,14 +1170,14 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
     Retorna lista de {"fecha": ..., "hora": ...} (puede tener 0, 1 o más).
     """
     patrones = [
-        r"reserva confirmada[!✅\s]*.*?(?:el\s+)?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"reserva (?:confirmada|reagendada)[!✅\s]*.*?(?:el\s+)?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"tiene su lugar.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"quedaron reservados.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"listo[!✅\s🙌]*.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"qued[aá]s confirmad[oa].*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"agendam.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"est[aá] confirmado.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
-        r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:confirmado|confirmada)",
+        r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:confirmad[oa]|reagendad[oa])",
         # Reagendamientos: "entrena el sábado X a las Y", "se pasa al sábado X a las Y"
         r"entrena (?:el\s+)?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"se pasa (?:al|para el)\s+s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
