@@ -3193,6 +3193,7 @@ async def _ejecutar_inscripcion(
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
             "FAMILIA FENIX": [familia_id],
+            "EXCEL": True,
         })
         if pago_matri:
             pagos_creados.append(f"Matrícula {matricula // 1000}mil")
@@ -3206,6 +3207,7 @@ async def _ejecutar_inscripcion(
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
             "FAMILIA FENIX": [familia_id],
+            "EXCEL": True,
         })
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
