@@ -1178,6 +1178,11 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
         r"agendam.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"est[aá] confirmado.*?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
         r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:confirmado|confirmada)",
+        # Reagendamientos: "entrena el sábado X a las Y", "se pasa al sábado X a las Y"
+        r"entrena (?:el\s+)?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"se pasa (?:al|para el)\s+s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"te (?:paso|cambio|muevo) (?:al|para el)\s+s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
+        r"(?:queda|quedás) (?:para (?:el )?|el )?s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})",
     ]
     # Patrones sin fecha (cambio de hora mismo día): capturan solo hora, fecha = "hoy"
     patrones_sin_fecha = [
@@ -1185,6 +1190,8 @@ def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
         r"te cambio a las\s+(\d{1,2}[:h]\d{0,2})",
         r"nos vemos a las\s+(\d{1,2}[:h]\d{0,2}).*?(?:hoy|mismo)",
         r"a las\s+(\d{1,2}[:h]\d{0,2}).*?hoy mismo",
+        r"a las\s+(\d{1,2}[:h]\d{0,2})\s+en vez de",
+        r"te (?:paso|muevo|cambio) a las\s+(\d{1,2}[:h]\d{0,2})",
     ]
     texto_lower = respuesta.lower()
     resultados = []
