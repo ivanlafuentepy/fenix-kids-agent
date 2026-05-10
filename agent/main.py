@@ -2985,9 +2985,9 @@ async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
         await proveedor.enviar_mensaje(admin_phone, msg)
         return
 
-    # Todo completo → ejecutar
+    # Todo completo → mostrar resumen y pedir confirmación
     metodo = parsed.get("metodo", "TRANSFER")
-    await _ejecutar_inscripcion(admin_phone, prueba, todas_pruebas, parsed["plan"], metodo, parsed["monto"], parsed["matricula"])
+    await _mostrar_confirmacion(admin_phone, prueba, todas_pruebas, parsed, metodo)
 
 
 async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
@@ -3026,7 +3026,7 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
                     await proveedor.enviar_mensaje(admin_phone, f"Falta: {', '.join(faltantes)}\nCompletá (texto libre):")
                 else:
                     metodo = parsed.get("metodo", "TRANSFER")
-                    await _ejecutar_inscripcion(admin_phone, prueba, todas, parsed["plan"], metodo, parsed["monto"], parsed["matricula"])
+                    await _mostrar_confirmacion(admin_phone, prueba, todas, parsed, metodo)
             else:
                 await proveedor.enviar_mensaje(admin_phone, f"Elegí entre 1 y {len(matches)}")
         except ValueError:
@@ -3055,16 +3055,65 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
             await proveedor.enviar_mensaje(admin_phone, msg)
             return
 
-        # Todo completo
-        _inscripcion_pendiente.pop(admin_phone, None)
+        # Todo completo → pedir confirmación
         metodo = parsed.get("metodo", "TRANSFER")
-        await _ejecutar_inscripcion(
-            admin_phone, datos["prueba"], datos["todas_pruebas"],
-            parsed["plan"], metodo, parsed["monto"], parsed["matricula"]
-        )
+        await _mostrar_confirmacion(admin_phone, datos["prueba"], datos["todas_pruebas"], parsed, metodo)
+        return
+
+    # Confirmar con si/no
+    if datos["step"] == "confirmar":
+        _r = texto.strip().lower().rstrip("!.,")
+        if _r in ("si", "sí", "dale", "ok", "va", "confirmar", "listo", "yes"):
+            _inscripcion_pendiente.pop(admin_phone, None)
+            d = datos
+            await _ejecutar_inscripcion(
+                admin_phone, d["prueba"], d["todas_pruebas"],
+                d["plan"], d["metodo"], d["monto"], d["matricula"]
+            )
+        elif _r in ("no", "cancelar", "cancel", "na"):
+            _inscripcion_pendiente.pop(admin_phone, None)
+            await proveedor.enviar_mensaje(admin_phone, "Cancelado ❌")
+        else:
+            await proveedor.enviar_mensaje(admin_phone, "Respondé *si* o *no*")
         return
 
     _inscripcion_pendiente.pop(admin_phone, None)
+
+
+async def _mostrar_confirmacion(admin_phone: str, prueba: dict, todas_pruebas: list[dict], parsed: dict, metodo: str):
+    """Muestra resumen y pide confirmación si/no."""
+    fp = prueba.get("fields", {})
+    tel = fp.get("TELEFONO", "")
+    nombre_padre = f"{fp.get('NOMBRE', '')} {fp.get('APELLIDO', '')}".strip()
+    hijos_txt = ", ".join(
+        f"{op.get('fields', {}).get('NOMBRE HIJO', '')} ({op.get('fields', {}).get('EDAD HIJO', '?')})"
+        for op in todas_pruebas if op.get("fields", {}).get("NOMBRE HIJO")
+    )
+    plan = parsed["plan"]
+    monto = parsed["monto"]
+    matricula = parsed["matricula"]
+
+    msg = (
+        f"📋 *CONFIRMAR INSCRIPCIÓN*\n\n"
+        f"👨 {nombre_padre} ({tel})\n"
+        f"👶 {hijos_txt}\n\n"
+        f"📋 Plan: {plan}\n"
+        f"💳 Método: {metodo}\n"
+        f"💰 Monto plan: {monto // 1000}mil\n"
+        f"💰 Matrícula: {matricula // 1000}mil\n\n"
+        f"¿Confirmar? (si/no)"
+    )
+
+    _inscripcion_pendiente[admin_phone] = {
+        "step": "confirmar",
+        "prueba": prueba,
+        "todas_pruebas": todas_pruebas,
+        "plan": plan,
+        "metodo": metodo,
+        "monto": monto,
+        "matricula": matricula,
+    }
+    await proveedor.enviar_mensaje(admin_phone, msg)
 
 
 async def _ejecutar_inscripcion(
