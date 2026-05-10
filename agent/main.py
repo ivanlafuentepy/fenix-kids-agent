@@ -1517,6 +1517,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen anuncios` — métricas de anuncios Meta\n"
                 "• `resumen anuncios hoy` / `ayer` / `[mes]`\n"
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
+                "• `resumen asis` / `resumen asis 10/5` — quién vino (presentes por turno)\n"
                 "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
                 "✅ *Asistencia:*\n"
@@ -1700,6 +1701,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESUMEN RESERVAS] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen reservas: {e}")
+            return
+
+        # ── Comando resumen asistencia (solo admin) ─────────────────────────
+        # Acepta: "resumen asis", "resumen asis 10/5", "resumen asistencia"
+        if telefono == admin_phone and "resumen" in _texto_cmd and ("asis" in _texto_cmd or "asistencia" in _texto_cmd):
+            _fecha_asis = None
+            _m_fecha_asis = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_asis:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_asis = _date_cls(_anio, int(_m_fecha_asis.group(2)), int(_m_fecha_asis.group(1)))
+                except ValueError:
+                    pass
+            try:
+                await _generar_resumen_asistencia(telefono, fecha_override=_fecha_asis)
+            except Exception as e:
+                logger.error(f"[RESUMEN ASIS] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen asistencia: {e}")
             return
 
         # ── Comando resumen followup (solo admin) ──────────────────────────
@@ -3942,6 +3962,114 @@ async def _enviar_asistencia_automatica(turno: str):
         logger.info(f"[ASISTENCIA] Lista automática enviada para turno {turno}")
     except Exception as e:
         logger.error(f"[ASISTENCIA] Error enviando lista automática: {e}")
+
+
+async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
+    """
+    Genera resumen de quién VINO a clase (PRESENTE=true), por turno.
+    Separa inscriptos (Aurora/RESERVAS) y pruebas (Fenix/PRUEBA FENIX).
+    Si fecha_override=None, usa el sábado más reciente (ayer o el anterior).
+    """
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS, _RESERVAS
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    if fecha_override:
+        sabado = fecha_override
+    else:
+        # El sábado más reciente (si hoy es domingo, ayer; si es lunes, anteayer, etc.)
+        dias_desde_sabado = (hoy.weekday() - 5) % 7
+        sabado = hoy - timedelta(days=dias_desde_sabado)
+
+    fecha_iso = sabado.isoformat()
+    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+
+    turnos = ["9:30", "11:00", "15:30"]
+    lineas = [f"📋 *ASISTENCIA — SÁB {sabado.day}/{sabado.month}*\n"]
+
+    total_presentes = 0
+    total_ausentes = 0
+    total_aurora = 0
+    total_fenix = 0
+
+    for hora in turnos:
+        presentes_turno = []
+        ausentes_turno = []
+
+        # ── Inscriptos (RESERVAS FENIX) ──
+        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
+        for n in ninos_aurora:
+            nombre = (n.get("apodo") or n.get("nombre", "?")).split()[0]
+            apellido = (n.get("apellido") or "").split()[0]
+            nombre_full = f"{nombre} {apellido}".strip()
+            edad = n.get("edad", "")
+            edad_str = f" ({edad})" if edad else ""
+            reserva_id = n.get("reserva_id", "")
+            # Verificar PRESENTE en la reserva
+            presente = False
+            if reserva_id:
+                _res = await _get_records(_RESERVAS, formula=f"RECORD_ID()='{reserva_id}'", max_records=1)
+                if _res:
+                    presente = _res[0].get("fields", {}).get("PRESENTE", False)
+            if presente:
+                presentes_turno.append(f"✅ {nombre_full}{edad_str}")
+                total_aurora += 1
+            else:
+                ausentes_turno.append(f"❌ {nombre_full}{edad_str}")
+
+        # ── Pruebas (PRUEBA FENIX) ──
+        pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
+        pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
+        _seen = set()
+        pruebas_all = []
+        for p in pruebas + pruebas_iso:
+            if p["id"] not in _seen:
+                _seen.add(p["id"])
+                pruebas_all.append(p)
+
+        for p in pruebas_all:
+            f = p.get("fields", {})
+            if f.get("CONVERSION") == "CANCELADO":
+                continue
+            nombre = (f.get("NOMBRE HIJO") or "?").split()[0]
+            apellido = (f.get("APELLIDO HIJO") or "").split()[0]
+            nombre_full = f"{nombre} {apellido}".strip()
+            edad = f.get("EDAD HIJO", "")
+            edad_str = f" ({edad})" if edad else ""
+            presente = f.get("PRESENTE", False)
+            if presente:
+                presentes_turno.append(f"✅ {nombre_full}{edad_str} 🔥")
+                total_fenix += 1
+            else:
+                ausentes_turno.append(f"❌ {nombre_full}{edad_str} 🔥")
+
+        n_presentes = len(presentes_turno)
+        n_total = len(presentes_turno) + len(ausentes_turno)
+        total_presentes += n_presentes
+        total_ausentes += len(ausentes_turno)
+
+        if n_total == 0:
+            continue
+
+        lineas.append(f"⏰ *{hora}h* — {n_presentes}/{n_total} presentes")
+        for l in presentes_turno:
+            lineas.append(f"   {l}")
+        for l in ausentes_turno:
+            lineas.append(f"   {l}")
+        lineas.append("")
+
+    if total_presentes == 0 and total_ausentes == 0:
+        await proveedor.enviar_mensaje(telefono, f"No hay datos de asistencia para el {sabado.day}/{sabado.month}.")
+        return
+
+    lineas.append(f"*TOTAL: {total_presentes} presentes, {total_ausentes} ausentes*")
+    lineas.append(f"Aurora: {total_aurora} | Fenix (prueba): {total_fenix}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
 
 async def _generar_resumen_followup(telefono: str):
