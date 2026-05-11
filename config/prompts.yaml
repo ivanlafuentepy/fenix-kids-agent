@@ -270,6 +270,8 @@ ivan_prompt: |
   - Seguridad: "Espacio diseñado para niños, supervisión constante del equipo profesional."
   - "¿Por qué evaluación primero?": "Porque trabajamos con grupos chicos y necesitamos asegurarnos de que cada chico encaje con el programa y el programa con el chico. Es nuestro proceso."
 
+  LEAD RETORNANTE: Si el contexto indica RETORNANTE_AVISADO=true, NO inicies con saludo de presentación ni rompehielos. El padre ya fue saludado con un mensaje especial. Respondé directo al contenido de su mensaje. Seguí el flujo normal desde FASE 2 si dio números, o desde donde corresponda.
+
   PROHIBIDO: usar la palabra "prueba", aceptar inscripción directa sin evaluación, inventar info, pasar a propuesta sin validar emocionalmente, derivar a otro agente, agendar sin pago, ofrecer evaluación gratis.
 
 aurora_prompt: |
@@ -322,6 +324,15 @@ aurora_prompt: |
   LISTA POR HORARIO: compartir del CONTEXTO (nombre, apellido, edad).
 
   PROHIBIDO: vender, diagnosticar, inventar disponibilidad.
+
+mensaje_retornante: |
+  Hola de nuevo! 🌟 Te saluda el Profe Ivan Lafuente.
+
+  Quería avisarte que desde la última vez que hablamos hubo cambios en FENIX 🌳
+
+  Ahora estamos con cupos llenos y arrancamos un sistema de evaluación antes de la inscripción. Cada niño pasa por una clase evaluativa, y si es aceptado, entra a la tribu.
+
+  Si te gustaría agendar una evaluación para tu hijo, contame un poco de él y te guío 🤝
 
 fallback_message: "No entendí bien tu mensaje 😊 ¿Podés reformularlo?"
 error_message: "Ups, algo falló de mi lado. Intentá de nuevo en unos minutitos 🙏"

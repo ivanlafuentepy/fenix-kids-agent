@@ -2016,6 +2016,30 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, respuesta)
             return
 
+        # ── Detección de leads retornantes (1-10 mayo → vuelven después del 11) ──
+        if telefono != admin_phone:
+            _es_retornante = await _detectar_lead_retornante(telefono)
+            if _es_retornante:
+                from agent.brain import cargar_config_prompts
+                _cfg = cargar_config_prompts()
+                _msg_ret = _cfg.get("mensaje_retornante", "").strip()
+                if _msg_ret:
+                    await guardar_mensaje(telefono, "user", texto)
+                    await proveedor.enviar_mensaje(telefono, _msg_ret)
+                    await guardar_mensaje(telefono, "assistant", _msg_ret)
+                    # Marcar en Airtable
+                    try:
+                        _rec_id = await obtener_airtable_record_id(telefono)
+                        if _rec_id:
+                            from agent.airtable_client import _patch, _LEADS
+                            await _patch(_LEADS, _rec_id, {"RETORNANTE_AVISADO": True})
+                    except Exception as e:
+                        logger.warning(f"[RETORNANTE] Error marcando Airtable: {e}")
+                    if topic_id:
+                        await enviar_a_topic(topic_id, f"🔄 LEAD RETORNANTE detectado — mensaje especial enviado", telefono=telefono, group_override=_tg_group)
+                    logger.info(f"[RETORNANTE] Detectado y avisado: {telefono}")
+                    return
+
         # ── Evaluación manual pendiente — agente pausado ─────────────────
         from agent.ab_test import esta_en_evaluacion_manual
         if await esta_en_evaluacion_manual(telefono):
@@ -2120,6 +2144,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
+
+        # Retornante ya avisado → inyectar contexto para que Ivan no re-salude
+        if agent_actual == "ivan" and telefono != admin_phone:
+            try:
+                from agent.airtable_client import _get_records, _LEADS
+                _lr_ret = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr_ret and _lr_ret[0].get("fields", {}).get("RETORNANTE_AVISADO"):
+                    contexto_extra = (contexto_extra or "") + "\n[SISTEMA: RETORNANTE_AVISADO=true. El padre ya recibió mensaje especial de bienvenida. NO saludes de nuevo ni envíes rompehielos. Respondé directo al contenido de su mensaje.]"
+            except Exception:
+                pass
+
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
             # Primero buscar por familia_id guardada (modo padre admin)
             familia_existente = None
@@ -6162,3 +6197,95 @@ async def _procesar_callback_evaluacion(callback: dict):
         if topic_id:
             await enviar_a_topic(topic_id, "💬 Escribí la pregunta que querés hacerle al padre. La reenvío como Ivan.", telefono=telefono, group_override=_tg_group)
         logger.info(f"[EVAL MANUAL] {telefono} — admin va a pedir más info")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# LEADS RETORNANTES — padres que escribieron con prompt viejo (1-10 mayo)
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Rango configurable (hardcoded por ahora, se puede mover a .env)
+_RETORNANTE_RANGO_INICIO = "2026-05-01"
+_RETORNANTE_RANGO_FIN = "2026-05-10"
+_RETORNANTE_GAP_HORAS = 24
+
+# Cache local para no consultar Airtable cada mensaje
+_retornante_cache: dict[str, bool] = {}  # tel → ya fue avisado
+
+
+async def _detectar_lead_retornante(telefono: str) -> bool:
+    """
+    Retorna True si el lead es retornante y debe recibir mensaje especial.
+    Criterios: tiene historial en rango 1-10 mayo, no es alumno, gap >24h, no avisado.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Cache: si ya fue avisado, no volver a detectar
+    if _retornante_cache.get(telefono):
+        return False
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    ahora = datetime.now(_PY_TZ)
+
+    # Verificar en Airtable si ya fue avisado
+    try:
+        from agent.airtable_client import _get_records, _LEADS
+        leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if not leads:
+            return False  # Lead nuevo, no retornante
+        lead_fields = leads[0].get("fields", {})
+        if lead_fields.get("RETORNANTE_AVISADO"):
+            _retornante_cache[telefono] = True
+            return False
+        # Si tiene CONVERSION avanzada (PAGO, INSCRIPTO), no es retornante
+        conversion = lead_fields.get("CONVERSION", "")
+        if conversion in ("PAGO", "INSCRIPTO"):
+            return False
+    except Exception as e:
+        logger.warning(f"[RETORNANTE] Error consultando Airtable: {e}")
+        return False
+
+    # Verificar si es alumno (tiene familia)
+    try:
+        familia = await buscar_familia_por_telefono(telefono)
+        if familia:
+            return False
+    except Exception:
+        pass
+
+    # Verificar historial: tiene mensajes en el rango 1-10 mayo?
+    historial = await obtener_historial(telefono, limite=30)
+    if not historial:
+        return False
+
+    rango_inicio = datetime.fromisoformat(f"{_RETORNANTE_RANGO_INICIO}T00:00:00-03:00")
+    rango_fin = datetime.fromisoformat(f"{_RETORNANTE_RANGO_FIN}T23:59:59-03:00")
+
+    tiene_msg_en_rango = False
+    ultimo_msg_ts = None
+
+    for m in historial:
+        ts_str = m.get("timestamp", "")
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=_PY_TZ)
+            if rango_inicio <= ts <= rango_fin:
+                tiene_msg_en_rango = True
+            if ultimo_msg_ts is None or ts > ultimo_msg_ts:
+                ultimo_msg_ts = ts
+        except Exception:
+            continue
+
+    if not tiene_msg_en_rango:
+        return False
+
+    # Gap de 24h desde último mensaje
+    if ultimo_msg_ts:
+        gap = ahora - ultimo_msg_ts
+        if gap < timedelta(hours=_RETORNANTE_GAP_HORAS):
+            return False
+
+    logger.info(f"[RETORNANTE] {telefono} detectado: historial en rango, gap OK, no avisado")
+    return True
