@@ -222,6 +222,7 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
         ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
+        ("conversaciones_ab", "en_evaluacion_manual",   "BOOLEAN DEFAULT FALSE"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:
