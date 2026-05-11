@@ -1946,12 +1946,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _lr_diag = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
                 if _lr_diag:
                     _nombre_diag = _lr_diag[0].get("fields", {}).get("NOMBRE RESPONSABLE", "")
+                # Link al topic de Telegram
+                _tg_link = ""
+                if topic_id and _tg_group:
+                    _gid_abs = str(_tg_group).replace("-100", "")
+                    _tg_link = f"\n💬 t.me/c/{_gid_abs}/{topic_id}"
+
                 _alerta_diag = (
                     f"🚨 DIAGNÓSTICO MENCIONADO\n\n"
                     f"Lead: {_nombre_diag or telefono}\n"
                     f"Tel: {telefono}\n"
                     f"Mensaje: {texto[:200]}\n\n"
-                    f"Entrá al topic y usá /silenciar si querés responder manual."
+                    f"Comandos:\n/silenciar → responder manual\n/aprobado → aceptar evaluación\n/rechazado → rechazar"
+                    f"{_tg_link}"
                 )
                 if topic_id:
                     await enviar_a_topic(topic_id, _alerta_diag, telefono=telefono, group_override=_tg_group)
@@ -5360,6 +5367,36 @@ async def telegram_webhook(request: Request):
         if texto_tg.strip() == "/reactivar":
             await reactivar_dorita(telefono)
             await enviar_a_topic(thread_id, "🔊 Agente Fénix activado.", telefono=telefono, group_override=_tg_grp)
+            return {"status": "ok"}
+
+        if texto_tg.strip() == "/aprobado":
+            # Evaluación aprobada → enviar mensaje al padre y reactivar agente
+            await reactivar_dorita(telefono)
+            historial = await obtener_historial(telefono, limite=20)
+            agent_actual, _ = await obtener_agent_actual(telefono)
+            respuesta = await generar_respuesta(
+                mensaje="[SISTEMA: EVALUACION_APROBADA]",
+                historial=historial,
+                agent_actual=agent_actual,
+            )
+            await proveedor.enviar_mensaje(telefono, respuesta)
+            await guardar_mensaje(telefono, "assistant", respuesta)
+            await enviar_a_topic(thread_id, f"✅ APROBADO → IVAN: {respuesta}", telefono=telefono, group_override=_tg_grp)
+            return {"status": "ok"}
+
+        if texto_tg.strip() == "/rechazado":
+            # Evaluación rechazada → enviar mensaje al padre, no seguir vendiendo
+            await reactivar_dorita(telefono)
+            historial = await obtener_historial(telefono, limite=20)
+            agent_actual, _ = await obtener_agent_actual(telefono)
+            respuesta = await generar_respuesta(
+                mensaje="[SISTEMA: EVALUACION_RECHAZADA]",
+                historial=historial,
+                agent_actual=agent_actual,
+            )
+            await proveedor.enviar_mensaje(telefono, respuesta)
+            await guardar_mensaje(telefono, "assistant", respuesta)
+            await enviar_a_topic(thread_id, f"❌ RECHAZADO → IVAN: {respuesta}", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
 
         if texto_tg.strip() == "/fenix":
