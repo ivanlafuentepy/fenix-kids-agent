@@ -411,9 +411,9 @@ async def notificar_referido_telegram(
     msg_wa = (
         f"Hola {primer_nombre_referidor} 👋\n\n"
         f"{lead_nombre_completo} se registró con tu link de referido "
-        f"para una clase de prueba gratuita.\n\n"
+        f"para una clase evaluativa.\n\n"
         f"📅 Clase agendada para el {fecha_display}.\n\n"
-        f"Te estaremos teniendo al tanto si viene a probar y si se inscribe eventualmente.\n\n"
+        f"Te estaremos teniendo al tanto si viene a la evaluación y si es aceptado eventualmente.\n\n"
         f"¡Muchísimas gracias por ayudarnos a crecer! 🙌 "
         f"Esperamos poder recibir más referidos de tu parte."
     )
@@ -428,10 +428,10 @@ async def notificar_referido_telegram(
     texto = (
         f"Hola {primer_nombre_referidor} 👋\n\n"
         f"{lead_nombre_completo} se registró con tu link de referido "
-        f"para una clase de prueba gratuita.\n\n"
+        f"para una clase evaluativa.\n\n"
         f"📅 Clase agendada para el {fecha_display}."
         f"{wa_referidor}\n\n"
-        f"Te estaremos teniendo al tanto si viene a probar y si se inscribe eventualmente.\n\n"
+        f"Te estaremos teniendo al tanto si viene a la evaluación y si es aceptado eventualmente.\n\n"
         f"¡Muchísimas gracias por ayudarnos a crecer! 🙌 "
         f"Esperamos poder recibir más referidos de tu parte."
     )

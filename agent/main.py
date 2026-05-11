@@ -2155,7 +2155,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
                     # Ya vio el afiche, dar resumen corto en texto
-                    _partes.append("Prueba: 90mil (se descuenta si te inscribís). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
+                    _partes.append("Evaluación: 90mil (se descuenta si es aceptado y se inscribe). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -3563,7 +3563,7 @@ async def _ejecutar_followup():
             elif seguimientos == 1:
                 instruccion = (
                     f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
-                    f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
+                    f"Preguntá si sigue interesado en la evaluación para {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
             elif seguimientos == 2:
@@ -4803,14 +4803,14 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría agendar una clase de prueba para {nombre_hijo}?\n\n"
+            f"¿Te gustaría agendar una evaluación para {nombre_hijo}?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
             "así te explico todo 😊"
         )
     else:
         # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría agendar una clase de prueba?\n\n"
+            "¿Te gustaría agendar una evaluación?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
@@ -4834,13 +4834,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje con precios escritos + promo trimestral
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🏷️ Clase de prueba: 90.000 Gs (se descuenta si te inscribís)\n\n"
+            "🏷️ Clase evaluativa: 90.000 Gs (se descuenta si es aceptado y se inscribe)\n\n"
             "📅 *PLAN MENSUAL Todos los sábados:* 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
             "🔥 *PROMO TRIMESTRAL — (40% OFF) 🔥*\n\n"
             "📅 *Todos los sábados:* 690.000 + matrícula 140.000\n"
             "   💰 Total: 830.000 Gs\n"
             "   ➡️ Ahorrás 420.000 Gs (40% OFF) 🔥\n\n"
-            "¿Te gustaría reservar una clase de prueba? 😊"
+            "¿Te gustaría agendar una evaluación? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
@@ -5231,7 +5231,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         if es_gratis:
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"Tu clase de prueba es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
+                f"Tu evaluación es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
                 f"Te confirmo el horario en breve, muchas gracias {nombre_padre} 🤝"
             )
         else:
@@ -5239,7 +5239,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             monto_fmt = f"{monto:,}".replace(",", ".")
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"El monto de la clase de prueba es {monto_fmt} Gs\n\n"
+                f"El monto de la evaluación es {monto_fmt} Gs\n\n"
                 f"{DATOS_BANCARIOS}\n\n"
                 f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
             )
