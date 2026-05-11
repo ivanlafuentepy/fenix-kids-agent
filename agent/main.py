@@ -2042,7 +2042,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Evaluación manual pendiente — agente pausado ─────────────────
         from agent.ab_test import esta_en_evaluacion_manual
-        if await esta_en_evaluacion_manual(telefono):
+        _en_eval = False
+        try:
+            _en_eval = await esta_en_evaluacion_manual(telefono)
+        except Exception as e:
+            logger.warning(f"[EVAL MANUAL] Error verificando estado: {e}")
+        if _en_eval:
             # Solo dejar pasar saludos genéricos con respuesta automática
             _texto_lower = texto.lower().strip()
             if _texto_lower in ("hola", "hola?", "estás ahí?", "estas ahi?", "buenas", "buenas?", "?"):
@@ -2146,7 +2151,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         contexto_extra = None
 
         # Retornante ya avisado → inyectar contexto para que Ivan no re-salude
-        if agent_actual == "ivan" and telefono != admin_phone:
+        if agent_actual == "ivan" and telefono != admin_phone and telefono not in _admin_modo_padre:
             try:
                 from agent.airtable_client import _get_records, _LEADS
                 _lr_ret = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
