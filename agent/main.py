@@ -179,13 +179,22 @@ _PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "595982790407")}
 
 import re
 
+def _normalizar_numeros_lead_viejo(numeros: list[int]) -> list[int]:
+    """Mapea selecciones del menú viejo (1-15) al nuevo (1-10) para leads en curso."""
+    mapeo = {
+        6: 1, 5: 2, 3: 3, 12: 4, 7: 5, 2: 6,
+        1: 7, 4: 7, 11: 7,   # fusión cluster emocional
+        9: 8, 10: 8,          # fusión cluster motriz
+        8: 9,
+        13: 10, 14: 10, 15: 10,  # ahora todos van a "Otro"
+    }
+    return list(set(mapeo.get(n, n) for n in numeros))
+
+
 def _contar_numeros_rompehielos(texto: str) -> int:
     """Cuenta cuántos números del 1 al 15 envió el lead (respuesta al rompehielos)."""
-    # Normalizar separadores: puntos, guiones, espacios → comas
     texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
-    # Buscar números del 1 al 15
     numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto_norm)
-    # Deduplicar
     return len(set(numeros))
 
 
@@ -915,16 +924,18 @@ def _padre_ya_pidio_precios(historial: list[dict]) -> bool:
 
 
 def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
-    """Busca en el historial los números del rompehielos que eligió el padre."""
+    """Busca en el historial los números del rompehielos que eligió el padre.
+    Si detecta números del menú viejo (>10), los normaliza al menú nuevo."""
     for m in historial:
         if m.get("role") == "user":
             _cont = re.sub(r'[.\-/\s]+', ',', m.get("content", "").strip())
             nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _cont)]
             if nums and len(nums) >= 1:
-                # Verificar que sea respuesta al rompehielos (no cualquier número suelto)
                 contenido = m.get("content", "").strip()
-                # Si tiene 2+ números o el texto es mayormente números, es rompehielos
                 if len(nums) >= 2 or re.fullmatch(r'[\d,.\s y]+', contenido):
+                    # Si hay números >10, es menú viejo → normalizar
+                    if any(n > 10 for n in nums):
+                        nums = _normalizar_numeros_lead_viejo(nums)
                     return len(nums), nums
     return 0, []
 
