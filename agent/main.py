@@ -2017,7 +2017,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Detección de leads retornantes (1-10 mayo → vuelven después del 11) ──
-        if telefono != admin_phone:
+        # TEMPORALMENTE DESHABILITADO — diagnosticar crash primero
+        if False and telefono != admin_phone:
             _es_retornante = await _detectar_lead_retornante(telefono)
             if _es_retornante:
                 from agent.brain import cargar_config_prompts
@@ -2041,12 +2042,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     return
 
         # ── Evaluación manual pendiente — agente pausado ─────────────────
-        from agent.ab_test import esta_en_evaluacion_manual
+        # TEMPORALMENTE DESHABILITADO — diagnosticar crash primero
         _en_eval = False
-        try:
-            _en_eval = await esta_en_evaluacion_manual(telefono)
-        except Exception as e:
-            logger.warning(f"[EVAL MANUAL] Error verificando estado: {e}")
+        if False:
+            from agent.ab_test import esta_en_evaluacion_manual
+            try:
+                _en_eval = await esta_en_evaluacion_manual(telefono)
+            except Exception as e:
+                logger.warning(f"[EVAL MANUAL] Error verificando estado: {e}")
         if _en_eval:
             # Solo dejar pasar saludos genéricos con respuesta automática
             _texto_lower = texto.lower().strip()
@@ -2151,7 +2154,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         contexto_extra = None
 
         # Retornante ya avisado → inyectar contexto para que Ivan no re-salude
-        if agent_actual == "ivan" and telefono != admin_phone and telefono not in _admin_modo_padre:
+        # TEMPORALMENTE DESHABILITADO
+        if False and agent_actual == "ivan" and telefono != admin_phone and telefono not in _admin_modo_padre:
             try:
                 from agent.airtable_client import _get_records, _LEADS
                 _lr_ret = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
