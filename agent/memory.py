@@ -83,8 +83,6 @@ class ConversacionAB(Base):
 
     # Meta CAPI — Click ID del anuncio Click-to-WhatsApp
     ctwa_clid: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # Evaluación manual — agente pausado esperando decisión del admin
-    en_evaluacion_manual: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class TopicTelegram(Base):
@@ -222,7 +220,6 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
         ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
-        ("conversaciones_ab", "en_evaluacion_manual",   "BOOLEAN DEFAULT FALSE"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:

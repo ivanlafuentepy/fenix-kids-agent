@@ -285,7 +285,7 @@ Devolvé ÚNICAMENTE un JSON con esta estructura exacta (sin texto adicional):
 
 Reglas:
 - Solo extraé: nombre y apellido del niño, fecha de nacimiento del niño, nombre y apellido del padre/madre que escribió
-- Los demás campos dejálos en null (no se piden en clase evaluativa)
+- Los demás campos dejálos en null (no se piden en clase de prueba)
 - Para fecha_nacimiento: convertí al formato YYYY-MM-DD
 - Si hay múltiples niños, incluí uno por cada uno en el array "ninos"
 - El padre/madre es quien está escribiendo (poné sus datos en "padre", dejá "madre" como null)

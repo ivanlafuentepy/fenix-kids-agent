@@ -41,16 +41,16 @@ _MENSAJES_SEGUIMIENTO = {
     "A": [
         "¡Hola! ¿Te quedó alguna duda sobre FENIX Kids? Acá estoy para contarte lo que necesités 😊",
         (
-            f"Por si te sirve, estos son los horarios disponibles para evaluar a tu hijo/a:\n"
+            f"Por si te sirve, estos son los horarios disponibles para la clase de prueba de tu hijo/a:\n"
             f"Sábados: {_HORARIOS_FENIX}\n¿Alguno te queda bien?"
         ),
-        "La evaluación es de 90.000 Gs y se descuenta si es aceptado y se inscribe 🌳 ¿Querés que te ayude a agendar?",
+        "La primera clase de prueba es de 90.000 Gs y se descuenta si después se inscriben 🌳 ¿Querés que te ayude a agendar?",
     ],
     "B": [
         "¿Todo bien? Si querés te cuento más sobre cómo funcionan los entrenamientos al aire libre 🌿",
         (
-            f"Te cuento los horarios disponibles para evaluar a tu hijo/a:\n"
-            f"Sábados: {_HORARIOS_FENIX}\n¿Te agendo una evaluación?"
+            f"Te cuento los horarios disponibles para que tu hijo/a pueda probar:\n"
+            f"Sábados: {_HORARIOS_FENIX}\n¿Te agendo una clase de prueba?"
         ),
         "En FENIX trabajamos el desarrollo físico y emocional de los niños con retos reales en la naturaleza 🌳 ¿Querés que te ayude a coordinar una visita?",
     ],
