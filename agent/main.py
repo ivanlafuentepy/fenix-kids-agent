@@ -107,6 +107,21 @@ def _es_mensaje_sospechoso(texto: str) -> bool:
     return any(p in t for p in _PALABRAS_PELIGROSAS)
 
 
+# ── Detección de diagnóstico / neurodivergencia (human-in-the-loop) ──────────
+_KEYWORDS_DIAGNOSTICO = [
+    r'\btdah\b', r'\btea\b', r'\bautism', r'\bespectro\b', r'\basperger\b',
+    r'\bd[eé]ficit\b', r'\bs[ií]ndrome\b', r'\bneurodiv', r'\bdiagn[oó]stic',
+    r'\bpsic[oó]log', r'\bpsicopedag', r'\bfonoaudi[oó]log',
+    r'\btera(pist|peuta|pia)\b', r'\bmedicad', r'\bmedicaci[oó]n\b',
+    r'\bconcerta\b', r'\britalina\b', r'\batomoxetina\b',
+]
+
+
+def detectar_diagnostico(texto: str) -> bool:
+    """Retorna True si el texto menciona diagnósticos o tratamientos neurodivergentes."""
+    return any(re.search(p, texto.lower()) for p in _KEYWORDS_DIAGNOSTICO)
+
+
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
@@ -179,13 +194,22 @@ _PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "595982790407")}
 
 import re
 
+def _normalizar_numeros_lead_viejo(numeros: list[int]) -> list[int]:
+    """Mapea selecciones del menú viejo (1-15) al nuevo (1-10) para leads en curso."""
+    mapeo = {
+        6: 1, 5: 2, 3: 3, 12: 4, 7: 5, 2: 6,
+        1: 7, 4: 7, 11: 7,   # fusión cluster emocional
+        9: 8, 10: 8,          # fusión cluster motriz
+        8: 9,
+        13: 10, 14: 10, 15: 10,  # ahora todos van a "Otro"
+    }
+    return list(set(mapeo.get(n, n) for n in numeros))
+
+
 def _contar_numeros_rompehielos(texto: str) -> int:
     """Cuenta cuántos números del 1 al 15 envió el lead (respuesta al rompehielos)."""
-    # Normalizar separadores: puntos, guiones, espacios → comas
     texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
-    # Buscar números del 1 al 15
     numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto_norm)
-    # Deduplicar
     return len(set(numeros))
 
 
@@ -898,7 +922,7 @@ def _padre_muestra_interes(texto: str) -> bool:
         r'agendar', r'reservar', r'inscrib', r'anotar',
         r'cómo es', r'como es', r'cómo hago', r'como hago',
         r'cuánto', r'cuanto', r'precio', r'costo', r'sale',
-        r'probamos', r'prueba', r'puede probar', r'le gustar',
+        r'probamos', r'prueba', r'puede probar', r'le gustar', r'evaluar', r'evaluaci',
         r'que necesito', r'qué necesito',
     ]
     return any(re.search(p, t) for p in patrones)
@@ -915,16 +939,18 @@ def _padre_ya_pidio_precios(historial: list[dict]) -> bool:
 
 
 def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
-    """Busca en el historial los números del rompehielos que eligió el padre."""
+    """Busca en el historial los números del rompehielos que eligió el padre.
+    Si detecta números del menú viejo (>10), los normaliza al menú nuevo."""
     for m in historial:
         if m.get("role") == "user":
             _cont = re.sub(r'[.\-/\s]+', ',', m.get("content", "").strip())
             nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _cont)]
             if nums and len(nums) >= 1:
-                # Verificar que sea respuesta al rompehielos (no cualquier número suelto)
                 contenido = m.get("content", "").strip()
-                # Si tiene 2+ números o el texto es mayormente números, es rompehielos
                 if len(nums) >= 2 or re.fullmatch(r'[\d,.\s y]+', contenido):
+                    # Si hay números >10, es menú viejo → normalizar
+                    if any(n > 10 for n in nums):
+                        nums = _normalizar_numeros_lead_viejo(nums)
                     return len(nums), nums
     return 0, []
 
@@ -1064,7 +1090,7 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
     for m in reversed(historial):
         if m.get("role") == "assistant":
             contenido = m.get("content", "")
-            match_conf = re.search(r"reserva confirmada[!✅\s]*\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", contenido, re.IGNORECASE)
+            match_conf = re.search(r"(?:reserva|evaluaci[oó]n) confirmada[!✅\s]*\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", contenido, re.IGNORECASE)
             if match_conf:
                 candidato = match_conf.group(1).strip().title()
                 if _es_nombre_hijo_valido(candidato):
@@ -1990,6 +2016,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, respuesta)
             return
 
+        # ── Evaluación manual pendiente — agente pausado ─────────────────
+        from agent.ab_test import esta_en_evaluacion_manual
+        if await esta_en_evaluacion_manual(telefono):
+            # Solo dejar pasar saludos genéricos con respuesta automática
+            _texto_lower = texto.lower().strip()
+            if _texto_lower in ("hola", "hola?", "estás ahí?", "estas ahi?", "buenas", "buenas?", "?"):
+                await proveedor.enviar_mensaje(telefono, "Hola! Estoy revisando tu caso y te respondo en breve 🤝")
+                await guardar_mensaje(telefono, "user", texto)
+                await guardar_mensaje(telefono, "assistant", "Hola! Estoy revisando tu caso y te respondo en breve 🤝")
+            else:
+                # Guardar mensaje pero no responder — el admin va a decidir
+                await guardar_mensaje(telefono, "user", texto)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"⏸️ [EN EVAL MANUAL] PADRE: {texto}", telefono=telefono, group_override=_tg_group)
+            return
+
         # ── Modo nocturno (23:00–07:00 PY) — admin y padres inscriptos sin límite
         if es_horario_nocturno() and telefono not in _PHONES_SIN_DELAY:
             # Padres inscriptos no tienen restricción nocturna
@@ -2122,9 +2164,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
                     "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
                     "(naturaleza, trepar, sol, desafíos reales). "
-                    "TERMINÁ SIEMPRE con: '¿Te gustaría que [nombre] venga a probar un día? 😊' "
+                    "TERMINÁ SIEMPRE ofreciendo la evaluación con cupos por horario. "
                     "NO preguntes nombre del padre. NO vuelvas al rompehielos. "
-                    "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
+                    "NO preguntes qué quiere reforzar. El cierre es la oferta de evaluación.]"
                 )
 
         # ── Intercepción pre-Claude: horarios, precios, ubicación, interés post-diag ──
@@ -2155,7 +2197,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
                     # Ya vio el afiche, dar resumen corto en texto
-                    _partes.append("Prueba: 90mil (se descuenta si te inscribís). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
+                    _partes.append("Evaluación: 90mil (se descuenta si es aceptado y se inscribe). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -2182,6 +2224,77 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 agent_actual=agent_actual,
                 contexto_extra=contexto_extra,
             )
+
+        # ── Detectar EVALUACION_MANUAL_REQUERIDA en respuesta de Claude ────
+        if "[SISTEMA: EVALUACION_MANUAL_REQUERIDA]" in respuesta and agent_actual == "ivan":
+            from agent.ab_test import marcar_evaluacion_manual
+            from agent.telegram_bridge import enviar_inline_keyboard
+
+            # Extraer el texto limpio (sin el comando del sistema) para enviar al padre
+            _resp_limpia = respuesta.replace("[SISTEMA: EVALUACION_MANUAL_REQUERIDA]", "").strip()
+            if _resp_limpia:
+                await _delay_humano(_resp_limpia)
+                await proveedor.enviar_mensaje(telefono, _resp_limpia)
+                await guardar_mensaje(telefono, "assistant", _resp_limpia)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"🤖 IVAN: {_resp_limpia}", telefono=telefono, group_override=_tg_group)
+
+            # Marcar como en evaluación manual
+            await marcar_evaluacion_manual(telefono)
+
+            # Armar resumen para admin
+            _hist_resumen = await obtener_historial(telefono, limite=6)
+            _ultimos_msgs = "\n".join(
+                f"{'PADRE' if m['role']=='user' else 'IVAN'}: {m['content'][:150]}"
+                for m in _hist_resumen[-4:]
+            )
+
+            _nombre_padre = ""
+            _nombre_hijo = ""
+            try:
+                from agent.airtable_client import _get_records, _LEADS
+                _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr:
+                    _lf = _lr[0].get("fields", {})
+                    _nombre_padre = _lf.get("NOMBRE RESPONSABLE", "")
+                    _nombre_hijo = _lf.get("NOMBRE NIÑO", "")
+            except Exception:
+                pass
+
+            _msg_admin = (
+                f"🚨 EVALUACIÓN MANUAL REQUERIDA\n\n"
+                f"Lead: {_nombre_padre or telefono}\n"
+                f"Hijo: {_nombre_hijo or '?'}\n"
+                f"Tel: {telefono}\n\n"
+                f"Últimos mensajes:\n{_ultimos_msgs}"
+            )
+
+            # Enviar inline keyboard a Telegram
+            if topic_id:
+                _botones = [
+                    [
+                        {"text": "✅ Aceptar", "callback_data": f"eval_aceptar_{telefono}"},
+                        {"text": "❌ Rechazar", "callback_data": f"eval_rechazar_{telefono}"},
+                    ],
+                    [
+                        {"text": "💬 Pedir más info", "callback_data": f"eval_info_{telefono}"},
+                    ],
+                ]
+                await enviar_inline_keyboard(topic_id, _msg_admin, _botones, group_override=_tg_group)
+
+            # Programar timeout de 12h
+            async def _timeout_evaluacion():
+                await asyncio.sleep(12 * 3600)  # 12 horas
+                if await esta_en_evaluacion_manual(telefono):
+                    await proveedor.enviar_mensaje(telefono, "Disculpá la demora, sigo coordinando con el equipo. Te respondo apenas pueda 🤝")
+                    await guardar_mensaje(telefono, "assistant", "Disculpá la demora, sigo coordinando con el equipo. Te respondo apenas pueda 🤝")
+                    if topic_id:
+                        await enviar_a_topic(topic_id, "⚠️ TIMEOUT 12h — lead sigue esperando respuesta", telefono=telefono, group_override=_tg_group)
+
+            asyncio.create_task(_timeout_evaluacion())
+
+            logger.info(f"[EVAL MANUAL] Lead {telefono} pausado, notificación enviada a Telegram")
+            return
 
         # ── Anti-repetición: quitar preguntas que ya se hicieron ──────────
         if agent_actual == "ivan" and historial:
@@ -2513,8 +2626,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _fecha_form = ""
             _hora_form = ""
             for _m_f in reversed(_hist_form):
-                if _m_f.get("role") == "assistant" and "reserva confirmada" in _m_f.get("content", "").lower():
-                    _match_nombres = re.search(r"reserva confirmada[✅!\s]*(.+?)\s+tienen?\s+su\s+lugar", _m_f["content"], re.IGNORECASE)
+                if _m_f.get("role") == "assistant" and ("reserva confirmada" in _m_f.get("content", "").lower() or "evaluación confirmada" in _m_f.get("content", "").lower() or "evaluacion confirmada" in _m_f.get("content", "").lower()):
+                    _match_nombres = re.search(r"(?:reserva|evaluaci[oó]n) confirmada[✅!\s]*(.+?)\s+tienen?\s+su\s+lugar", _m_f["content"], re.IGNORECASE)
                     if _match_nombres:
                         _nombres_form = _match_nombres.group(1).strip()
                     _match_f = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_f["content"].lower())
@@ -2529,7 +2642,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _nombre_part = f" {_nombres_form}" if _nombres_form else ""
             _fecha_part = f" el sábado {_fecha_form} a las {_hora_form}h" if _fecha_form else " el sábado"
             _verbo = "tienen" if " y " in _nombres_form else "tiene"
-            respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
+            if agent_actual == "ivan":
+                respuesta = f"Muchas gracias por tus datos! Evaluación confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
+            else:
+                respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
         elif _interceptado:
@@ -2574,7 +2690,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _fecha_res = ""
                 _hora_res = ""
                 for _m_res in reversed(historial_completo):
-                    if _m_res.get("role") == "assistant" and "reserva confirmada" in _m_res.get("content", "").lower():
+                    if _m_res.get("role") == "assistant" and ("reserva confirmada" in _m_res.get("content", "").lower() or "evaluación confirmada" in _m_res.get("content", "").lower() or "evaluacion confirmada" in _m_res.get("content", "").lower()):
                         _match_fecha = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_res["content"].lower())
                         if _match_fecha:
                             _fecha_res = _match_fecha.group(1)
@@ -3563,7 +3679,7 @@ async def _ejecutar_followup():
             elif seguimientos == 1:
                 instruccion = (
                     f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
-                    f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
+                    f"Preguntá si sigue interesado en la evaluación para {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
             elif seguimientos == 2:
@@ -4803,14 +4919,13 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría agendar una clase de prueba para {nombre_hijo}?\n\n"
+            f"¿Te gustaría agendar una evaluación para {nombre_hijo}?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
             "así te explico todo 😊"
         )
     else:
-        # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría agendar una clase de prueba?\n\n"
+            "¿Te gustaría agendar una evaluación?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
@@ -4834,13 +4949,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje con precios escritos + promo trimestral
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🏷️ Clase de prueba: 90.000 Gs (se descuenta si te inscribís)\n\n"
+            "🏷️ Clase evaluativa: 90.000 Gs (se descuenta si es aceptado y se inscribe)\n\n"
             "📅 *PLAN MENSUAL Todos los sábados:* 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
             "🔥 *PROMO TRIMESTRAL — (40% OFF) 🔥*\n\n"
             "📅 *Todos los sábados:* 690.000 + matrícula 140.000\n"
             "   💰 Total: 830.000 Gs\n"
             "   ➡️ Ahorrás 420.000 Gs (40% OFF) 🔥\n\n"
-            "¿Te gustaría reservar una clase de prueba? 😊"
+            "¿Te gustaría agendar una evaluación? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
@@ -4991,7 +5106,7 @@ async def _procesar_comprobante(
         respuesta_ivan = await generar_respuesta(
             mensaje=(
                 "[SISTEMA: pago confirmado. Si el padre YA eligió sábado+horario antes de pagar, "
-                "decí 'Reserva confirmada ✅ [NOMBRE] tiene su lugar el sábado [FECHA] a las [HORA]h' "
+                "decí 'Evaluación confirmada ✅ [NOMBRE] tiene su lugar el sábado [FECHA] a las [HORA]h' "
                 "y agradecé la transferencia. NADA MÁS, no pidas datos, no mandes formulario. "
                 "Si NO eligió horario todavía, ofrecé los sábados disponibles.]"
             ),
@@ -5005,7 +5120,7 @@ async def _procesar_comprobante(
             await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=telefono, group_override=group_override)
 
         # ── Formulario SEPARADO (solo si confirmó reserva) ─────────
-        if "reserva confirmada" in respuesta_ivan.lower() or "tiene su lugar" in respuesta_ivan.lower():
+        if "reserva confirmada" in respuesta_ivan.lower() or "evaluación confirmada" in respuesta_ivan.lower() or "evaluacion confirmada" in respuesta_ivan.lower() or "tiene su lugar" in respuesta_ivan.lower():
             await asyncio.sleep(5)  # pausa entre mensajes
             msg_formulario = (
                 "Ahora sí, para completar la reserva pasame estos datos 📋\n\n"
@@ -5231,7 +5346,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         if es_gratis:
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"Tu clase de prueba es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
+                f"Tu evaluación es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
                 f"Te confirmo el horario en breve, muchas gracias {nombre_padre} 🤝"
             )
         else:
@@ -5239,7 +5354,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             monto_fmt = f"{monto:,}".replace(",", ".")
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"El monto de la clase de prueba es {monto_fmt} Gs\n\n"
+                f"El monto de la evaluación es {monto_fmt} Gs\n\n"
                 f"{DATOS_BANCARIOS}\n\n"
                 f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
             )
@@ -5278,6 +5393,13 @@ async def telegram_webhook(request: Request):
     """
     try:
         body = await request.json()
+
+        # ── Handler callback_query (inline keyboards — evaluación manual) ──
+        callback = body.get("callback_query")
+        if callback:
+            await _procesar_callback_evaluacion(callback)
+            return {"status": "ok"}
+
         message = body.get("message") or body.get("edited_message")
         if not message:
             return {"status": "ok"}
@@ -5300,6 +5422,15 @@ async def telegram_webhook(request: Request):
 
         # El chat_id del mensaje nos dice desde qué grupo escribe Ivan
         _tg_grp = chat_id
+
+        # ── Evaluación manual: admin envía pregunta para el padre ─────────
+        if telefono in _eval_info_pendiente and _eval_info_pendiente[telefono]:
+            _eval_info_pendiente.pop(telefono)
+            # Reenviar la pregunta al padre como mensaje de Ivan
+            await proveedor.enviar_mensaje(telefono, texto_tg)
+            await guardar_mensaje(telefono, "assistant", texto_tg)
+            await enviar_a_topic(thread_id, f"💬 Pregunta enviada al padre: {texto_tg}", telefono=telefono, group_override=_tg_grp)
+            return {"status": "ok"}
 
         # Comandos de control
         if texto_tg.strip() == "/silenciar":
@@ -5949,3 +6080,85 @@ async def _procesar_boton_seguimiento(btn_id: str):
             await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Marcado como descartado")
         else:
             await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Error marcando en Airtable")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# EVALUACIÓN MANUAL — Callbacks de Telegram (inline keyboard)
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Estado pendiente de "pedir más info" en evaluación manual
+_eval_info_pendiente: dict[str, bool] = {}
+
+
+async def _procesar_callback_evaluacion(callback: dict):
+    """Procesa callback_query de los botones inline de evaluación manual."""
+    from agent.ab_test import limpiar_evaluacion_manual
+    from agent.telegram_bridge import responder_callback, enviar_a_topic
+    from agent.brain import generar_respuesta
+
+    callback_id = callback.get("id", "")
+    data = callback.get("data", "")
+    thread_id = callback.get("message", {}).get("message_thread_id")
+    chat_id = callback.get("message", {}).get("chat", {}).get("id")
+
+    if not data.startswith("eval_"):
+        return
+
+    parts = data.split("_", 2)
+    if len(parts) < 3:
+        return
+    accion = parts[1]
+    telefono = parts[2]
+
+    topic_id = thread_id
+    _tg_group = chat_id
+
+    if accion == "aceptar":
+        await responder_callback(callback_id, "✅ Aceptado")
+        await limpiar_evaluacion_manual(telefono)
+
+        historial = await obtener_historial(telefono, limite=20)
+        agent_actual, _ = await obtener_agent_actual(telefono)
+        respuesta = await generar_respuesta(
+            mensaje="[SISTEMA: EVALUACION_APROBADA]",
+            historial=historial,
+            agent_actual=agent_actual,
+        )
+        await proveedor.enviar_mensaje(telefono, respuesta)
+        await guardar_mensaje(telefono, "assistant", respuesta)
+        if topic_id:
+            await enviar_a_topic(topic_id, f"✅ EVAL APROBADA → IVAN: {respuesta}", telefono=telefono, group_override=_tg_group)
+        logger.info(f"[EVAL MANUAL] {telefono} APROBADO")
+
+    elif accion == "rechazar":
+        await responder_callback(callback_id, "❌ Rechazado")
+        await limpiar_evaluacion_manual(telefono)
+
+        historial = await obtener_historial(telefono, limite=20)
+        agent_actual, _ = await obtener_agent_actual(telefono)
+        respuesta = await generar_respuesta(
+            mensaje="[SISTEMA: EVALUACION_RECHAZADA]",
+            historial=historial,
+            agent_actual=agent_actual,
+        )
+        await proveedor.enviar_mensaje(telefono, respuesta)
+        await guardar_mensaje(telefono, "assistant", respuesta)
+
+        try:
+            from agent.airtable_client import actualizar_conversion_lead
+            record_id = await obtener_airtable_record_id(telefono)
+            if record_id:
+                await actualizar_conversion_lead(record_id, "EVALUACION_RECHAZADA")
+        except Exception:
+            pass
+
+        if topic_id:
+            await enviar_a_topic(topic_id, f"❌ EVAL RECHAZADA → IVAN: {respuesta}", telefono=telefono, group_override=_tg_group)
+        logger.info(f"[EVAL MANUAL] {telefono} RECHAZADO")
+
+    elif accion == "info":
+        await responder_callback(callback_id, "💬 Escribí la pregunta en el topic")
+        _eval_info_pendiente[telefono] = True
+        if topic_id:
+            await enviar_a_topic(topic_id, "💬 Escribí la pregunta que querés hacerle al padre. La reenvío como Ivan.", telefono=telefono, group_override=_tg_group)
+        logger.info(f"[EVAL MANUAL] {telefono} — admin va a pedir más info")

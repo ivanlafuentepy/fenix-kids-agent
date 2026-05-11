@@ -384,6 +384,51 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
         return False
 
 
+async def enviar_inline_keyboard(
+    topic_id: int, texto: str, botones: list[list[dict]], group_override: int = 0
+) -> bool:
+    """
+    Envía mensaje con inline keyboard a un topic de Telegram.
+    botones: [[{"text": "✅ Aceptar", "callback_data": "eval_aceptar_recXXX"}]]
+    """
+    group = group_override or _group_id()
+    if not _token() or not group:
+        return False
+    url = _api_url("sendMessage")
+    payload = {
+        "chat_id": group,
+        "message_thread_id": topic_id,
+        "text": texto,
+        "reply_markup": {"inline_keyboard": botones},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+            data = r.json()
+            if data.get("ok"):
+                logger.info(f"[TELEGRAM] Inline keyboard enviado a topic {topic_id}")
+                return True
+            logger.error(f"[TELEGRAM] Error inline keyboard: {data}")
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Excepción inline keyboard: {e}")
+    return False
+
+
+async def responder_callback(callback_query_id: str, texto: str = ""):
+    """Responde a un callback_query (cierra el spinner del botón)."""
+    if not _token():
+        return
+    url = _api_url("answerCallbackQuery")
+    payload = {"callback_query_id": callback_query_id}
+    if texto:
+        payload["text"] = texto
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, json=payload)
+    except Exception:
+        pass
+
+
 async def notificar_referido_telegram(
     lead_nombre_completo: str,
     referidor_nombre_completo: str,
@@ -411,9 +456,9 @@ async def notificar_referido_telegram(
     msg_wa = (
         f"Hola {primer_nombre_referidor} 👋\n\n"
         f"{lead_nombre_completo} se registró con tu link de referido "
-        f"para una clase de prueba gratuita.\n\n"
+        f"para una clase evaluativa.\n\n"
         f"📅 Clase agendada para el {fecha_display}.\n\n"
-        f"Te estaremos teniendo al tanto si viene a probar y si se inscribe eventualmente.\n\n"
+        f"Te estaremos teniendo al tanto si viene a la evaluación y si es aceptado eventualmente.\n\n"
         f"¡Muchísimas gracias por ayudarnos a crecer! 🙌 "
         f"Esperamos poder recibir más referidos de tu parte."
     )
@@ -428,10 +473,10 @@ async def notificar_referido_telegram(
     texto = (
         f"Hola {primer_nombre_referidor} 👋\n\n"
         f"{lead_nombre_completo} se registró con tu link de referido "
-        f"para una clase de prueba gratuita.\n\n"
+        f"para una clase evaluativa.\n\n"
         f"📅 Clase agendada para el {fecha_display}."
         f"{wa_referidor}\n\n"
-        f"Te estaremos teniendo al tanto si viene a probar y si se inscribe eventualmente.\n\n"
+        f"Te estaremos teniendo al tanto si viene a la evaluación y si es aceptado eventualmente.\n\n"
         f"¡Muchísimas gracias por ayudarnos a crecer! 🙌 "
         f"Esperamos poder recibir más referidos de tu parte."
     )

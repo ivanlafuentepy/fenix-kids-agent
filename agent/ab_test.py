@@ -23,6 +23,8 @@ _KEYWORDS_CONVERSION = [
     "datos de papá",
     "datos de mamá",
     "reserva confirmada",
+    "evaluación confirmada",
+    "evaluacion confirmada",
     "quedaron reservados",
     "tiene su lugar",
 ]
@@ -269,3 +271,42 @@ async def obtener_leads_noche_pendiente() -> list[str]:
             select(ConversacionAB.telefono).where(ConversacionAB.noche_pendiente == True)
         )
         return [r[0] for r in result.all()]
+
+
+# ── Evaluación manual (human-in-the-loop para diagnósticos) ──────────────────
+
+
+async def marcar_evaluacion_manual(telefono: str):
+    """Marca lead como EN_EVALUACION_MANUAL — agente se pausa."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            conv.en_evaluacion_manual = True
+            await session.commit()
+            logger.info(f"[EVAL MANUAL] Lead {telefono} en evaluación manual")
+
+
+async def esta_en_evaluacion_manual(telefono: str) -> bool:
+    """Retorna True si el lead está esperando decisión del admin."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        return conv.en_evaluacion_manual if conv else False
+
+
+async def limpiar_evaluacion_manual(telefono: str):
+    """Limpia el estado de evaluación manual — agente retoma."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            conv.en_evaluacion_manual = False
+            await session.commit()
+            logger.info(f"[EVAL MANUAL] Lead {telefono} evaluación manual finalizada")

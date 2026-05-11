@@ -83,6 +83,8 @@ class ConversacionAB(Base):
 
     # Meta CAPI — Click ID del anuncio Click-to-WhatsApp
     ctwa_clid: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Evaluación manual — agente pausado esperando decisión del admin
+    en_evaluacion_manual: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class TopicTelegram(Base):
