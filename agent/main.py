@@ -107,6 +107,21 @@ def _es_mensaje_sospechoso(texto: str) -> bool:
     return any(p in t for p in _PALABRAS_PELIGROSAS)
 
 
+# ── Detección de diagnóstico / neurodivergencia ──────────────────────────────
+_KEYWORDS_DIAGNOSTICO = [
+    r'\btdah\b', r'\btea\b', r'\bautism', r'\bespectro\b', r'\basperger\b',
+    r'\bd[eé]ficit\b', r'\bs[ií]ndrome\b', r'\bneurodiv', r'\bdiagn[oó]stic',
+    r'\bpsic[oó]log', r'\bpsicopedag', r'\bfonoaudi[oó]log',
+    r'\btera(pist|peuta|pia)\b', r'\bmedicad', r'\bmedicaci[oó]n\b',
+    r'\bconcerta\b', r'\britalina\b', r'\batomoxetina\b',
+]
+
+
+def detectar_diagnostico(texto: str) -> bool:
+    """Retorna True si el texto menciona diagnósticos o tratamientos neurodivergentes."""
+    return any(re.search(p, texto.lower()) for p in _KEYWORDS_DIAGNOSTICO)
+
+
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
@@ -1922,6 +1937,30 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Guardar mensaje del usuario ANTES de procesar ──────────────
         # Así nunca se pierde un mensaje aunque algo crashee después.
         await guardar_mensaje(telefono, "user", texto)
+
+        # ── Alerta diagnóstico: si padre menciona TDAH/TEA/etc → avisar admin ──
+        if detectar_diagnostico(texto) and telefono != admin_phone:
+            try:
+                _nombre_diag = ""
+                from agent.airtable_client import _get_records, _LEADS
+                _lr_diag = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                if _lr_diag:
+                    _nombre_diag = _lr_diag[0].get("fields", {}).get("NOMBRE RESPONSABLE", "")
+                _alerta_diag = (
+                    f"🚨 DIAGNÓSTICO MENCIONADO\n\n"
+                    f"Lead: {_nombre_diag or telefono}\n"
+                    f"Tel: {telefono}\n"
+                    f"Mensaje: {texto[:200]}\n\n"
+                    f"Entrá al topic y usá /silenciar si querés responder manual."
+                )
+                if topic_id:
+                    await enviar_a_topic(topic_id, _alerta_diag, telefono=telefono, group_override=_tg_group)
+                _agenda_grp = int(os.getenv("TELEGRAM_AGENDA_GROUP_ID", "0"))
+                if _agenda_grp:
+                    await enviar_a_topic(0, _alerta_diag, group_override=_agenda_grp)
+                logger.info(f"[DIAGNOSTICO] Detectado en {telefono}: {texto[:50]}")
+            except Exception as e:
+                logger.warning(f"[DIAGNOSTICO] Error enviando alerta: {e}")
 
         # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
         if not await dorita_esta_activa(telefono):
