@@ -2203,7 +2203,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
                 )
 
-        # ── Intercepción pre-Claude: horarios, precios, ubicación, interés post-diag ──
+        # ── Intercepción pre-Claude: respuestas fijas que no necesitan IA ──
         # Si el padre pregunta algo que el código puede responder solo,
         # ni llamamos a Claude — ahorra tokens y evita respuestas duplicadas.
         _interceptado = False
@@ -2212,13 +2212,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _pide_precios = _padre_pregunta_precios(texto)
             _pide_horarios = _padre_pregunta_horarios(texto)
             _pide_ubicacion = _padre_pregunta_ubicacion(texto)
+            _pide_duracion = _padre_pregunta_duracion(texto)
+            _pide_que_llevar = _padre_pregunta_que_llevar(texto)
+            _pide_devolucion = _padre_pregunta_devolucion(texto)
+            _pide_efectivo = _padre_pregunta_efectivo(texto)
+            _dice_ya_transfiri = _padre_dice_ya_transfiri(texto)
+            _pide_alias = _padre_pregunta_alias(texto)
             _interes_post_diag = (
                 _diagnostico_ya_enviado(historial)
                 and _padre_muestra_interes(texto)
                 and telefono not in _afiche_enviado
             )
 
-            if _pide_precios or _pide_horarios or _pide_ubicacion or _interes_post_diag:
+            _hay_intercepcion = (
+                _pide_precios or _pide_horarios or _pide_ubicacion or _interes_post_diag
+                or _pide_duracion or _pide_que_llevar or _pide_devolucion
+                or _pide_efectivo or _dice_ya_transfiri or _pide_alias
+            )
+
+            if _hay_intercepcion:
                 _interceptado = True
                 _partes = []  # texto de respuesta
 
@@ -2230,14 +2242,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    # Ya vio el afiche, dar resumen corto en texto
                     _partes.append("Sábado en el parque: 90mil papá + hijo. 2 hijos: 120mil. 3 hijos: 150mil. Solo transferencia 🌳")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
                     _partes.append("Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios")
                 elif _pide_horarios:
-                    # Ya vio el afiche de horarios
                     _partes.append("9:30h | 11:00h | 15:30h — ¿cuál te viene bien? 🤝")
 
                 if _pide_ubicacion:
@@ -2247,8 +2257,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
                     )
 
+                if _pide_duracion:
+                    _partes.append("80 minutos cada sesión 💪 Tu hijo entrena con su grupo y vos entrenás en paralelo con el profe de adultos. Salen los dos renovados 🌳")
+
+                if _pide_que_llevar:
+                    _partes.append("Solo ropa cómoda, zapatillas y agua 💧 Nosotros ponemos todo: instructores, equipamiento, el parque entero 🌳")
+
+                if _pide_devolucion:
+                    _partes.append("El sábado de 90mil es para venir a conocer el parque y entrenar en familia. No se descuenta de un plan ni se devuelve. Si después se enganchan, pasamos a un plan. Si no, no hay compromiso 🤝")
+
+                if _pide_efectivo:
+                    _partes.append("Para el sábado solo transferencia 😊 Si después se inscriben, aceptamos todos los medios de pago.")
+
+                if _dice_ya_transfiri:
+                    _partes.append("Genial! Mandame foto del comprobante así te confirmo 😊")
+
+                if _pide_alias:
+                    _partes.append("El alias es el CI: 1604338")
+
                 respuesta = "\n\n".join(_partes)
-                logger.info(f"[INTERCEPCIÓN] {telefono}: precios={_pide_precios} horarios={_pide_horarios} ubi={_pide_ubicacion} post_diag={_interes_post_diag}")
+                logger.info(f"[INTERCEPCIÓN] {telefono}: precios={_pide_precios} horarios={_pide_horarios} ubi={_pide_ubicacion} duracion={_pide_duracion} que_llevar={_pide_que_llevar} devolucion={_pide_devolucion} efectivo={_pide_efectivo} ya_transfiri={_dice_ya_transfiri} alias={_pide_alias}")
 
         # ── Generar respuesta con Claude (solo si no fue interceptado) ────
         if not _interceptado:
@@ -4868,6 +4896,72 @@ def _padre_pregunta_ubicacion(texto: str) -> bool:
         "donde es", "dónde es", "direccion", "dirección",
         "donde están", "donde estan", "dónde están",
         "como llego", "cómo llego", "lugar", "mapa",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_duracion(texto: str) -> bool:
+    """Detecta si el padre pregunta cuánto dura la clase."""
+    t = texto.lower().strip()
+    patrones = [
+        "cuanto dura", "cuánto dura", "cuanto tiempo", "cuánto tiempo",
+        "duracion", "duración", "cuantas horas", "cuántas horas",
+        "cuanto es la clase", "cuánto es la clase", "cuanto rato", "cuánto rato",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_que_llevar(texto: str) -> bool:
+    """Detecta si el padre pregunta qué llevar o qué necesitan."""
+    t = texto.lower().strip()
+    patrones = [
+        "que llevo", "qué llevo", "que llevar", "qué llevar",
+        "que necesito", "qué necesito", "que tienen que traer", "qué tienen que traer",
+        "que hay que llevar", "qué hay que llevar", "que traigo", "qué traigo",
+        "que necesitan", "qué necesitan", "que debo llevar", "qué debo llevar",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_devolucion(texto: str) -> bool:
+    """Detecta si el padre pregunta por devolución o garantía."""
+    t = texto.lower().strip()
+    patrones = [
+        "devolucion", "devolución", "devuelven", "reembolso",
+        "si no le gusta", "si no les gusta", "garantia", "garantía",
+        "se descuenta", "se puede descontar",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_efectivo(texto: str) -> bool:
+    """Detecta si el padre pregunta por medios de pago / efectivo."""
+    t = texto.lower().strip()
+    patrones = [
+        "efectivo", "en efectivo", "pago en efectivo", "tarjeta",
+        "medio de pago", "medios de pago", "como pago", "cómo pago",
+        "forma de pago", "formas de pago", "puedo pagar",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_dice_ya_transfiri(texto: str) -> bool:
+    """Detecta si el padre dice que ya transfirió pero sin enviar comprobante."""
+    t = texto.lower().strip()
+    patrones = [
+        "ya transferi", "ya transferí", "ya hice la transferencia",
+        "ya pague", "ya pagué", "ya deposite", "ya deposité",
+        "ya envie", "ya envié", "listo ya pague", "listo ya pagué",
+    ]
+    return any(p in t for p in patrones)
+
+
+def _padre_pregunta_alias(texto: str) -> bool:
+    """Detecta si el padre pregunta por el alias bancario."""
+    t = texto.lower().strip()
+    patrones = [
+        "alias", "cual es el alias", "cuál es el alias",
+        "el alias", "numero de alias", "número de alias",
     ]
     return any(p in t for p in patrones)
 
