@@ -107,6 +107,28 @@ def _es_mensaje_sospechoso(texto: str) -> bool:
     return any(p in t for p in _PALABRAS_PELIGROSAS)
 
 
+# ── Detección de spam / scam / cuenta hackeada ──────────────────────────────
+# Links sospechosos, cadenas de estafa, mensajes masivos reenviados.
+# Cuando se detecta: NO responder, silenciar conversación, alertar admin.
+_PATRONES_SPAM = [
+    re.compile(r'https?://[^\s]*\.buzz(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.xyz(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.top(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.click(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.link(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.win(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'https?://[^\s]*\.loan(?:[/\s]|$)', re.IGNORECASE),
+    re.compile(r'me dieron los?\s*[\₲$]\s*[\d.,]+.*pru[eé]balo', re.IGNORECASE),
+    re.compile(r'gan[eéa]\s+[\₲$]?\s*[\d.,]+.*(?:link|haz\s*clic|prueba)', re.IGNORECASE),
+    re.compile(r'(?:regalo|gané|ganaste|sorteo|premio).*https?://', re.IGNORECASE),
+]
+
+
+def _es_spam_o_scam(texto: str) -> bool:
+    """Detecta mensajes de spam, scam o cuenta hackeada."""
+    return any(p.search(texto) for p in _PATRONES_SPAM)
+
+
 # ── Detección de diagnóstico / neurodivergencia ──────────────────────────────
 _KEYWORDS_DIAGNOSTICO = [
     r'\btdah\b', r'\btea\b', r'\bautism', r'\bespectro\b', r'\basperger\b',
@@ -2041,10 +2063,43 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             logger.info(f"[LLAMADA] Pedido de llamada detectado de {telefono}")
             return
 
+        # ── Detección de spam / scam / cuenta hackeada ─────────────────
+        if _es_spam_o_scam(texto):
+            logger.warning(f"[SPAM] Mensaje sospechoso de {telefono}: {texto[:100]}")
+            # Silenciar — NO responder nada al padre
+            await silenciar_dorita(telefono)
+            # Alertar a Ivan en Telegram
+            _spam_alerta = (
+                f"🚨 SPAM/SCAM DETECTADO\n\n"
+                f"Tel: {telefono}\n"
+                f"Mensaje: {texto[:300]}\n\n"
+                f"⚠️ Agente SILENCIADO automáticamente.\n"
+                f"Posible cuenta hackeada.\n\n"
+                f"/reactivar → volver a activar el agente"
+            )
+            if topic_id:
+                await enviar_a_topic(topic_id, _spam_alerta, telefono=telefono, group_override=_tg_group)
+            _agenda_grp = int(os.getenv("TELEGRAM_AGENDA_GROUP_ID", "0"))
+            if _agenda_grp:
+                try:
+                    await enviar_a_topic(None, _spam_alerta, telefono=telefono, group_override=_agenda_grp)
+                except Exception:
+                    pass
+            return
+
         # ── Protección prompt injection ───────────────────────────────────
         if _es_mensaje_sospechoso(texto):
-            respuesta = "Lo siento, no puedo procesar ese mensaje 🙏"
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            logger.warning(f"[INJECTION] Mensaje sospechoso de {telefono}: {texto[:100]}")
+            await silenciar_dorita(telefono)
+            _inj_alerta = (
+                f"🚨 PROMPT INJECTION DETECTADO\n\n"
+                f"Tel: {telefono}\n"
+                f"Mensaje: {texto[:300]}\n\n"
+                f"⚠️ Agente SILENCIADO automáticamente.\n"
+                f"/reactivar → volver a activar el agente"
+            )
+            if topic_id:
+                await enviar_a_topic(topic_id, _inj_alerta, telefono=telefono, group_override=_tg_group)
             return
 
         # ── Modo nocturno (23:00–07:00 PY) — admin y padres inscriptos sin límite
