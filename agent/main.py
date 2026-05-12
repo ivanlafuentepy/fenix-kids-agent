@@ -2620,7 +2620,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # El padre manda datos reales: texto con fechas (tiene "/") y suficiente largo
             # Si pago ya confirmado + Ivan pidió formulario, no exigir keywords —
             # la gente manda datos crudos sin decir "nombre" ni "nacimiento"
-            _tiene_fechas = ("/" in texto or "-" in texto)
+            _meses_texto = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+            _tiene_fechas = ("/" in texto or "-" in texto or any(m in texto.lower() for m in _meses_texto))
             _tiene_keywords = any(p in texto.lower() for p in ["nombre", "mamá", "mama", "papá", "papa", "nene", "nena", "hijo", "hija", "nacimiento"])
             _texto_tiene_datos = (
                 len(texto) > 20
