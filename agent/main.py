@@ -2207,7 +2207,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # No llamamos a Claude — el mensaje está hardcodeado y es siempre igual.
         _interceptado = False
         _acciones_interceptadas = []  # lista de acciones a ejecutar post-respuesta
-        if es_nuevo and agent_actual == "ivan" and not historial:
+        if es_nuevo and agent_actual == "ivan" and len(historial) <= 1:
             _interceptado = True
             respuesta = (
                 "Hola! Te saluda el Profe Ivan de FENIX Kids Academy 🌳\n\n"
