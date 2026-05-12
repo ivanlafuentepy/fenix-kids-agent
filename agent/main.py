@@ -1936,7 +1936,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     f"Lead: {_nombre_diag or telefono}\n"
                     f"Tel: {telefono}\n"
                     f"Mensaje: {texto[:200]}\n\n"
-                    f"Comandos:\n/silenciar → responder manual\n/aprobado → aceptar\n/rechazado → rechazar"
+                    f"⚠️ El agente sigue respondiendo normal (frame parque).\n"
+                    f"/silenciar → tomar control manual"
                     f"{_tg_link}"
                 )
                 if topic_id:

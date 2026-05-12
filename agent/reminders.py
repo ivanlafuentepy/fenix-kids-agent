@@ -39,20 +39,20 @@ _HORARIOS_FENIX = "🕘 9:30h | 🕙 11:00h | 🕞 15:30h"
 
 _MENSAJES_SEGUIMIENTO = {
     "A": [
-        "¡Hola! ¿Te quedó alguna duda sobre FENIX Kids? Acá estoy para contarte lo que necesités 😊",
+        "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
-            f"Por si te sirve, estos son los horarios disponibles para evaluar a tu hijo/a:\n"
-            f"Sábados: {_HORARIOS_FENIX}\n¿Alguno te queda bien?"
+            f"Te cuento los horarios para venir al parque con tu hijo:\n"
+            f"Sábados: {_HORARIOS_FENIX}\n90mil papá + hijo, entrenan juntos 🌳 ¿Cuál te viene bien?"
         ),
-        "La evaluación es de 90.000 Gs y se descuenta si es aceptado y se inscribe 🌳 ¿Querés que te ayude a agendar?",
+        "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Querés que te ayude a reservar un sábado?",
     ],
     "B": [
-        "¿Todo bien? Si querés te cuento más sobre cómo funcionan los entrenamientos al aire libre 🌿",
+        "¿Todo bien? Si querés te cuento más sobre el Parque FENIX, entrenamientos al aire libre para toda la familia 🌿",
         (
-            f"Te cuento los horarios disponibles para evaluar a tu hijo/a:\n"
-            f"Sábados: {_HORARIOS_FENIX}\n¿Te agendo una evaluación?"
+            f"Los sábados son así: tu hijo trepa, corre, supera desafíos en la naturaleza. Y vos entrenás al lado con tu propio profe 💪\n"
+            f"Sábados: {_HORARIOS_FENIX}\n¿Cuál te viene bien?"
         ),
-        "En FENIX trabajamos el desarrollo físico y emocional de los niños con retos reales en la naturaleza 🌳 ¿Querés que te ayude a coordinar una visita?",
+        "En el Parque FENIX entrenás con tu hijo en 3000m² de naturaleza, frente al río 🌳 ¿Querés venir a probar un sábado?",
     ],
 }
 

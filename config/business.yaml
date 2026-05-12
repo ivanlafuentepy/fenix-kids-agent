@@ -18,10 +18,10 @@ agentes:
     nombre: "Profe Ivan Lafuente"
     rol: "Director, entrenador y agente de ventas"
     tono: "empático, profesional, motivador, humano"
-  nixie:
-    nombre: "Nixie"
-    rol: "Asistente operativa de agenda y reservas"
-    tono: "amable, simple, eficiente, directa"
+  aurora:
+    nombre: "Aurora"
+    rol: "Asistente operativa de agenda y reservas para familias inscriptas"
+    tono: "amable, cálida, eficiente"
 
 precios:
   clase_prueba: 90000
