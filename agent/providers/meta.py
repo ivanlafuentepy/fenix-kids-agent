@@ -90,9 +90,10 @@ class ProveedorMeta(ProveedorWhatsApp):
                     else:
                         continue  # cualquier otro tipo desconocido
 
-                    # Capturar ctwa_clid del anuncio Click-to-WhatsApp
+                    # Capturar ctwa_clid y source_id del anuncio Click-to-WhatsApp
                     _referral = msg.get("referral", {})
                     _ctwa_clid = _referral.get("ctwa_clid") if _referral else None
+                    _ad_source_id = _referral.get("source_id") if _referral else None
 
                     if texto:
                         mensajes.append(MensajeEntrante(
@@ -104,6 +105,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                             es_boton=es_boton,
                             btn_id=btn_id,
                             ctwa_clid=_ctwa_clid,
+                            ad_source_id=_ad_source_id,
                         ))
         return mensajes
 

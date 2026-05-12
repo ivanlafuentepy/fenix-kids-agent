@@ -45,6 +45,7 @@ _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
 _PRUEBAS   = "PRUEBA FENIX"
 _CONTENIDO = "CONTENIDO FENIX"
+_ANUNCIOS  = "ANUNCIOS FENIX"
 _REDES     = "REDES FENIX"
 
 
@@ -171,6 +172,14 @@ async def _delete(table: str, record_id: str) -> bool:
 
 # ── LEADS ─────────────────────────────────────────────────────────────────────
 
+async def buscar_anuncio_por_ad_id(meta_ad_id: str) -> str | None:
+    """Busca el record ID de un anuncio en ANUNCIOS FENIX por su Meta Ad ID."""
+    records = await _get_records(_ANUNCIOS, formula=f"{{META AD ID}}='{meta_ad_id}'", max_records=1)
+    if records:
+        return records[0]["id"]
+    return None
+
+
 async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     """
     Crea un registro nuevo en LEADS.
@@ -183,13 +192,28 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
 
     from datetime import datetime, timezone, timedelta
     _PY_TZ = timezone(timedelta(hours=-3))
-    resultado = await _post(_LEADS, {
+
+    campos = {
         "TELEFONO": telefono,
         "ROMPEHIELOS": rompehielos,
         "CONVERSION": "CONSULTA",
         "AGENT_ACTUAL": "IVAN",
         "FECHA CREACION": datetime.now(_PY_TZ).isoformat(),
-    })
+    }
+
+    # Vincular anuncio si hay ad_source_id en la DB
+    try:
+        from agent.memory import obtener_ad_source_id
+        ad_id = await obtener_ad_source_id(telefono)
+        if ad_id:
+            anuncio_record = await buscar_anuncio_por_ad_id(ad_id)
+            if anuncio_record:
+                campos["ANUNCIO"] = [anuncio_record]
+                logger.info(f"[AD] Lead {telefono} vinculado a anuncio {ad_id}")
+    except Exception as e:
+        logger.warning(f"[AD] Error vinculando anuncio para {telefono}: {e}")
+
+    resultado = await _post(_LEADS, campos)
     if resultado:
         record_id = resultado["id"]
         logger.info(f"Lead creado en Airtable: {telefono} → {record_id}")

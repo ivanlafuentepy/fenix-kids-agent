@@ -1486,6 +1486,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await guardar_ctwa_clid(msg.telefono, msg.ctwa_clid)
             logger.info(f"[CAPI] ctwa_clid capturado para {msg.telefono}")
 
+        # Capturar ad_source_id (ID del anuncio Meta) del referral
+        if hasattr(msg, 'ad_source_id') and msg.ad_source_id:
+            from agent.memory import guardar_ad_source_id
+            await guardar_ad_source_id(msg.telefono, msg.ad_source_id)
+            logger.info(f"[AD] ad_source_id capturado para {msg.telefono}: {msg.ad_source_id}")
+
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
         if texto == "[audio]":
             _media_token = os.getenv("META_MEDIA_TOKEN", "")

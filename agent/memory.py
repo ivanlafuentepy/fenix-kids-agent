@@ -83,6 +83,8 @@ class ConversacionAB(Base):
 
     # Meta CAPI — Click ID del anuncio Click-to-WhatsApp
     ctwa_clid: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # ID del anuncio Meta (referral.source_id)
+    ad_source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class TopicTelegram(Base):
@@ -220,6 +222,7 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
         ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
+        ("conversaciones_ab", "ad_source_id",          "VARCHAR(100)"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:
@@ -436,5 +439,29 @@ async def obtener_ctwa_clid(telefono: str) -> str | None:
     async with async_session() as session:
         result = await session.execute(
             select(ConversacionAB.ctwa_clid).where(ConversacionAB.telefono == telefono)
+        )
+        return result.scalar_one_or_none()
+
+
+# ── Ad Source ID (referral.source_id) ────────────────────────────────────────
+
+async def guardar_ad_source_id(telefono: str, ad_source_id: str):
+    """Guarda el ID del anuncio Meta que trajo a este lead."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv and not conv.ad_source_id:
+            conv.ad_source_id = ad_source_id
+            await session.commit()
+            logger.info(f"[AD] ad_source_id guardado para {telefono}: {ad_source_id}")
+
+
+async def obtener_ad_source_id(telefono: str) -> str | None:
+    """Retorna el ID del anuncio Meta para este teléfono, o None."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB.ad_source_id).where(ConversacionAB.telefono == telefono)
         )
         return result.scalar_one_or_none()

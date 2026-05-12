@@ -22,6 +22,7 @@ class MensajeEntrante:
     es_boton: bool = False        # True si es respuesta a botón interactivo
     btn_id: str | None = None     # ID del botón clickeado (para distinguir acciones)
     ctwa_clid: str | None = None   # Click ID del anuncio CTWA (para atribución Meta CAPI)
+    ad_source_id: str | None = None  # ID del anuncio Meta (referral.source_id)
 
 
 class ProveedorWhatsApp(ABC):
