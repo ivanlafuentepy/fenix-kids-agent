@@ -188,15 +188,15 @@ async def main():
         dia = dias[fecha_actual.weekday()]
 
         convs = por_fecha.get(fs, [])
-        total_ag = sum(1 for _, _, msgs in convs if tiene_agendamiento(msgs))
-        total_res = sum(1 for tel, _, _ in convs if tel in real_reservas)
+        total_datos = sum(1 for _, _, msgs in convs if tiene_agendamiento(msgs))
+        total_ag = sum(1 for tel, _, _ in convs if tel in real_reservas)
 
         lines = []
         lines.append(f"# CONVERSACIONES FENIX (LEADS) - {dia} {fd}")
         lines.append("")
         lines.append(f"**Total conversaciones activas:** {len(convs)}")
-        lines.append(f"**Total agendados:** {total_ag}")
-        lines.append(f"**Total reservados (Airtable):** {total_res}")
+        lines.append(f"**Agendaron (pagaron):** {total_ag}")
+        lines.append(f"**Datos enviados (sin pagar):** {total_datos}")
         lines.append("")
 
         # Contact table
@@ -210,7 +210,7 @@ async def main():
             nombre = extraer_nombre_de_conversacion(data.get("conversacion", []))
             es_res = tel in real_reservas
             es_ag = tiene_agendamiento(msgs)
-            estado = "RESERVO" if es_res else ("Agendo" if es_ag else "-")
+            estado = "AGENDÓ ✅" if es_res else ("Datos enviados" if es_ag else "-")
             lines.append(f"| {idx} | {tel} | {nombre or '-'} | {len(msgs)} | {estado} |")
 
         lines.append("")
@@ -255,7 +255,7 @@ async def main():
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-        print(f"  {fs}.md - {len(convs)} convs, {total_res} reservas")
+        print(f"  {fs}.md - {len(convs)} convs, {total_ag} agendaron")
         fecha_actual += timedelta(days=1)
 
     print("\nListo!")
