@@ -216,37 +216,8 @@ _PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "595982790407")}
 
 import re
 
-def _normalizar_numeros_lead_viejo(numeros: list[int]) -> list[int]:
-    """Mapea selecciones del menú viejo (1-15) al nuevo (1-10) para leads en curso."""
-    mapeo = {
-        6: 1, 5: 2, 3: 3, 12: 4, 7: 5, 2: 6,
-        1: 7, 4: 7, 11: 7,   # fusión cluster emocional
-        9: 8, 10: 8,          # fusión cluster motriz
-        8: 9,
-        13: 10, 14: 10, 15: 10,  # ahora todos van a "Otro"
-    }
-    return list(set(mapeo.get(n, n) for n in numeros))
-
-
-def _contar_numeros_rompehielos(texto: str) -> int:
-    """Cuenta cuántos números del 1 al 15 envió el lead (respuesta al rompehielos)."""
-    texto_norm = re.sub(r'[.\-/\s]+', ',', texto.strip())
-    numeros = re.findall(r'\b(1[0-5]|[1-9])\b', texto_norm)
-    return len(set(numeros))
-
-
-def _delay_por_numeros(cantidad: int) -> int:
-    """Retorna el delay en segundos según cantidad de números elegidos."""
-    if cantidad <= 1:
-        return 30
-    elif cantidad == 2:
-        return 60
-    elif cantidad == 3:
-        return 120
-    elif cantidad == 4:
-        return 180
-    else:
-        return 240
+# (eliminado: _normalizar_numeros_lead_viejo, _contar_numeros_rompehielos, _delay_por_numeros
+#  — ya no se usa menú de dolor 1-15/1-10)
 
 
 import json
@@ -960,21 +931,7 @@ def _padre_ya_pidio_precios(historial: list[dict]) -> bool:
     return False
 
 
-def _contar_numeros_rompehielos_historial(historial: list[dict]) -> tuple[int, list[int]]:
-    """Busca en el historial los números del rompehielos que eligió el padre.
-    Si detecta números del menú viejo (>10), los normaliza al menú nuevo."""
-    for m in historial:
-        if m.get("role") == "user":
-            _cont = re.sub(r'[.\-/\s]+', ',', m.get("content", "").strip())
-            nums = [int(n) for n in re.findall(r'\b(1[0-5]|[1-9])\b', _cont)]
-            if nums and len(nums) >= 1:
-                contenido = m.get("content", "").strip()
-                if len(nums) >= 2 or re.fullmatch(r'[\d,.\s y]+', contenido):
-                    # Si hay números >10, es menú viejo → normalizar
-                    if any(n > 10 for n in nums):
-                        nums = _normalizar_numeros_lead_viejo(nums)
-                    return len(nums), nums
-    return 0, []
+# (eliminado: _contar_numeros_rompehielos_historial — ya no hay menú de dolor)
 
 
 # ── Detección de pedido de llamada ───────────────────────────────────────────
@@ -2267,7 +2224,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
                     # Ya vio el afiche, dar resumen corto en texto
-                    _partes.append("Clase de prueba: 90mil (se descuenta de la primera cuota si se inscribe). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
+                    _partes.append("Sábado en el parque: 90mil papá + hijo. 2 hijos: 120mil. 3 hijos: 150mil. Solo transferencia 🌳")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -3689,7 +3646,7 @@ async def _ejecutar_followup():
             elif seguimientos == 1:
                 instruccion = (
                     f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
-                    f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
+                    f"Preguntá si sigue interesado en venir al parque con {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
             elif seguimientos == 2:
@@ -4929,14 +4886,14 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría agendarle una clase de prueba a {nombre_hijo}?\n\n"
+            f"¿Te gustaría traer a {nombre_hijo} al parque este sábado?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
             "así te explico todo 😊"
         )
     else:
         # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría agendar una clase de prueba?\n\n"
+            "¿Te gustaría venir al parque este sábado?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
@@ -4960,13 +4917,15 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje con precios escritos + promo trimestral
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🏷️ Clase de prueba: 90.000 Gs (se descuenta de la primera cuota si se inscribe)\n\n"
-            "📅 *PLAN MENSUAL Todos los sábados:* 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
-            "🔥 *PROMO TRIMESTRAL — (40% OFF) 🔥*\n\n"
-            "📅 *Todos los sábados:* 690.000 + matrícula 140.000\n"
-            "   💰 Total: 830.000 Gs\n"
-            "   ➡️ Ahorrás 420.000 Gs (40% OFF) 🔥\n\n"
-            "¿Te gustaría agendar una clase de prueba? 😊"
+            "🌳 *Sábado en el Parque:*\n"
+            "👨‍👦 Papá + 1 hijo: 90.000 Gs\n"
+            "👨‍👦‍👦 Papá + 2 hijos: 120.000 Gs\n"
+            "Papá + 3 hijos: 150.000 Gs\n\n"
+            "📅 *PLAN MENSUAL* (4 sábados, papá + hijo): 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
+            "🔥 *PROMO TRIMESTRAL — 40% OFF* 🔥\n"
+            "690.000 + matrícula 140.000 = 830.000 Gs total\n"
+            "➡️ Ahorrás 420.000 Gs 🔥\n\n"
+            "¿Qué sábado te viene mejor? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
@@ -5357,7 +5316,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         if es_gratis:
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"Tu clase de prueba es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
+                f"Tu sábado en el parque es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
                 f"Te confirmo el horario en breve, muchas gracias {nombre_padre} 🤝"
             )
         else:
@@ -5365,7 +5324,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             monto_fmt = f"{monto:,}".replace(",", ".")
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"El monto de la clase de prueba es {monto_fmt} Gs\n\n"
+                f"El monto del sábado en el parque es {monto_fmt} Gs\n\n"
                 f"{DATOS_BANCARIOS}\n\n"
                 f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
             )
