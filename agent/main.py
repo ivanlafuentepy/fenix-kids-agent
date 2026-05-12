@@ -2203,12 +2203,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
                 )
 
+        # ── FASE 1: mensaje de apertura fijo para leads nuevos de Ivan ─────
+        # No llamamos a Claude — el mensaje está hardcodeado y es siempre igual.
+        _interceptado = False
+        _acciones_interceptadas = []  # lista de acciones a ejecutar post-respuesta
+        if es_nuevo and agent_actual == "ivan" and not historial:
+            _interceptado = True
+            respuesta = (
+                "Hola! Te saluda el Profe Ivan de FENIX Kids Academy 🌳\n\n"
+                "Imaginate este sábado: tu hijo trepando árboles, corriendo al sol, "
+                "jugando frente al río, en una mansión de 3000m² rodeada de naturaleza 🔥\n\n"
+                "Eso es el PARQUE FENIX. Acá no hay pantallas, no hay paredes, no hay aburrimiento. "
+                "Hay tierra, árboles, desafíos reales y otros chicos como él.\n\n"
+                "Y la mejor parte: vos también entrenás con él. Tenemos un profe para los papás "
+                "en el mismo parque, al mismo tiempo. Van a salir los dos renovados 💪\n\n"
+                "¿Cómo se llama y qué edad tiene tu hijo? 🤝"
+            )
+            logger.info(f"[FASE1] {telefono}: mensaje de apertura fijo (sin Claude)")
+
         # ── Intercepción pre-Claude: respuestas fijas que no necesitan IA ──
         # Si el padre pregunta algo que el código puede responder solo,
         # ni llamamos a Claude — ahorra tokens y evita respuestas duplicadas.
-        _interceptado = False
-        _acciones_interceptadas = []  # lista de acciones a ejecutar post-respuesta
-        if agent_actual == "ivan":
+        if not _interceptado and agent_actual == "ivan":
             _pide_precios = _padre_pregunta_precios(texto)
             _pide_horarios = _padre_pregunta_horarios(texto)
             _pide_ubicacion = _padre_pregunta_ubicacion(texto)
