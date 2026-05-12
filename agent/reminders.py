@@ -42,17 +42,17 @@ _MENSAJES_SEGUIMIENTO = {
         "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
             f"Te cuento los horarios para venir al parque con tu hijo:\n"
-            f"Sábados: {_HORARIOS_FENIX}\n90mil papá + hijo, entrenan juntos 🌳 ¿Cuál te viene bien?"
+            f"Sábados: {_HORARIOS_FENIX}\n90mil papá + hijo, entrenan juntos 🌳 ¿Te gustaría agendar un sábado inolvidable para vos y tu hijo?"
         ),
-        "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Querés que te ayude a reservar un sábado?",
+        "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
     ],
     "B": [
         "¿Todo bien? Si querés te cuento más sobre el Parque FENIX, entrenamientos al aire libre para toda la familia 🌿",
         (
             f"Los sábados son así: tu hijo trepa, corre, supera desafíos en la naturaleza. Y vos entrenás al lado con tu propio profe 💪\n"
-            f"Sábados: {_HORARIOS_FENIX}\n¿Cuál te viene bien?"
+            f"Sábados: {_HORARIOS_FENIX}\n¿Te gustaría agendar un sábado inolvidable para vos y tu hijo? 🤝"
         ),
-        "En el Parque FENIX entrenás con tu hijo en 3000m² de naturaleza, frente al río 🌳 ¿Querés venir a probar un sábado?",
+        "En el Parque FENIX entrenás con tu hijo en 3000m² de naturaleza, frente al río 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
     ],
 }
 

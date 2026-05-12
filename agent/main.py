@@ -3647,7 +3647,7 @@ async def _ejecutar_followup():
             elif seguimientos == 1:
                 instruccion = (
                     f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
-                    f"Preguntá si sigue interesado en venir al parque con {nombre_hijo or 'su hijo/a'}. "
+                    f"Preguntá si le gustaría agendar un sábado inolvidable para él y {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
             elif seguimientos == 2:
@@ -4887,15 +4887,15 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría traer a {nombre_hijo} al parque este sábado?\n\n"
-            "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
+            f"¿Te gustaría agendar un sábado inolvidable para vos y {nombre_hijo}?\n\n"
+            "Te puedo reservar por acá, o si preferís te llamo un rato "
             "así te explico todo 😊"
         )
     else:
         # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría venir al parque este sábado?\n\n"
-            "Te puedo reservar un sábado por acá, o si preferís te llamo "
+            "¿Te gustaría agendar un sábado inolvidable para vos y tu hijo?\n\n"
+            "Te puedo reservar por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
 
@@ -4926,7 +4926,7 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
             "🔥 *PROMO TRIMESTRAL — 40% OFF* 🔥\n"
             "690.000 + matrícula 140.000 = 830.000 Gs total\n"
             "➡️ Ahorrás 420.000 Gs 🔥\n\n"
-            "¿Qué sábado te viene mejor? 😊"
+            "¿Te gustaría agendar un sábado inolvidable para vos y tu hijo? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
