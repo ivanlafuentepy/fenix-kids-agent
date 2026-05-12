@@ -1979,7 +1979,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     f"Lead: {_nombre_diag or telefono}\n"
                     f"Tel: {telefono}\n"
                     f"Mensaje: {texto[:200]}\n\n"
-                    f"Comandos:\n/silenciar → responder manual\n/aprobado → aceptar evaluación\n/rechazado → rechazar"
+                    f"Comandos:\n/silenciar → responder manual\n/aprobado → aceptar\n/rechazado → rechazar"
                     f"{_tg_link}"
                 )
                 if topic_id:
@@ -2267,7 +2267,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
                     # Ya vio el afiche, dar resumen corto en texto
-                    _partes.append("Evaluación: 90mil (se descuenta si es aceptado y se inscribe). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
+                    _partes.append("Clase de prueba: 90mil (se descuenta de la primera cuota si se inscribe). Promo trimestral todos los sábados: 830mil total (40% OFF) 🔥")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -2294,6 +2294,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 agent_actual=agent_actual,
                 contexto_extra=contexto_extra,
             )
+
+        # ── Limpiar comandos internos [SISTEMA:...] que Claude genera ─────
+        # Estos son comandos internos que NUNCA deben llegar al padre
+        if "[SISTEMA:" in respuesta:
+            # Extraer el bloque [SISTEMA:...] para logging pero NO enviarlo
+            _sistema_match = re.search(r'\[SISTEMA:.*?\](?:.*?)(?=\n\n|\Z)', respuesta, re.DOTALL)
+            if _sistema_match:
+                logger.info(f"[SISTEMA] Comando interno detectado: {_sistema_match.group()[:200]}")
+            # Limpiar TODO lo que empiece con [SISTEMA: hasta el final del bloque
+            respuesta = re.sub(r'\[SISTEMA:[^\]]*\].*?(?=\n\n|\Z)', '', respuesta, flags=re.DOTALL).strip()
+            # Si quedó vacío después de limpiar, no enviar nada
+            if not respuesta:
+                logger.info(f"[SISTEMA] Respuesta vaciada tras limpiar comando interno para {telefono}")
+                return
 
         # ── Anti-repetición: quitar preguntas que ya se hicieron ──────────
         if agent_actual == "ivan" and historial:
@@ -3675,7 +3689,7 @@ async def _ejecutar_followup():
             elif seguimientos == 1:
                 instruccion = (
                     f"[SISTEMA: Segundo seguimiento a {primer_nombre}. Ya le recordaste ayer y respondió. "
-                    f"Preguntá si sigue interesado en la evaluación para {nombre_hijo or 'su hijo/a'}. "
+                    f"Preguntá si sigue interesado en la clase de prueba para {nombre_hijo or 'su hijo/a'}. "
                     f"Ofrecé ayuda si tiene alguna duda. Corto y directo. Máximo 2 líneas.]"
                 )
             elif seguimientos == 2:
@@ -4915,14 +4929,14 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría agendar una evaluación para {nombre_hijo}?\n\n"
+            f"¿Te gustaría agendarle una clase de prueba a {nombre_hijo}?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo un rato "
             "así te explico todo 😊"
         )
     else:
         # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría agendar una evaluación?\n\n"
+            "¿Te gustaría agendar una clase de prueba?\n\n"
             "Te puedo reservar un sábado por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
@@ -4946,13 +4960,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje con precios escritos + promo trimestral
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🏷️ Clase evaluativa: 90.000 Gs (se descuenta si es aceptado y se inscribe)\n\n"
+            "🏷️ Clase de prueba: 90.000 Gs (se descuenta de la primera cuota si se inscribe)\n\n"
             "📅 *PLAN MENSUAL Todos los sábados:* 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
             "🔥 *PROMO TRIMESTRAL — (40% OFF) 🔥*\n\n"
             "📅 *Todos los sábados:* 690.000 + matrícula 140.000\n"
             "   💰 Total: 830.000 Gs\n"
             "   ➡️ Ahorrás 420.000 Gs (40% OFF) 🔥\n\n"
-            "¿Te gustaría agendar una evaluación? 😊"
+            "¿Te gustaría agendar una clase de prueba? 😊"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
@@ -5343,7 +5357,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         if es_gratis:
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"Tu evaluación es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
+                f"Tu clase de prueba es GRATIS 🎉 (cortesía referidos FENIX Kids)\n\n"
                 f"Te confirmo el horario en breve, muchas gracias {nombre_padre} 🤝"
             )
         else:
@@ -5351,7 +5365,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             monto_fmt = f"{monto:,}".replace(",", ".")
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
-                f"El monto de la evaluación es {monto_fmt} Gs\n\n"
+                f"El monto de la clase de prueba es {monto_fmt} Gs\n\n"
                 f"{DATOS_BANCARIOS}\n\n"
                 f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
             )
