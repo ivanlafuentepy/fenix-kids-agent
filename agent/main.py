@@ -3848,8 +3848,11 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
             ultimo = date.fromisoformat(hasta) - timedelta(days=1)
             return f"{nombre} {hoy.year}", desde, ultimo.isoformat()
 
-    # Default: mes corriente
+    # Default: mes corriente (anuncios empezaron el 3 de mayo 2026)
     desde = f"{hoy.year}-{hoy.month:02d}-01"
+    # Los anuncios arrancaron el 3/5, no contar leads orgánicos previos
+    if hoy.year == 2026 and hoy.month == 5:
+        desde = "2026-05-03"
     if hoy.month == 12:
         hasta_next = f"{hoy.year + 1}-01-01"
     else:
