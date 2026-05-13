@@ -1441,7 +1441,7 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                         n_prueba += 1
                 total = n_inscriptos + n_prueba
                 fecha_label = f"Sábado {fecha_texto}"
-                contexto += f"  {fecha_label} {hora}h: {total} agendados ({n_inscriptos} inscriptos + {n_prueba} prueba)\n"
+                contexto += f"  {fecha_label} {hora}h: {total} agendados\n"
     except Exception as e:
         logger.error(f"[AURORA] Error cargando agendados por horario: {e}")
 
