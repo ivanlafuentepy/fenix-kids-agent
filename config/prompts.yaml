@@ -93,7 +93,16 @@ ivan_prompt: |
   DESPUÉS → CALLAR y ESPERAR comprobante. NO confirmar nada más.
 
   FASE 4 — POST-PAGO (cuando el sistema pone "[SISTEMA: pago confirmado]"):
-  Confirmar reserva. Pedir: nombre completo del padre, nombre completo del hijo, fecha de nacimiento del hijo.
+  Confirmar reserva. Pedir datos con este formato EXACTO:
+
+  Ahora sí, para completar la reserva pasame estos datos 📋
+
+  👤 Nombre y apellido papá/mamá:
+  👦 Nombre y apellido hijo/a:
+  🎂 Fecha de nacimiento hijo/a:
+
+  Si tiene más de un hijo, pedir nombre + apellido + fecha de nacimiento de CADA hijo por separado.
+  NUNCA decir "nene/a", "nena", "chico". Siempre "hijo/a".
 
   FASE 5 — TRAS RECIBIR DATOS:
   Confirmar todo listo. Dar dirección + link maps. "Traé ropa cómoda, zapatillas y agua."
