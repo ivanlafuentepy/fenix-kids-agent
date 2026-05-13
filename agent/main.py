@@ -4832,8 +4832,32 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             continue
         registros_filtrados.append(rec)
 
-    if not registros_filtrados:
-        await proveedor.enviar_mensaje(telefono, f"📊 RESUMEN ANUNCIOS — {label}\n\nSin agendados en este período.")
+    # Contar leads totales por día (LEADS FENIX por FECHA CREACION)
+    leads_por_fecha = defaultdict(int)
+    _offset_leads = None
+    while True:
+        _params_l = "pageSize=100&fields%5B%5D=FECHA%20CREACION"
+        if _offset_leads:
+            _params_l += f"&offset={_offset_leads}"
+        _url_l = f"https://api.airtable.com/v0/{base_id}/LEADS%20FENIX?{_params_l}"
+        async with _httpx_r.AsyncClient(timeout=15) as _cl:
+            _r_l = await _cl.get(_url_l, headers={"Authorization": f"Bearer {api_key}"})
+            _data_l = _r_l.json()
+        for _rec_l in _data_l.get("records", []):
+            _fc_l = _fecha_py(_rec_l.get("fields", {}).get("FECHA CREACION", ""))
+            if _fc_l:
+                if fecha_desde and _fc_l < fecha_desde:
+                    continue
+                if fecha_hasta and _fc_l > fecha_hasta:
+                    continue
+                leads_por_fecha[_fc_l] += 1
+        _offset_leads = _data_l.get("offset")
+        if not _offset_leads:
+            break
+    total_leads = sum(leads_por_fecha.values())
+
+    if not registros_filtrados and total_leads == 0:
+        await proveedor.enviar_mensaje(telefono, f"📊 RESUMEN ANUNCIOS — {label}\n\nSin datos en este período.")
         return
 
     # Agrupar por fecha + contar por monto
@@ -4858,21 +4882,29 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     _GASTO_DIARIO = 200_000  # Gs por día en anuncios
     total_agendados = len(registros_filtrados)
     total_agendado = sum(d["total_monto"] for d in por_fecha.values())
-    num_dias = len(por_fecha)
+    num_dias = max(len(leads_por_fecha), len(por_fecha))
     total_gastado = num_dias * _GASTO_DIARIO
     diferencia = total_agendado - total_gastado
     total_agendado_fmt = f"{total_agendado:,}".replace(",", ".")
     total_gastado_fmt = f"{total_gastado:,}".replace(",", ".")
     diferencia_fmt = f"{diferencia:,}".replace(",", ".")
     signo = "+" if diferencia >= 0 else ""
+    pct_global = f"{(total_agendados/total_leads*100):.0f}%" if total_leads else "0%"
+    media_agendados_dia = f"{total_agendados/num_dias:.1f}" if num_dias else "0"
+    media_monto_dia = f"{total_agendado//num_dias:,}".replace(",", ".") if num_dias else "0"
 
     lineas = [
         f"📊 RESUMEN ANUNCIOS — {label}",
-        f"Total: {total_agendados} agendados — {total_agendado_fmt} Gs\n",
+        f"🌟 Leads: {total_leads} | {total_agendados} agendados | {pct_global} | {media_agendados_dia}/día",
+        f"✅ {total_agendado_fmt} Gs | {media_monto_dia}/día",
+        "",
     ]
 
-    for fecha_iso in sorted(por_fecha.keys(), reverse=True):
-        d = por_fecha[fecha_iso]
+    # Todas las fechas (leads + agendados)
+    todas_fechas = sorted(set(list(leads_por_fecha.keys()) + list(por_fecha.keys())), reverse=True)
+    for fecha_iso in todas_fechas:
+        d = por_fecha.get(fecha_iso, {"90": 0, "120": 0, "150": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+        leads_dia = leads_por_fecha.get(fecha_iso, 0)
         # Formato: DOM 4/5
         try:
             _fd = _date_cls.fromisoformat(fecha_iso)
@@ -4880,21 +4912,27 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             fecha_label = f"{dia_sem} {_fd.day}/{_fd.month}"
         except Exception:
             fecha_label = fecha_iso
+        pct_dia = f"{(d['cantidad']/leads_dia*100):.0f}%" if leads_dia else "0%"
         monto_dia = f"{d['total_monto']:,}".replace(",", ".")
         gasto_dia_fmt = f"{_GASTO_DIARIO:,}".replace(",", ".")
-        lineas.append(f"📅 {fecha_label} — {d['cantidad']} agendados — {monto_dia} Gs (gasto: {gasto_dia_fmt})")
-        # Desglose por monto
-        desglose = []
-        if d["90"]:
-            desglose.append(f"90mil: {d['90']}")
-        if d["120"]:
-            desglose.append(f"120mil: {d['120']}")
-        if d["150"]:
-            desglose.append(f"150mil: {d['150']}")
-        if d["sin"]:
-            desglose.append(f"s/monto: {d['sin']}")
-        if desglose:
-            lineas.append(f"   {' | '.join(desglose)}")
+        lineas.append(f"📅 {fecha_label} — {leads_dia} leads")
+        if d["cantidad"]:
+            lineas.append(f"✅ {d['cantidad']} agendados | {pct_dia}")
+            lineas.append(f"🔔 Total: {monto_dia} Gs (gasto: {gasto_dia_fmt})")
+            # Desglose por monto
+            desglose = []
+            if d["90"]:
+                desglose.append(f"90mil: {d['90']}")
+            if d["120"]:
+                desglose.append(f"120mil: {d['120']}")
+            if d["150"]:
+                desglose.append(f"150mil: {d['150']}")
+            if d["sin"]:
+                desglose.append(f"s/monto: {d['sin']}")
+            if desglose:
+                lineas.append(f"   💵 {' | '.join(desglose)}")
+        else:
+            lineas.append(f"✅ 0 agendados")
 
     # Totales finales
     lineas.append("")
