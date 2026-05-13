@@ -2727,12 +2727,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # Fecha/hora de la reserva confirmada
                 _fecha_res = ""
                 _hora_res = ""
+                _MESES_A_NUM = {"enero":"01","febrero":"02","marzo":"03","abril":"04","mayo":"05","junio":"06",
+                                "julio":"07","agosto":"08","septiembre":"09","octubre":"10","noviembre":"11","diciembre":"12"}
                 for _m_res in reversed(historial_completo):
                     if _m_res.get("role") == "assistant" and "reserva confirmada" in _m_res.get("content", "").lower():
                         _match_fecha = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_res["content"].lower())
                         if _match_fecha:
-                            _fecha_res = _match_fecha.group(1)
-                            _hora_res = _match_fecha.group(2)
+                            _fecha_txt = _match_fecha.group(1)  # "16 de mayo"
+                            _hora_res = _match_fecha.group(2).replace("h", ":").rstrip(":")
+                            # Convertir "16 de mayo" → "2026-05-16"
+                            _mf = re.match(r"(\d{1,2})\s+de\s+(\w+)", _fecha_txt)
+                            if _mf and _mf.group(2) in _MESES_A_NUM:
+                                _dia = _mf.group(1).zfill(2)
+                                _mes = _MESES_A_NUM[_mf.group(2)]
+                                _fecha_res = f"2026-{_mes}-{_dia}"
+                            else:
+                                _fecha_res = _fecha_txt  # fallback
                         break
                 fecha_hora = f"el sábado {_fecha_res} a las {_hora_res}" if _fecha_res else "el sábado"
 
