@@ -2639,8 +2639,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # El padre manda datos reales: texto con fechas (tiene "/") y suficiente largo
             # Si pago ya confirmado + Ivan pidió formulario, no exigir keywords —
             # la gente manda datos crudos sin decir "nombre" ni "nacimiento"
+            import re as _re_form
             _meses_texto = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-            _tiene_fechas = ("/" in texto or "-" in texto or any(m in texto.lower() for m in _meses_texto))
+            # Fecha real: dd/mm/yyyy, dd-mm-yyyy, o nombre de mes — NO confundir con RUC (7dígitos-1dígito)
+            _tiene_fecha_slash = bool(_re_form.search(r"\d{1,2}/\d{1,2}", texto))
+            _tiene_fecha_guion = bool(_re_form.search(r"\d{1,2}-\d{1,2}-\d{2,4}", texto))
+            _tiene_mes_texto = any(m in texto.lower() for m in _meses_texto)
+            _tiene_fechas = (_tiene_fecha_slash or _tiene_fecha_guion or _tiene_mes_texto)
             _tiene_keywords = any(p in texto.lower() for p in ["nombre", "mamá", "mama", "papá", "papa", "nene", "nena", "hijo", "hija", "nacimiento"])
             _texto_tiene_datos = (
                 len(texto) > 20
