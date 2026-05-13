@@ -1411,27 +1411,39 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     except Exception as e:
         logger.error(f"[AURORA] Error cargando reservas familia: {e}")
 
-    # Niños agendados por horario (próximos sábados)
+    # Total agendados por horario (inscriptos + prueba, sin nombres)
     try:
         from datetime import date as _date_cls
+        from agent.airtable_client import _get_records, _PRUEBAS
         horarios = await obtener_horarios_disponibles(max_horarios=6)
         if horarios:
-            contexto += "\nNIÑOS AGENDADOS POR HORARIO:\n"
+            contexto += "\nTOTAL AGENDADOS POR HORARIO:\n"
             for hor in horarios:
                 fecha_iso = hor.get("fecha", "")
                 hora = hor.get("hora", "")
                 if not fecha_iso or not hora:
                     continue
+                # Inscriptos (RESERVAS FENIX)
                 ninos_hor = await obtener_ninos_por_horario(fecha_iso, hora)
+                n_inscriptos = len(ninos_hor)
+                # Pruebas (PRUEBA FENIX)
                 _fd = _date_cls.fromisoformat(fecha_iso)
-                fecha_label = f"Sábado {_fd.day}/{_fd.month}"
-                if ninos_hor:
-                    nombres_lista = [f"{n['nombre']} {n['apellido']} ({n['edad']})" if n['edad'] else f"{n['nombre']} {n['apellido']}" for n in ninos_hor]
-                    contexto += f"  {fecha_label} {hora}h: {', '.join(nombres_lista)}\n"
-                else:
-                    contexto += f"  {fecha_label} {hora}h: (nadie todavía)\n"
+                fecha_texto = f"{_fd.day}/{_fd.month}"
+                pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
+                pruebas2 = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
+                # Dedup por teléfono
+                _tels_prueba = set()
+                n_prueba = 0
+                for p in pruebas + pruebas2:
+                    _tp = p.get("fields", {}).get("TELEFONO", "")
+                    if _tp not in _tels_prueba:
+                        _tels_prueba.add(_tp)
+                        n_prueba += 1
+                total = n_inscriptos + n_prueba
+                fecha_label = f"Sábado {fecha_texto}"
+                contexto += f"  {fecha_label} {hora}h: {total} agendados ({n_inscriptos} inscriptos + {n_prueba} prueba)\n"
     except Exception as e:
-        logger.error(f"[AURORA] Error cargando niños por horario: {e}")
+        logger.error(f"[AURORA] Error cargando agendados por horario: {e}")
 
     # Redes sociales (para opción 5 del menú)
     try:
