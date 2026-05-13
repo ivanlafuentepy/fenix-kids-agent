@@ -337,28 +337,27 @@ async def _enviar_recordatorio(rec):
     return ok
 
 
-async def _keepalive_admin_loop():
-    """Manda mensaje al admin a las 9:00 y 22:00 PY para mantener ventana WhatsApp."""
+async def _resumen_diario_loop():
+    """Envía resumen anuncios + resumen reservas al admin todos los días a las 8:00 AM PY."""
     from datetime import datetime, timezone, timedelta
     _PY = timezone(timedelta(hours=-4))
     admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
     while True:
         ahora = datetime.now(_PY)
-        # Calcular próximo envío: 9:00 o 22:00
-        hoy_9 = ahora.replace(hour=9, minute=0, second=0, microsecond=0)
-        hoy_22 = ahora.replace(hour=22, minute=0, second=0, microsecond=0)
-        manana_9 = hoy_9 + timedelta(days=1)
-        proximos = [t for t in [hoy_9, hoy_22, manana_9] if t > ahora]
-        proximo = min(proximos)
-        espera = (proximo - ahora).total_seconds()
-        logger.info(f"[KEEPALIVE] Próximo envío en {espera/3600:.1f}h ({proximo.strftime('%H:%M')} PY)")
+        hoy_8 = ahora.replace(hour=8, minute=0, second=0, microsecond=0)
+        if ahora >= hoy_8:
+            hoy_8 += timedelta(days=1)
+        espera = (hoy_8 - ahora).total_seconds()
+        logger.info(f"[RESUMEN DIARIO] Próximo envío en {espera/3600:.1f}h ({hoy_8.strftime('%Y-%m-%d %H:%M')} PY)")
         await asyncio.sleep(espera)
         try:
-            hora_label = datetime.now(_PY).strftime("%H:%M")
-            await proveedor.enviar_mensaje(admin_phone, f"Fenix Kids activo {hora_label} PY 🟢")
-            logger.info(f"[KEEPALIVE] Enviado a admin")
+            logger.info("[RESUMEN DIARIO] Enviando resumen anuncios + reservas...")
+            await _generar_resumen_anuncios(admin_phone, "resumen anuncios")
+            await asyncio.sleep(3)
+            await _generar_resumen_reservas(admin_phone)
+            logger.info("[RESUMEN DIARIO] Enviado OK")
         except Exception as e:
-            logger.error(f"[KEEPALIVE] Error: {e}")
+            logger.error(f"[RESUMEN DIARIO] Error: {e}")
 
 
 async def _recordatorios_loop():
@@ -457,8 +456,8 @@ async def lifespan(app: FastAPI):
     # Follow-up video: ONE-SHOT 6:00 AM PY 2026-05-06
     _followup_video_task = _fire_and_forget(_followup_video_oneshot())
 
-    # Keepalive: mantener ventana WhatsApp del admin abierta (cada 6h)
-    _keepalive_task = _fire_and_forget(_keepalive_admin_loop())
+    # Resumen diario 8:00 AM PY: anuncios + reservas (reemplaza keepalive)
+    _keepalive_task = _fire_and_forget(_resumen_diario_loop())
 
     # Contenido social: polling CONTENIDO FENIX + calendario diario
     from agent.contenido_social import iniciar_contenido_social
