@@ -79,6 +79,18 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
         match = re.search(r"(\d{2,3})\s*mil\s*[Gg]s", contenido)
         if match:
             return int(match.group(1)) * 1000
+        # Patrón genérico: "120.000 Gs" o "**120.000 Gs**" en cualquier contexto con datos bancarios
+        if any(kw in contenido.lower() for kw in ["banco", "cta", "alias", "transferí", "comprobante"]):
+            match = re.search(r"\**(\d{2,3})[.\s](\d{3})\s*(?:[Gg]s)?\**", contenido)
+            if match:
+                return int(match.group(1)) * 1000 + int(match.group(2))
+        # Patrón: "Papá + N hijos: 120.000" o "Todo por 120mil"
+        match = re.search(r"(?:[Pp]ap[áa]|[Tt]odo\s+por)[^:]*[:\s]+\**(\d{2,3})[.\s]?(\d{3})", contenido)
+        if match:
+            return int(match.group(1)) * 1000 + int(match.group(2))
+        match = re.search(r"[Tt]odo\s+por\s+(\d{2,3})\s*mil", contenido)
+        if match:
+            return int(match.group(1)) * 1000
     # Fallback: 1 hijo = 90mil
     return 90_000
 
