@@ -1559,7 +1559,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `modo padre` — activar flujo normal (diagnóstico/Claude)\n"
                 "• `modo secre` — volver a solo comandos (default)\n\n"
                 "📋 *Info:*\n"
-                "• `comandos` — esta lista"
+                "• `comandos` — esta lista\n\n"
+                "💬 *Telegram (dentro del topic del lead):*\n"
+                "• `/silenciar` — silenciar agente, vos tomás control\n"
+                "• `/reactivar` — reactivar agente\n"
+                "• `/aprobado` — evaluación aprobada, Ivan sigue\n"
+                "• `/rechazado` — evaluación rechazada\n"
+                "• `/fenix` — reset conversación + reactivar\n"
+                "• `/registro` — activar Aurora para registrar familia\n"
+                "• `/agenda 90mil|120mil|150mil|gratis nombre` — cerrar agenda manual\n"
+                "• _(texto libre)_ — se reenvía como mensaje de Ivan al padre"
             )
             await proveedor.enviar_mensaje(telefono, msg_comandos)
             return
