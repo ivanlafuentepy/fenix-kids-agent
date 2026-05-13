@@ -2845,13 +2845,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 if topic_id and _tg_group:
                     _gid_r = str(_tg_group).replace("-100", "", 1)
                     _tg_link_reserva = f"\n💬 https://t.me/c/{_gid_r}/{topic_id}"
+                # Armar detalle de hijos con fechas de nacimiento
+                _hijos_detalle = ""
+                if datos_form and datos_form.get("ninos"):
+                    _lineas_hijos = []
+                    for _n_form in datos_form["ninos"]:
+                        _hn = f"{_n_form.get('nombre', '')} {_n_form.get('apellido', '')}".strip()
+                        _fn = _n_form.get("fecha_nacimiento", "")
+                        _lineas_hijos.append(f"👦 {_hn}" + (f" ({_fn})" if _fn else ""))
+                    _hijos_detalle = "\n".join(_lineas_hijos)
+                else:
+                    _hijos_detalle = f"👦 {_hijo_form or 'hijo/a'}"
+
                 alerta_admin = (
-                    f"📅 RESERVA COMPLETA\n\n"
+                    f"📋 FORMULARIO COMPLETADO\n\n"
                     f"👤 {_np or 'Lead'}\n"
-                    f"👦 {_hijo_form or 'hijo/a'}\n"
+                    f"{_hijos_detalle}\n"
                     f"📆 {fecha_hora}"
-                    f"{_tg_link_reserva}\n\n"
-                    f"📲 {wa_link}"
+                    f"{_tg_link_reserva}"
                 )
                 await proveedor.enviar_mensaje(admin_phone, alerta_admin)
                 logger.info(f"[RESERVA] Link wa.me enviado al admin para {telefono}")
@@ -5178,14 +5189,13 @@ async def _procesar_comprobante(
     if topic_id and group_override:
         gid = str(group_override).replace("-100", "", 1)
         tg_link_admin = f"\n💬 https://t.me/c/{gid}/{topic_id}"
+    # Link wa.me para hablar con el padre
+    wa_link_pago = f"https://wa.me/{telefono}"
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
-        f"👤 Padre: {nombre_padre}\n"
-        f"👦 Hijo/a: {nombre_hijo}\n"
-        f"📱 {telefono}\n"
-        f"💰 Tipo: {tipo_label}"
-        f"{tg_link_admin}\n\n"
-        f"Auto-confirmado. Ivan sigue con el agendamiento."
+        f"💰 Tipo: {tipo_label}\n"
+        f"📲 {wa_link_pago}"
+        f"{tg_link_admin}"
     )
     # Reenviar imagen al admin (si hay media_id)
     if media_id:
