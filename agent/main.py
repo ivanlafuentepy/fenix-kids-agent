@@ -4915,6 +4915,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         pct_dia = f"{(d['cantidad']/leads_dia*100):.0f}%" if leads_dia else "0%"
         monto_dia = f"{d['total_monto']:,}".replace(",", ".")
         gasto_dia_fmt = f"{_GASTO_DIARIO:,}".replace(",", ".")
+        lineas.append("")
         lineas.append(f"📅 {fecha_label} — {leads_dia} leads")
         if d["cantidad"]:
             lineas.append(f"✅ {d['cantidad']} agendados | {pct_dia}")
