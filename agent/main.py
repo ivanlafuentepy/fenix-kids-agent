@@ -2754,8 +2754,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
                     if ninos_form:
                         for i, n in enumerate(ninos_form):
-                            # Monto total en el primer hijo, mismos concepto en los demás
-                            # (el pago es por grupo familiar, no por hijo individual)
                             await crear_prueba_fenix(
                                 telefono=telefono,
                                 nombre_responsable=nombre_resp,
@@ -2766,7 +2764,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 fecha_reserva=_fecha_res,
                                 hora=_hora_res,
                                 fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                                monto=_monto if i == 0 else _monto,
+                                monto=_monto if i == 0 else 0,
                                 diagnostico_ids=_diag_ids,
                                 lead_record_id=_lead_id,
                             )
