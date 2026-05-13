@@ -1865,6 +1865,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                           "esperare", "espero", "aguardo", "okey", "oka", "okis"}
             if _t in _ACK_WORDS:
                 await guardar_mensaje(telefono, "user", texto)
+                # Tracking ventana 24h
+                try:
+                    from agent.airtable_client import obtener_lead_record_id as _olri2, _patch as _p2, _LEADS as _L2
+                    _lr2 = await _olri2(telefono)
+                    if _lr2:
+                        from datetime import datetime, timezone
+                        await _p2(_L2, _lr2, {"ULTIMO MENSAJE": datetime.now(timezone.utc).isoformat()})
+                except Exception:
+                    pass
                 if topic_id:
                     await enviar_a_topic(topic_id, f"👤 {texto} (esperando diagnóstico)", telefono=telefono, group_override=_tg_group)
                 logger.info(f"[DIAG] Padre dijo '{texto}' — ignorando, diagnóstico pendiente")
@@ -1922,6 +1931,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Guardar mensaje del usuario ANTES de procesar ──────────────
         # Así nunca se pierde un mensaje aunque algo crashee después.
         await guardar_mensaje(telefono, "user", texto)
+
+        # ── Actualizar ULTIMO MENSAJE en Airtable (tracking ventana 24h) ──
+        try:
+            from agent.airtable_client import obtener_lead_record_id, _patch, _LEADS
+            _lr_id_um = await obtener_lead_record_id(telefono)
+            if _lr_id_um:
+                from datetime import datetime, timezone
+                await _patch(_LEADS, _lr_id_um, {"ULTIMO MENSAJE": datetime.now(timezone.utc).isoformat()})
+        except Exception:
+            pass  # no bloquear el flujo por esto
 
         # ── Alerta diagnóstico: si padre menciona TDAH/TEA/etc → avisar admin ──
         if detectar_diagnostico(texto) and telefono != admin_phone:
