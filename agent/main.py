@@ -2277,7 +2277,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Sábado en el parque: 90mil papá + hijo. 2 hijos: 120mil. 3 hijos: 150mil. Solo transferencia 🌳")
+                    _partes.append("Sábado en el parque: 1 hijo 90mil. 2 hijos 120mil. 3 hijos 150mil. Padres entran gratis. Solo transferencia 🌳")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -5069,11 +5069,11 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje con precios escritos + promo trimestral
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🌳 *Sábado en el Parque:*\n"
-            "👨‍👦 Papá + 1 hijo: 90.000 Gs\n"
-            "👨‍👦‍👦 Papá + 2 hijos: 120.000 Gs\n"
-            "Papá + 3 hijos: 150.000 Gs\n\n"
-            "📅 *PLAN MENSUAL* (4 sábados, papá + hijo): 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
+            "🌳 *Sábado en el Parque (padres entran gratis):*\n"
+            "👦 1 hijo: 90.000 Gs\n"
+            "👦👦 2 hijos: 120.000 Gs\n"
+            "👦👦👦 3 hijos: 150.000 Gs\n\n"
+            "📅 *PLAN MENSUAL* (4 sábados): 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
             "🔥 *PROMO TRIMESTRAL — 40% OFF* 🔥\n"
             "690.000 + matrícula 140.000 = 830.000 Gs total\n"
             "➡️ Ahorrás 420.000 Gs 🔥\n\n"
