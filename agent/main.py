@@ -524,6 +524,13 @@ async def debug_estado_promo_masiva(_: bool = Depends(_require_admin)):
     return _promo_masiva_estado
 
 
+@app.get("/debug/parar-promo-masiva")
+async def debug_parar_promo_masiva(_: bool = Depends(_require_admin)):
+    """Detiene el envío masivo en curso."""
+    _promo_masiva_estado["activo"] = False
+    return {"mensaje": "DETENIDO", "estado": _promo_masiva_estado}
+
+
 async def _enviar_promo_background(all_leads: list[dict], plantilla: str):
     """Tarea background: envía plantilla a todos los leads."""
     import httpx as _httpx_pm
@@ -555,6 +562,9 @@ async def _enviar_promo_background(all_leads: list[dict], plantilla: str):
                 pass
         else:
             _promo_masiva_estado["errores"] += 1
+        if not _promo_masiva_estado.get("activo"):
+            logger.info(f"[PROMO-MASIVA] Detenido manualmente en {i+1}/{len(all_leads)}")
+            break
         if (i + 1) % 50 == 0:
             await asyncio.sleep(2)
 
@@ -3107,6 +3117,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     apellido_resp = padre_data.get("apellido", "") or (_np.split()[1] if _np and " " in _np else "")
                     ninos_form = datos_form.get("ninos", [])
                     _monto = monto_prueba_por_hijos(historial_completo)
+                    _n_hijos = len(ninos_form) if ninos_form else 1
+                    _concepto_prueba = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos, f"PRUEBA {_n_hijos}HIJOS")
 
                     if ninos_form:
                         for i, n in enumerate(ninos_form):
@@ -3121,6 +3133,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 hora=_hora_res,
                                 fecha_nacimiento=n.get("fecha_nacimiento", ""),
                                 monto=_monto if i == 0 else 0,
+                                concepto=_concepto_prueba,
                                 diagnostico_ids=_diag_ids,
                                 lead_record_id=_lead_id,
                             )
@@ -3136,6 +3149,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             fecha_reserva=_fecha_res,
                             hora=_hora_res,
                             monto=_monto,
+                            concepto=_concepto_prueba,
                             diagnostico_ids=_diag_ids,
                             lead_record_id=_lead_id,
                         )
@@ -5820,6 +5834,8 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         # Crear PRUEBA FENIX por cada niño (monto solo en primero)
         creados = 0
         _conversion_prueba = "GRATIS" if es_gratis else "PAGO"
+        _n_hijos_pf = len(ninos_form) if ninos_form else 1
+        _concepto_pf = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos_pf, f"PRUEBA {_n_hijos_pf}HIJOS")
         if ninos_form:
             for i, n in enumerate(ninos_form):
                 await crear_prueba_fenix(
@@ -5833,6 +5849,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
                     hora="(por definir)",
                     fecha_nacimiento=n.get("fecha_nacimiento", ""),
                     monto=monto if i == 0 else 0,
+                    concepto=_concepto_pf,
                     conversion=_conversion_prueba,
                     diagnostico_ids=diagnostico_ids,
                     lead_record_id=lead_record_id,
@@ -5851,6 +5868,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
                 fecha_reserva="(por definir)",
                 hora="(por definir)",
                 monto=monto,
+                concepto=_concepto_pf,
                 conversion=_conversion_prueba,
                 diagnostico_ids=diagnostico_ids,
                 lead_record_id=lead_record_id,
