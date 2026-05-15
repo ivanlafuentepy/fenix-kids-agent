@@ -2272,10 +2272,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
                     "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
                     "(naturaleza, trepar, sol, desafíos reales). "
-                    "Cerrá con precio + promo: 'Todo por 90mil. Y si transferís hoy te doy dos sábados por 100mil 🔥 "
-                    "¿Te gustaría aprovechar la promo de hoy? 🤝' "
-                    "NO preguntes nombre del padre. NO vuelvas al rompehielos. "
-                    "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
+                    "Cerrá con: '¿Qué te parece la idea? ¿Te gustaría regalarte un sábado diferente en el Parque Fenix? 🌳' "
+                    "NO des precio todavía. NO preguntes nombre del padre. NO vuelvas al rompehielos. "
+                    "NO preguntes qué quiere reforzar.]"
                 )
 
         # ── FASE 1: mensaje de apertura fijo para leads nuevos de Ivan ─────
@@ -2717,7 +2716,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Detectar si Claude dice "te paso un afiche" (safety net) ──────
         _va_a_enviar_afiche = False
         if agent_actual == "ivan" and telefono not in _afiche_enviado and not _interceptado:
-            if "te paso un afiche" in respuesta.lower():
+            _resp_lower = respuesta.lower()
+            if "te paso un afiche" in _resp_lower:
+                _va_a_enviar_afiche = True
+            # Si Claude dio precio+promo en FASE 2B → enviar afiche automáticamente
+            elif re.search(r"100[\.\s]?000|100mil", _resp_lower):
                 _va_a_enviar_afiche = True
 
         # ── Detectar SILENCIO: Claude no sabe y dice "te respondo en un minuto" ──
