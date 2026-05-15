@@ -1456,11 +1456,23 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
     mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?" if primer_nombre else "Que tal, soy el profe Ivan te escribo desde mi personal, te puedo llamar ahora?"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
+    # Link al topic de Telegram del lead
+    tg_link = ""
+    try:
+        from agent.telegram_bridge import obtener_topic
+        topic = await obtener_topic(telefono)
+        if topic and topic.topic_id and topic.group_id:
+            gid = str(topic.group_id).replace("-100", "", 1)
+            tg_link = f"\n💬 https://t.me/c/{gid}/{topic.topic_id}"
+    except Exception:
+        pass
+
     alerta = (
         f"🚨 Urgente: Llamar a {nombre_padre}\n\n"
         f"👦 Hijo/a: {nombre_hijo}\n"
         f"🎂 Edad: {edad_hijo}\n\n"
         f"📲 {wa_link}"
+        f"{tg_link}"
     )
 
     # Canal 1: WhatsApp a los números personales de Ivan
@@ -1503,11 +1515,23 @@ async def _alertar_silencio_ivan(telefono: str, ultimo_msg: str, historial: list
     mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan" if primer_nombre else "Que tal, soy el profe Ivan"
     wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
 
+    # Link al topic de Telegram del lead
+    tg_link = ""
+    try:
+        from agent.telegram_bridge import obtener_topic
+        topic = await obtener_topic(telefono)
+        if topic and topic.topic_id and topic.group_id:
+            gid = str(topic.group_id).replace("-100", "", 1)
+            tg_link = f"\n💬 https://t.me/c/{gid}/{topic.topic_id}"
+    except Exception:
+        pass
+
     alerta = (
         f"⚠️ IVAN NO SUPO RESPONDER\n\n"
         f"👤 Padre: {nombre_padre}\n"
         f"💬 Último mensaje: {ultimo_msg[:200]}\n\n"
         f"📲 {wa_link}"
+        f"{tg_link}"
     )
 
     # Canal 1: WhatsApp a los números personales de Ivan
