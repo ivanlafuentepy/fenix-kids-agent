@@ -529,7 +529,7 @@ async def _enviar_promo_background(all_leads: list[dict], plantilla: str):
     import httpx as _httpx_pm
     _promo_masiva_estado.update({"activo": True, "total": len(all_leads), "enviados": 0, "errores": 0, "ultimo_enviado": ""})
 
-    promo_image_handle = os.getenv("PROMO_MADRE_IMAGE_HANDLE", "1295983018794545")
+    promo_image_handle = os.getenv("PROMO_MADRE_IMAGE_HANDLE", "1348826603758035")
     componentes_pm = [{"type": "header", "parameters": [{"type": "image", "image": {"id": promo_image_handle}}]}]
 
     for i, lead in enumerate(all_leads):
