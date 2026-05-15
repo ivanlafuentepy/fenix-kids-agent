@@ -1463,17 +1463,19 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         f"📲 {wa_link}"
     )
 
-    # Canal 1: WhatsApp al admin (puede fallar si ventana 24h cerrada)
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    # Canal 1: WhatsApp a los números personales de Ivan
+    _alertar_phones = ["595973686713", "595971389662"]
     wa_ok = False
-    try:
-        wa_ok = await proveedor.enviar_mensaje(admin_phone, alerta)
-        if wa_ok:
-            logger.info(f"[LLAMADA] Alerta WhatsApp al admin {admin_phone}: OK")
-        else:
-            logger.warning(f"[LLAMADA] Alerta WhatsApp al admin FALLÓ (ventana 24h cerrada?)")
-    except Exception as e:
-        logger.error(f"[LLAMADA] Error WhatsApp admin: {e}")
+    for _ap in _alertar_phones:
+        try:
+            _ok = await proveedor.enviar_mensaje(_ap, alerta)
+            if _ok:
+                wa_ok = True
+                logger.info(f"[LLAMADA] Alerta WhatsApp a {_ap}: OK")
+            else:
+                logger.warning(f"[LLAMADA] Alerta WhatsApp a {_ap} FALLÓ")
+        except Exception as e:
+            logger.error(f"[LLAMADA] Error WhatsApp {_ap}: {e}")
 
     # Canal 2: Telegram grupo (SIEMPRE se manda, es el respaldo principal)
     tg_ok = False
@@ -1508,13 +1510,13 @@ async def _alertar_silencio_ivan(telefono: str, ultimo_msg: str, historial: list
         f"📲 {wa_link}"
     )
 
-    # Canal 1: WhatsApp al admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
-    try:
-        await proveedor.enviar_mensaje(admin_phone, alerta)
-        logger.info(f"[SILENCIO] Alerta WhatsApp al admin: OK")
-    except Exception as e:
-        logger.error(f"[SILENCIO] Error WhatsApp admin: {e}")
+    # Canal 1: WhatsApp a los números personales de Ivan
+    for _ap_s in ["595973686713", "595971389662"]:
+        try:
+            await proveedor.enviar_mensaje(_ap_s, alerta)
+            logger.info(f"[SILENCIO] Alerta WhatsApp a {_ap_s}: OK")
+        except Exception as e:
+            logger.error(f"[SILENCIO] Error WhatsApp {_ap_s}: {e}")
 
     # Canal 2: Telegram
     try:
