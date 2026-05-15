@@ -669,6 +669,75 @@ async def debug_revertir_pago_promomadre(
     return {"revertidos": revertidos}
 
 
+@app.get("/debug/auditoria-promomadre")
+async def debug_auditoria_promomadre(
+    _: bool = Depends(_require_admin),
+):
+    """Auditoría: escanea TODOS los leads con PROMOMADRE y verifica historial real en PostgreSQL."""
+    import httpx as _httpx_aud
+    from agent.airtable_client import _LEADS, _BASE_URL, _headers
+
+    todos: list[dict] = []
+    _offset_aud = None
+    async with _httpx_aud.AsyncClient(timeout=30) as _cl_aud:
+        while True:
+            _params_aud: dict = {"pageSize": "100", "filterByFormula": "{PROMOMADRE}=TRUE()"}
+            if _offset_aud:
+                _params_aud["offset"] = _offset_aud
+            _r_aud = await _cl_aud.get(f"{_BASE_URL}/{_LEADS}", headers=_headers(), params=_params_aud)
+            if _r_aud.status_code != 200:
+                return {"error": f"Airtable HTTP {_r_aud.status_code}"}
+            _data_aud = _r_aud.json()
+            for rec in _data_aud.get("records", []):
+                f = rec.get("fields", {})
+                todos.append({
+                    "id": rec["id"],
+                    "telefono": f.get("TELEFONO", ""),
+                    "boton_airtable": bool(f.get("BOTON PROMOMADRE")),
+                    "pago_airtable": bool(f.get("PAGO PROMOMADRE")),
+                })
+            _offset_aud = _data_aud.get("offset")
+            if not _offset_aud:
+                break
+
+    # Verificar historial de cada lead en PostgreSQL
+    respondieron_real = []
+    pagaron_real = []
+    for lead in todos:
+        tel = lead["telefono"]
+        if not tel:
+            continue
+        historial = await obtener_historial(tel, limite=50)
+        # Respondió = recibió datos bancarios promo madre
+        recibio_datos_banco = any(
+            "promo madre" in m.get("content", "").lower() and "350" in m.get("content", "")
+            for m in historial if m.get("role") == "assistant"
+        )
+        # Pagó = envió comprobante DESPUÉS de datos bancarios promo
+        envio_comprobante = any(
+            m.get("content", "") in ("[imagen]", "[documento]")
+            for m in historial if m.get("role") == "user"
+        )
+        if recibio_datos_banco:
+            respondieron_real.append(tel)
+            if envio_comprobante:
+                pagaron_real.append(tel)
+
+    # Comparar con Airtable
+    boton_airtable = [l["telefono"] for l in todos if l["boton_airtable"]]
+    faltantes_boton = [t for t in respondieron_real if t not in boton_airtable]
+
+    return {
+        "total_enviados": len(todos),
+        "respondieron_airtable": len(boton_airtable),
+        "respondieron_historial": len(respondieron_real),
+        "faltantes_boton": faltantes_boton,
+        "pagaron_airtable": len([l for l in todos if l["pago_airtable"]]),
+        "pagaron_historial": len(pagaron_real),
+        "detalle_pagaron": pagaron_real,
+    }
+
+
 @app.get("/debug/marcar-pago-promomadre")
 async def debug_marcar_pago_promomadre(
     dry_run: str = "true",
