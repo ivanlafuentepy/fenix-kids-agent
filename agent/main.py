@@ -2116,7 +2116,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _tg_lnk = f" → https://t.me/c/{_gid}/{_tp.topic_id}"
                 except Exception:
                     pass
-                _lineas_pagaron.append(f"  • {_pd['nombre']}{_tg_lnk}")
+                _lineas_pagaron.append(f"  • {_pd['nombre']}{_tg_lnk}\n    📱 {_pd['telefono']}")
 
             _pct_resp = (_total_resp_f / _total_env_f * 100) if _total_env_f else 0
             _pct_pago_total = (_total_pago_f / _total_env_f * 100) if _total_env_f else 0
