@@ -2332,7 +2332,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Prueba: 1 hijo 90mil, 2 hijos 120mil, 3 hijos 150mil. Promo hoy (2 sábados): 100mil / 150mil / 180mil. Padres entran gratis. Solo transferencia 🌳")
+                    _partes.append("Prueba: 90mil (1 sábado). Promo hoy: 100mil por 2 sábados 🔥 Padres entran gratis. Solo transferencia 🌳")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -5207,21 +5207,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Delay antes del mensaje de precios
         await asyncio.sleep(3)
 
-        # Mensaje con precios escritos — speech 4P
+        # Mensaje corto después del afiche
         msg_precios = (
-            "📋 *Precios:*\n\n"
             "🌳 *Probá FENIX (padres entran gratis):*\n"
-            "👦 1 hijo: 90.000 Gs (1 sábado)\n"
-            "👦👦 2 hijos: 120.000 Gs\n"
-            "👦👦👦 3 hijos: 150.000 Gs\n\n"
-            "🔥 *PROMO HOY — 2 sábados:*\n"
-            "👦 1 hijo: 100.000 Gs\n"
-            "👦👦 2 hijos: 150.000 Gs\n"
-            "👦👦👦 3 hijos: 180.000 Gs\n"
-            "Solo si transferís hoy 🔥\n\n"
+            "👦 Prueba: 90.000 Gs (1 sábado)\n"
+            "🔥 *PROMO HOY:* 100.000 Gs por 2 sábados\n\n"
             "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
-            "5 clases: 350.000 Gs (70 mil/clase)\n"
-            "12 clases: 750.000 Gs (62.500/clase) ⭐ el más elegido\n\n"
+            "5 clases: 350.000 Gs | 12 clases: 750.000 Gs\n\n"
             "¿Te gustaría aprovechar la promo de hoy? 🤝"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
