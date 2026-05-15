@@ -1708,6 +1708,56 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, msg_comandos)
             return
 
+        # ── Comando "promo madre" (solo admin) — stats del envío masivo ──
+        if texto.lower().strip() == "promo madre" and telefono == admin_phone:
+            import httpx as _httpx_pm_cmd
+            _url_at_pm = f"https://api.airtable.com/v0/{os.getenv('AIRTABLE_BASE_ID', 'appWwCQxALdMMV4MA')}/LEADS FENIX"
+            _headers_at_pm = {"Authorization": f"Bearer {os.getenv('AIRTABLE_API_KEY', '')}", "Content-Type": "application/json"}
+            _total_env_f = 0
+            _clicks_f = []
+            _offset_pmf = None
+            try:
+                async with _httpx_pm_cmd.AsyncClient(timeout=30) as _cl_pmf:
+                    while True:
+                        _params_pmf: dict = {"pageSize": "100", "filterByFormula": "{PROMOMADRE}=TRUE()"}
+                        if _offset_pmf:
+                            _params_pmf["offset"] = _offset_pmf
+                        _r_pmf = await _cl_pmf.get(_url_at_pm, headers=_headers_at_pm, params=_params_pmf)
+                        if _r_pmf.status_code != 200:
+                            break
+                        _data_pmf = _r_pmf.json()
+                        for _rec_pmf in _data_pmf.get("records", []):
+                            _f_pmf = _rec_pmf.get("fields", {})
+                            _tel_pmf = _f_pmf.get("TELEFONO", "")
+                            _total_env_f += 1
+                            if _tel_pmf:
+                                _hist_pmf = await obtener_historial(_tel_pmf, limite=10)
+                                if any(m["role"] == "user" for m in _hist_pmf):
+                                    _n_pmf = _f_pmf.get("NOMBRE RESPONSABLE", "") or _f_pmf.get("NOMBRE NIÑO", "") or _tel_pmf
+                                    _clicks_f.append(f"{_n_pmf} — wa.me/{_tel_pmf}")
+                        _offset_pmf = _data_pmf.get("offset")
+                        if not _offset_pmf:
+                            break
+            except Exception as _e_pmf:
+                await proveedor.enviar_mensaje(telefono, f"Error: {_e_pmf}")
+                return
+
+            _msg_stats_f = (
+                f"🎁 *PROMO DÍA DE LA MADRE — FENIX*\n\n"
+                f"📨 Enviados: *{_total_env_f}*\n"
+                f"💬 Respondieron: *{len(_clicks_f)}*\n"
+                f"📊 Tasa respuesta: *{(len(_clicks_f)/_total_env_f*100) if _total_env_f else 0:.1f}%*\n"
+            )
+            if _clicks_f:
+                _msg_stats_f += f"\n👥 *Respondieron:*\n" + "\n".join(f"• {c}" for c in _clicks_f[:30])
+                if len(_clicks_f) > 30:
+                    _msg_stats_f += f"\n... y {len(_clicks_f) - 30} más"
+            else:
+                _msg_stats_f += "\n_Nadie respondió todavía_"
+
+            await proveedor.enviar_mensaje(telefono, _msg_stats_f)
+            return
+
         # ── Comando reset (solo admin) ────────────────────────────────────
         _reset_phones = {admin_phone, "595982844548"}
         if texto.lower() == "holayosoyfenix" and telefono in _reset_phones:
@@ -2173,10 +2223,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             logger.info(f"[PROMO-MADRE] Formulario completado: {telefono} — {texto}")
             return
 
-        # ── PROMO MADRE: lead respondió a plantilla → datos bancarios directo ──
-        if (telefono in _leads_promo_madre_enviada
-                and telefono not in _esperando_pago_promo_madre
-                and texto.lower() != "holayosoyfenix"):
+        # ── PROMO MADRE: lead respondió a plantilla O escribe "quiero la promo" ──
+        _texto_lower_pm = texto.strip().lower()
+        _es_quiero_promo = "quiero" in _texto_lower_pm and "promo" in _texto_lower_pm
+        if (_es_quiero_promo or telefono in _leads_promo_madre_enviada) and telefono not in _esperando_pago_promo_madre and texto.lower() != "holayosoyfenix":
             _leads_promo_madre_enviada.discard(telefono)
             await guardar_mensaje(telefono, "user", texto)
             from agent.airtable_client import obtener_lead_record_id as _olri_pm2
@@ -2184,6 +2234,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 from agent.airtable_client import crear_lead as _cl_pm
                 await _cl_pm(telefono)
             _esperando_pago_promo_madre.add(telefono)
+            # Marcar BOTON PROMOMADRE en Airtable
+            try:
+                _rec_btn_fx = await _olri_pm2(telefono)
+                if _rec_btn_fx:
+                    from agent.airtable_client import _patch as _p_btn_fx, _LEADS as _L_btn_fx
+                    await _p_btn_fx(_L_btn_fx, _rec_btn_fx, {"BOTON PROMOMADRE": True})
+            except Exception:
+                pass
             _resp_banco = (
                 "¡Genial! 🎉 Espero tu transferencia para asegurar el lugar "
                 "de tu hijo/a porque quedan pocos cupos!\n\n"
