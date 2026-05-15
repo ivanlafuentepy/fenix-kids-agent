@@ -628,6 +628,69 @@ async def debug_enviar_promo_masiva(
             "total": len(all_leads), "progreso_en": "/debug/estado-promo-masiva"}
 
 
+@app.get("/debug/marcar-pago-promomadre")
+async def debug_marcar_pago_promomadre(
+    dry_run: str = "true",
+    _: bool = Depends(_require_admin),
+):
+    """Escanea leads con PROMOMADRE=true y CONVERSION=PAGO → marca PAGO PROMOMADRE."""
+    import httpx as _httpx_ppm
+    from agent.airtable_client import _LEADS, _BASE_URL, _headers, _patch
+
+    marcados = 0
+    ya_marcados = 0
+    candidatos: list[dict] = []
+    _offset_ppm = None
+
+    async with _httpx_ppm.AsyncClient(timeout=30) as _cl_ppm:
+        while True:
+            _params_ppm: dict = {
+                "pageSize": "100",
+                "filterByFormula": "AND({PROMOMADRE}=TRUE(), FIND('PAGO', ARRAYJOIN({CONVERSION}))>0)",
+            }
+            if _offset_ppm:
+                _params_ppm["offset"] = _offset_ppm
+            _r_ppm = await _cl_ppm.get(f"{_BASE_URL}/{_LEADS}", headers=_headers(), params=_params_ppm)
+            if _r_ppm.status_code != 200:
+                return {"error": f"Airtable HTTP {_r_ppm.status_code}"}
+            _data_ppm = _r_ppm.json()
+            for rec in _data_ppm.get("records", []):
+                fields = rec.get("fields", {})
+                if fields.get("PAGO PROMOMADRE"):
+                    ya_marcados += 1
+                    continue
+                candidatos.append({
+                    "id": rec["id"],
+                    "telefono": fields.get("TELEFONO", ""),
+                    "nombre": fields.get("NOMBRE RESPONSABLE", "") or fields.get("NOMBRE NIÑO", ""),
+                })
+            _offset_ppm = _data_ppm.get("offset")
+            if not _offset_ppm:
+                break
+
+    es_dry_run = dry_run.lower() in ("true", "1", "si", "sí")
+    if es_dry_run:
+        return {
+            "modo": "DRY RUN",
+            "por_marcar": len(candidatos),
+            "ya_marcados": ya_marcados,
+            "leads": candidatos,
+        }
+
+    for c in candidatos:
+        try:
+            await _patch(_LEADS, c["id"], {"PAGO PROMOMADRE": True})
+            marcados += 1
+        except Exception as _e_ppm:
+            logger.error(f"[PROMO-MADRE] Error marcando PAGO para {c['telefono']}: {_e_ppm}")
+
+    return {
+        "marcados": marcados,
+        "ya_marcados": ya_marcados,
+        "total_procesados": marcados + ya_marcados,
+    }
+
+
 @app.get("/debug/{telefono}")
 async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     historial = await obtener_historial(telefono, limite=50)
@@ -2214,7 +2277,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm, _get_records
                 _rec_pm = await _olri_pm(telefono)
                 if _rec_pm:
-                    await _p_pm(_L_pm, _rec_pm, {"CONVERSION": ["PAGO"], "PROMOMADRE": True})
+                    await _p_pm(_L_pm, _rec_pm, {"CONVERSION": ["PAGO"], "PROMOMADRE": True, "PAGO PROMOMADRE": True})
                 # Crear PRUEBA FENIX con concepto FENIXMAMA
                 _lr_pm = await _get_records(_L_pm, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
                 _lead_id_pm = _lr_pm[0]["id"] if _lr_pm else None
