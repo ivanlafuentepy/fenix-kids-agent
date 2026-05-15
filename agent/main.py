@@ -1852,6 +1852,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             from agent.airtable_client import _LEADS, _BASE_URL, _headers as _at_headers
             _total_env_f = 0
             _total_resp_f = 0
+            _total_pago_f = 0
             _offset_pmf = None
             try:
                 async with _httpx_pm_cmd.AsyncClient(timeout=30) as _cl_pmf:
@@ -1868,6 +1869,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             _total_env_f += 1
                             if _f_pmf.get("BOTON PROMOMADRE"):
                                 _total_resp_f += 1
+                            if _f_pmf.get("PAGO PROMOMADRE"):
+                                _total_pago_f += 1
                         _offset_pmf = _data_pmf.get("offset")
                         if not _offset_pmf:
                             break
@@ -1875,11 +1878,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error: {_e_pmf}")
                 return
 
+            _pct_resp = (_total_resp_f / _total_env_f * 100) if _total_env_f else 0
+            _pct_pago_total = (_total_pago_f / _total_env_f * 100) if _total_env_f else 0
+            _pct_pago_click = (_total_pago_f / _total_resp_f * 100) if _total_resp_f else 0
             _msg_stats_f = (
                 f"🎁 *PROMO DÍA DE LA MADRE — FENIX*\n\n"
                 f"📨 Enviados: *{_total_env_f}*\n"
-                f"👆 Respondieron: *{_total_resp_f}*\n"
-                f"📊 Tasa respuesta: *{(_total_resp_f/_total_env_f*100) if _total_env_f else 0:.1f}%*"
+                f"👆 Respondieron: *{_total_resp_f}* ({_pct_resp:.1f}%)\n"
+                f"💰 Pagaron: *{_total_pago_f}* ({_pct_pago_total:.1f}% del total · {_pct_pago_click:.1f}% de clicks)"
             )
             await proveedor.enviar_mensaje(telefono, _msg_stats_f)
             return
