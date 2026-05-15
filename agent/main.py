@@ -2807,7 +2807,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 "julio":"07","agosto":"08","septiembre":"09","octubre":"10","noviembre":"11","diciembre":"12"}
                 for _m_res in reversed(historial_completo):
                     if _m_res.get("role") == "assistant" and "reserva confirmada" in _m_res.get("content", "").lower():
-                        _match_fecha = re.search(r"s[aá]bado\s+(.+?)\s+a las\s+(\d{1,2}[:h]\d{0,2})", _m_res["content"].lower())
+                        # Intentar "sábado X a las Yh" o "Sábado X | Yh"
+                        _match_fecha = re.search(r"s[aá]bado\s+(.+?)\s+(?:a las|[|])\s+(\d{1,2}[:h]\d{0,2})", _m_res["content"].lower())
                         if _match_fecha:
                             _fecha_txt = _match_fecha.group(1)  # "16 de mayo"
                             _hora_res = _match_fecha.group(2).replace("h", ":").rstrip(":")
@@ -2819,7 +2820,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 _fecha_res = f"2026-{_mes}-{_dia}"
                             else:
                                 _fecha_res = _fecha_txt  # fallback
-                        break
+                            break
+                        # Si tiene "reserva confirmada" pero no matchea fecha, seguir buscando
                 fecha_hora = f"el sábado {_fecha_res} a las {_hora_res}" if _fecha_res else "el sábado"
 
                 # ── Crear PRUEBA FENIX con datos completos (Opción A) ─────────
