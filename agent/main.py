@@ -1948,6 +1948,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _total_env_f = 0
             _total_resp_f = 0
             _total_pago_f = 0
+            _pagaron_detalle: list[dict] = []
             _offset_pmf = None
             try:
                 async with _httpx_pm_cmd.AsyncClient(timeout=30) as _cl_pmf:
@@ -1966,6 +1967,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 _total_resp_f += 1
                             if _f_pmf.get("PAGO PROMOMADRE"):
                                 _total_pago_f += 1
+                                _pagaron_detalle.append({
+                                    "nombre": _f_pmf.get("NOMBRE RESPONSABLE", "") or _f_pmf.get("NOMBRE NIÑO", "") or "Sin nombre",
+                                    "telefono": _f_pmf.get("TELEFONO", ""),
+                                })
                         _offset_pmf = _data_pmf.get("offset")
                         if not _offset_pmf:
                             break
@@ -1973,14 +1978,30 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error: {_e_pmf}")
                 return
 
+            # Generar links de Telegram para cada lead que pagó
+            from agent.telegram_bridge import obtener_topic
+            _lineas_pagaron = []
+            for _pd in _pagaron_detalle:
+                _tg_lnk = ""
+                try:
+                    _tp = await obtener_topic(_pd["telefono"])
+                    if _tp and _tp.topic_id and _tp.group_id:
+                        _gid = str(_tp.group_id).replace("-100", "", 1)
+                        _tg_lnk = f" → https://t.me/c/{_gid}/{_tp.topic_id}"
+                except Exception:
+                    pass
+                _lineas_pagaron.append(f"  • {_pd['nombre']}{_tg_lnk}")
+
             _pct_resp = (_total_resp_f / _total_env_f * 100) if _total_env_f else 0
             _pct_pago_total = (_total_pago_f / _total_env_f * 100) if _total_env_f else 0
             _pct_pago_click = (_total_pago_f / _total_resp_f * 100) if _total_resp_f else 0
+            _detalle_txt = "\n".join(_lineas_pagaron) if _lineas_pagaron else "  (ninguno)"
             _msg_stats_f = (
                 f"🎁 *PROMO DÍA DE LA MADRE — FENIX*\n\n"
                 f"📨 Enviados: *{_total_env_f}*\n"
                 f"👆 Respondieron: *{_total_resp_f}* ({_pct_resp:.1f}%)\n"
-                f"💰 Pagaron: *{_total_pago_f}* ({_pct_pago_total:.1f}% del total · {_pct_pago_click:.1f}% de clicks)"
+                f"💰 Pagaron: *{_total_pago_f}* ({_pct_pago_total:.1f}% del total · {_pct_pago_click:.1f}% de clicks)\n\n"
+                f"{_detalle_txt}"
             )
             await proveedor.enviar_mensaje(telefono, _msg_stats_f)
             return
