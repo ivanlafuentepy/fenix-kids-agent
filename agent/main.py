@@ -1725,13 +1725,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, msg_comandos)
             return
 
-        # ── Comando "promo madre" (solo admin) — stats del envío masivo ──
+        # ── Comando "promo madre" (solo admin) — stats del envío masivo (solo totales) ──
         if texto.lower().strip() == "promo madre" and telefono == admin_phone:
             import httpx as _httpx_pm_cmd
-            _url_at_pm = f"https://api.airtable.com/v0/{os.getenv('AIRTABLE_BASE_ID', 'appWwCQxALdMMV4MA')}/LEADS FENIX"
-            _headers_at_pm = {"Authorization": f"Bearer {os.getenv('AIRTABLE_API_KEY', '')}", "Content-Type": "application/json"}
+            from agent.airtable_client import _LEADS, _BASE_URL, _headers as _at_headers
             _total_env_f = 0
-            _clicks_f = []
+            _total_resp_f = 0
             _offset_pmf = None
             try:
                 async with _httpx_pm_cmd.AsyncClient(timeout=30) as _cl_pmf:
@@ -1739,19 +1738,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _params_pmf: dict = {"pageSize": "100", "filterByFormula": "{PROMOMADRE}=TRUE()"}
                         if _offset_pmf:
                             _params_pmf["offset"] = _offset_pmf
-                        _r_pmf = await _cl_pmf.get(_url_at_pm, headers=_headers_at_pm, params=_params_pmf)
+                        _r_pmf = await _cl_pmf.get(f"{_BASE_URL}/{_LEADS}", headers=_at_headers(), params=_params_pmf)
                         if _r_pmf.status_code != 200:
                             break
                         _data_pmf = _r_pmf.json()
                         for _rec_pmf in _data_pmf.get("records", []):
                             _f_pmf = _rec_pmf.get("fields", {})
-                            _tel_pmf = _f_pmf.get("TELEFONO", "")
                             _total_env_f += 1
-                            if _tel_pmf:
-                                _hist_pmf = await obtener_historial(_tel_pmf, limite=10)
-                                if any(m["role"] == "user" for m in _hist_pmf):
-                                    _n_pmf = _f_pmf.get("NOMBRE RESPONSABLE", "") or _f_pmf.get("NOMBRE NIÑO", "") or _tel_pmf
-                                    _clicks_f.append(f"{_n_pmf} — wa.me/{_tel_pmf}")
+                            if _f_pmf.get("BOTON PROMOMADRE"):
+                                _total_resp_f += 1
                         _offset_pmf = _data_pmf.get("offset")
                         if not _offset_pmf:
                             break
@@ -1762,16 +1757,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _msg_stats_f = (
                 f"🎁 *PROMO DÍA DE LA MADRE — FENIX*\n\n"
                 f"📨 Enviados: *{_total_env_f}*\n"
-                f"💬 Respondieron: *{len(_clicks_f)}*\n"
-                f"📊 Tasa respuesta: *{(len(_clicks_f)/_total_env_f*100) if _total_env_f else 0:.1f}%*\n"
+                f"👆 Respondieron: *{_total_resp_f}*\n"
+                f"📊 Tasa respuesta: *{(_total_resp_f/_total_env_f*100) if _total_env_f else 0:.1f}%*"
             )
-            if _clicks_f:
-                _msg_stats_f += f"\n👥 *Respondieron:*\n" + "\n".join(f"• {c}" for c in _clicks_f[:30])
-                if len(_clicks_f) > 30:
-                    _msg_stats_f += f"\n... y {len(_clicks_f) - 30} más"
-            else:
-                _msg_stats_f += "\n_Nadie respondió todavía_"
-
             await proveedor.enviar_mensaje(telefono, _msg_stats_f)
             return
 
