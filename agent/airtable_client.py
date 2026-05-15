@@ -933,7 +933,8 @@ async def crear_prueba_fenix(
     hora: str,
     fecha_nacimiento: str = "",
     conversion: str = "PAGO",
-    monto: int = 90_000,
+    monto: int = 0,
+    concepto: str = "PRUEBA 1HIJO",
     diagnostico_ids: list[str] | None = None,
     lead_record_id: str | None = None,
     metodo_pago: str = "TRANSFER",
@@ -941,20 +942,6 @@ async def crear_prueba_fenix(
     """Crea un registro en PRUEBA FENIX con todos los campos. Retorna record_id o None."""
     from datetime import datetime, timezone, timedelta
     _PY_TZ = timezone(timedelta(hours=-3))
-
-    # Deducir concepto según monto
-    if monto == 0:
-        concepto = "F.GRATIS"
-    elif monto == 100_000:
-        concepto = "F.PRUEBA 100MIL"
-    elif monto == 120_000:
-        concepto = "F.PRUEBA 120MIL"
-    elif monto == 150_000:
-        concepto = "F.PRUEBA 150MIL"
-    elif monto == 180_000:
-        concepto = "F.PRUEBA 180MIL"
-    else:
-        concepto = "F.PRUEBA 90MIL"
 
     # Deducir género del nombre del hijo
     genero = _deducir_genero(nombre_hijo)
@@ -980,6 +967,7 @@ async def crear_prueba_fenix(
         "FECHA NACIMIENTO": _fn_norm,
         "CONVERSION": conversion,
         "CONCEPTO": concepto,
+        "MONTO": monto,
         "METODO DE PAGO": [metodo_pago] if metodo_pago else [],
         "GENERO": genero,
         "ORIGEN LEAD": "ANUNCIO",

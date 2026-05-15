@@ -2209,12 +2209,54 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await guardar_mensaje(telefono, "assistant", _resp_pm)
             await proveedor.enviar_mensaje(telefono, _resp_pm)
 
-            # Guardar en Airtable
+            # Guardar en Airtable (LEADS + PRUEBA FENIX)
             try:
-                from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm
+                from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm, _get_records
                 _rec_pm = await _olri_pm(telefono)
                 if _rec_pm:
                     await _p_pm(_L_pm, _rec_pm, {"CONVERSION": ["PAGO"], "PROMOMADRE": True})
+                # Crear PRUEBA FENIX con concepto FENIXMAMA
+                _lr_pm = await _get_records(_L_pm, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                _lead_id_pm = _lr_pm[0]["id"] if _lr_pm else None
+                _diag_pm = _lr_pm[0].get("fields", {}).get("DIAGNOSTICO", []) if _lr_pm else []
+                datos_pm = await extraer_datos_formulario(await obtener_historial(telefono))
+                padre_pm = datos_pm.get("padre") or {}
+                ninos_pm = datos_pm.get("ninos", [])
+                _nom_pm = padre_pm.get("nombre", "")
+                _ape_pm = padre_pm.get("apellido", "")
+                if ninos_pm:
+                    for i_pm, n_pm in enumerate(ninos_pm):
+                        await crear_prueba_fenix(
+                            telefono=telefono,
+                            nombre_responsable=_nom_pm,
+                            apellido_responsable=_ape_pm,
+                            nombre_hijo=n_pm.get("nombre", ""),
+                            apellido_hijo=n_pm.get("apellido", ""),
+                            edad_hijo="",
+                            fecha_reserva="(por definir)",
+                            hora="(por definir)",
+                            fecha_nacimiento=n_pm.get("fecha_nacimiento", ""),
+                            monto=350_000 if i_pm == 0 else 0,
+                            concepto="FENIXMAMA",
+                            diagnostico_ids=_diag_pm,
+                            lead_record_id=_lead_id_pm,
+                        )
+                else:
+                    await crear_prueba_fenix(
+                        telefono=telefono,
+                        nombre_responsable=_nom_pm,
+                        apellido_responsable=_ape_pm,
+                        nombre_hijo="",
+                        apellido_hijo="",
+                        edad_hijo="",
+                        fecha_reserva="(por definir)",
+                        hora="(por definir)",
+                        monto=350_000,
+                        concepto="FENIXMAMA",
+                        diagnostico_ids=_diag_pm,
+                        lead_record_id=_lead_id_pm,
+                    )
+                logger.info(f"[PROMO-MADRE] PRUEBA FENIX creada con concepto FENIXMAMA para {telefono}")
             except Exception as _e_pm:
                 logger.error(f"[PROMO-MADRE] Error Airtable: {_e_pm}")
 
@@ -3113,7 +3155,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     ninos_form = datos_form.get("ninos", [])
                     _monto = monto_prueba_por_hijos(historial_completo)
                     _n_hijos = len(ninos_form) if ninos_form else 1
-                    _concepto_prueba = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos, f"PRUEBA {_n_hijos}HIJOS")
+                    if _monto == 750_000:
+                        _concepto_prueba = "PAQUETE12"
+                    elif _monto == 350_000:
+                        _concepto_prueba = "PAQUETE5"
+                    else:
+                        _concepto_prueba = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos, f"PRUEBA {_n_hijos}HIJOS")
 
                     if ninos_form:
                         for i, n in enumerate(ninos_form):
@@ -5830,7 +5877,12 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         creados = 0
         _conversion_prueba = "GRATIS" if es_gratis else "PAGO"
         _n_hijos_pf = len(ninos_form) if ninos_form else 1
-        _concepto_pf = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos_pf, f"PRUEBA {_n_hijos_pf}HIJOS")
+        if monto == 750_000:
+            _concepto_pf = "PAQUETE12"
+        elif monto == 350_000:
+            _concepto_pf = "PAQUETE5"
+        else:
+            _concepto_pf = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos_pf, f"PRUEBA {_n_hijos_pf}HIJOS")
         if ninos_form:
             for i, n in enumerate(ninos_form):
                 await crear_prueba_fenix(
