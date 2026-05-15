@@ -33,8 +33,13 @@ CI_BANCARIO = "1604338"
 
 PRECIOS = {
     "prueba": {"cuota": 90_000, "matricula": 0, "total": 90_000, "label": "PRUEBA 90K"},
+    "prueba_promo": {"cuota": 100_000, "matricula": 0, "total": 100_000, "label": "PRUEBA PROMO 100K (2 sábs)"},
     "prueba_2": {"cuota": 120_000, "matricula": 0, "total": 120_000, "label": "PRUEBA 120K (2 hijos)"},
+    "prueba_promo_2": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA PROMO 150K (2 hijos, 2 sábs)"},
     "prueba_3": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (3 hijos)"},
+    "prueba_promo_3": {"cuota": 180_000, "matricula": 0, "total": 180_000, "label": "PRUEBA PROMO 180K (3 hijos, 2 sábs)"},
+    "paquete_5": {"cuota": 350_000, "matricula": 0, "total": 350_000, "label": "PAQUETE 5 CLASES"},
+    "paquete_12": {"cuota": 750_000, "matricula": 0, "total": 750_000, "label": "PAQUETE 12 CLASES"},
     "quincenal_mensual": {"cuota": 250_000, "matricula": 200_000, "total": 450_000, "label": "QUINCENAL MENSUAL"},
     "quincenal_trimestral": {"cuota": 450_000, "matricula": 140_000, "total": 590_000, "label": "QUINCENAL TRIMESTRAL"},
     "semanal_mensual": {"cuota": 350_000, "matricula": 200_000, "total": 550_000, "label": "SEMANAL MENSUAL"},

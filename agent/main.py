@@ -1181,6 +1181,41 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
         logger.critical(f"[LLAMADA] ⚠️ ALERTA NO ENTREGADA a ningún canal para {telefono}")
 
 
+async def _alertar_silencio_ivan(telefono: str, ultimo_msg: str, historial: list[dict]):
+    """
+    Alerta al admin cuando Claude no supo responder y dijo "te respondo en un minuto".
+    Doble canal: WhatsApp (ADMIN_PHONE) + Telegram.
+    """
+    from urllib.parse import quote
+
+    nombre_padre = _extraer_nombre_del_historial(historial, ultimo_msg) or "Lead"
+    primer_nombre = nombre_padre.split()[0] if nombre_padre != "Lead" else ""
+    mensaje_pre = f"Que tal {primer_nombre}, soy el profe Ivan" if primer_nombre else "Que tal, soy el profe Ivan"
+    wa_link = f"https://wa.me/{telefono}?text={quote(mensaje_pre)}"
+
+    alerta = (
+        f"⚠️ IVAN NO SUPO RESPONDER\n\n"
+        f"👤 Padre: {nombre_padre}\n"
+        f"💬 Último mensaje: {ultimo_msg[:200]}\n\n"
+        f"📲 {wa_link}"
+    )
+
+    # Canal 1: WhatsApp al admin
+    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    try:
+        await proveedor.enviar_mensaje(admin_phone, alerta)
+        logger.info(f"[SILENCIO] Alerta WhatsApp al admin: OK")
+    except Exception as e:
+        logger.error(f"[SILENCIO] Error WhatsApp admin: {e}")
+
+    # Canal 2: Telegram
+    try:
+        await notificar_llamada_urgente(telefono, nombre_padre, wa_link)
+        logger.info(f"[SILENCIO] Alerta Telegram: OK")
+    except Exception as e:
+        logger.error(f"[SILENCIO] Error Telegram: {e}")
+
+
 def _detectar_confirmacion_aurora(respuesta: str) -> list[dict]:
     """
     Detecta si Aurora confirmó una o más reservas.
@@ -2237,7 +2272,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
                     "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
                     "(naturaleza, trepar, sol, desafíos reales). "
-                    "TERMINÁ SIEMPRE con: '¿Te gustaría que [nombre] venga a probar un día? 😊' "
+                    "Cerrá con precio + promo: 'Todo por 90mil. Y si transferís hoy te doy dos sábados por 100mil 🔥 "
+                    "¿Te gustaría aprovechar la promo de hoy? 🤝' "
                     "NO preguntes nombre del padre. NO vuelvas al rompehielos. "
                     "NO preguntes qué quiere reforzar. El cierre es la oferta de prueba.]"
                 )
@@ -2297,7 +2333,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Sábado en el parque: 1 hijo 90mil. 2 hijos 120mil. 3 hijos 150mil. Padres entran gratis. Solo transferencia 🌳")
+                    _partes.append("Prueba: 1 hijo 90mil, 2 hijos 120mil, 3 hijos 150mil. Promo hoy (2 sábados): 100mil / 150mil / 180mil. Padres entran gratis. Solo transferencia 🌳")
 
                 if _pide_horarios and telefono not in _afiche_horarios_enviado:
                     _acciones_interceptadas.append("afiche_horarios")
@@ -2319,7 +2355,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Solo ropa cómoda, zapatillas y agua 💧 Nosotros ponemos todo: instructores, equipamiento, el parque entero 🌳")
 
                 if _pide_devolucion:
-                    _partes.append("El sábado de 90mil es para venir a conocer el parque y entrenar en familia. No se descuenta de un plan ni se devuelve. Si después se enganchan, pasamos a un plan. Si no, no hay compromiso 🤝")
+                    _partes.append("La prueba es para venir a conocer el parque y entrenar en familia. No se descuenta de ningún paquete ni se devuelve. Si después se enganchan, compran un paquete aparte. Si no, no hay compromiso 🤝")
 
                 if _pide_efectivo:
                     _partes.append("Para el sábado solo transferencia 😊 Si después se inscriben, aceptamos todos los medios de pago.")
@@ -2683,6 +2719,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if agent_actual == "ivan" and telefono not in _afiche_enviado and not _interceptado:
             if "te paso un afiche" in respuesta.lower():
                 _va_a_enviar_afiche = True
+
+        # ── Detectar SILENCIO: Claude no sabe y dice "te respondo en un minuto" ──
+        _es_silencio = "te respondo en un minuto" in respuesta.lower()
+        if _es_silencio and not _interceptado:
+            logger.warning(f"[SILENCIO] {telefono}: Claude no supo responder, alertando admin")
+            # Enviar el mensaje al padre tal cual
+            await proveedor.enviar_mensaje(telefono, respuesta)
+            await guardar_mensaje(telefono, "assistant", respuesta)
+            # Alertar al admin con contexto
+            await _alertar_silencio_ivan(telefono, texto, historial)
+            # Espejar en Telegram
+            if topic_id:
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta}", telefono=telefono, group_override=_tg_group)
+            # Salir — no procesar más
+            return {"status": "ok"}
 
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         if _es_formulario_completo:
@@ -3816,8 +3867,10 @@ _MESES_NOMBRE = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
                  7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
 _MONTOS_CONCEPTO = {
     "F.PRUEBA 90MIL": 90_000,
+    "F.PRUEBA 100MIL": 100_000,
     "F.PRUEBA 120MIL": 120_000,
     "F.PRUEBA 150MIL": 150_000,
+    "F.PRUEBA 180MIL": 180_000,
 }
 
 
@@ -4872,7 +4925,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         return
 
     # Agrupar por fecha + contar por monto
-    por_fecha = defaultdict(lambda: {"90": 0, "120": 0, "150": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+    por_fecha = defaultdict(lambda: {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
     for rec in registros_filtrados:
         f = rec.get("fields", {})
         fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
@@ -4882,10 +4935,14 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         por_fecha[fecha_raw]["total_monto"] += monto
         if monto == 90_000:
             por_fecha[fecha_raw]["90"] += 1
+        elif monto == 100_000:
+            por_fecha[fecha_raw]["100"] += 1
         elif monto == 120_000:
             por_fecha[fecha_raw]["120"] += 1
         elif monto == 150_000:
             por_fecha[fecha_raw]["150"] += 1
+        elif monto == 180_000:
+            por_fecha[fecha_raw]["180"] += 1
         else:
             por_fecha[fecha_raw]["sin"] += 1
 
@@ -4914,7 +4971,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     # Todas las fechas (leads + agendados)
     todas_fechas = sorted(set(list(leads_por_fecha.keys()) + list(por_fecha.keys())), reverse=True)
     for fecha_iso in todas_fechas:
-        d = por_fecha.get(fecha_iso, {"90": 0, "120": 0, "150": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+        d = por_fecha.get(fecha_iso, {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
         leads_dia = leads_por_fecha.get(fecha_iso, 0)
         # Formato: DOM 4/5
         try:
@@ -4935,10 +4992,14 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             desglose = []
             if d["90"]:
                 desglose.append(f"90mil: {d['90']}")
+            if d["100"]:
+                desglose.append(f"100mil: {d['100']}")
             if d["120"]:
                 desglose.append(f"120mil: {d['120']}")
             if d["150"]:
                 desglose.append(f"150mil: {d['150']}")
+            if d["180"]:
+                desglose.append(f"180mil: {d['180']}")
             if d["sin"]:
                 desglose.append(f"s/monto: {d['sin']}")
             if desglose:
@@ -4958,6 +5019,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
 # ── Afiche de precios ────────────────────────────────────────────────────────
 
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
+_AFICHE_HERMANOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_hermanos.png")
 _AFICHE_HORARIOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_horarios.png")
 _afiche_horarios_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche horarios
 
@@ -5008,6 +5070,7 @@ def _padre_pregunta_precios(texto: str) -> bool:
         "cuanto cuesta", "cuánto cuesta", "cuanto es", "cuánto es",
         "que sale", "qué sale", "tarifa", "tarifas", "planes", "mensualidad",
         "cuanto hay que pagar", "cuánto hay que pagar", "valor",
+        "promo", "promocion", "promoción", "paquete", "paquetes",
     ]
     return any(p in t for p in patrones)
 
@@ -5125,7 +5188,7 @@ async def _armar_followup_afiche(telefono: str) -> str:
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
-    """Envía el afiche de precios + precios escritos + promo trimestral + CTA."""
+    """Envía el afiche de precios + precios escritos + promo hoy + CTA."""
     try:
         with open(_AFICHE_PATH, "rb") as f:
             image_bytes = f.read()
@@ -5139,18 +5202,22 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Delay antes del mensaje de precios
         await asyncio.sleep(3)
 
-        # Mensaje con precios escritos + promo trimestral
+        # Mensaje con precios escritos — speech 4P
         msg_precios = (
             "📋 *Precios:*\n\n"
-            "🌳 *Sábado en el Parque (padres entran gratis):*\n"
-            "👦 1 hijo: 90.000 Gs\n"
+            "🌳 *Probá FENIX (padres entran gratis):*\n"
+            "👦 1 hijo: 90.000 Gs (1 sábado)\n"
             "👦👦 2 hijos: 120.000 Gs\n"
             "👦👦👦 3 hijos: 150.000 Gs\n\n"
-            "📅 *PLAN MENSUAL* (4 sábados): 350.000/mes + matrícula 200.000 (incluye camisilla)\n\n"
-            "🔥 *PROMO TRIMESTRAL — 40% OFF* 🔥\n"
-            "690.000 + matrícula 140.000 = 830.000 Gs total\n"
-            "➡️ Ahorrás 420.000 Gs 🔥\n\n"
-            "¿Te gustaría agendar un sábado inolvidable para vos y tu hijo? 😊"
+            "🔥 *PROMO HOY — 2 sábados:*\n"
+            "👦 1 hijo: 100.000 Gs\n"
+            "👦👦 2 hijos: 150.000 Gs\n"
+            "👦👦👦 3 hijos: 180.000 Gs\n"
+            "Solo si transferís hoy 🔥\n\n"
+            "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
+            "5 clases: 350.000 Gs (70 mil/clase)\n"
+            "12 clases: 750.000 Gs (62.500/clase) ⭐ el más elegido\n\n"
+            "¿Te gustaría aprovechar la promo de hoy? 🤝"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
@@ -5167,7 +5234,6 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         if _tid_afiche:
             await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: [📸 Afiche de precios enviado]", telefono=telefono, group_override=tg_group)
             await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {msg_precios}", telefono=telefono, group_override=tg_group)
-            await enviar_a_topic(_tid_afiche, f"👨‍🏫 IVAN: {followup}", telefono=telefono, group_override=tg_group)
 
         logger.info(f"[AFICHE] Follow-up enviado a {telefono}")
 
@@ -5442,7 +5508,7 @@ async def _procesar_boton_pago(btn_titulo: str):
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
 
-_MONTOS_AGENDA = {"90mil": 90_000, "120mil": 120_000, "150mil": 150_000, "gratis": 0}
+_MONTOS_AGENDA = {"90mil": 90_000, "100mil": 100_000, "120mil": 120_000, "150mil": 150_000, "180mil": 180_000, "gratis": 0}
 
 
 async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int, group_override: int = 0):
