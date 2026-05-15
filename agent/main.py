@@ -5946,8 +5946,8 @@ async def _procesar_comprobante(
             msg_formulario = (
                 "Ahora sí, para completar la reserva pasame estos datos 📋\n\n"
                 "• Nombre completo tuyo (papá/mamá que acompaña)\n"
-                "• Nombre completo del nene/a\n"
-                "• Fecha de nacimiento del nene/a"
+                "• Nombre completo de tu hijo/a\n"
+                "• Fecha de nacimiento de tu hijo/a"
             )
             await guardar_mensaje(telefono, "assistant", msg_formulario)
             await proveedor.enviar_mensaje(telefono, msg_formulario)
