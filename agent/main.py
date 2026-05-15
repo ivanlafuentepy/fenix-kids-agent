@@ -203,6 +203,12 @@ _fotos_sesion: dict[str, dict] = {}
 # Estado de registro de cara pendiente: {telefono: "nombre del niño"}
 _cara_pendiente: dict[str, str] = {}
 
+# ── Promo Madre ──
+_esperando_pago_promo_madre: set[str] = set()       # leads esperando comprobante
+_leads_promo_madre_enviada: set[str] = set()         # leads que recibieron plantilla
+_esperando_formulario_promo: set[str] = set()        # leads que enviaron comprobante, esperan datos
+_promo_masiva_estado: dict = {"activo": False, "total": 0, "enviados": 0, "errores": 0, "ultimo_enviado": ""}
+
 
 async def _delay_humano(texto: str):
     """Simula tiempo de tipeo para que el agente no parezca un bot."""
@@ -508,6 +514,101 @@ async def health_check():
 async def estadisticas(_: bool = Depends(_require_admin)):
     stats = await obtener_estadisticas()
     return {"conversion": stats}
+
+
+# ── Promo Madre: envío masivo + progreso ───────────────────────────────────────
+
+@app.get("/debug/estado-promo-masiva")
+async def debug_estado_promo_masiva(_: bool = Depends(_require_admin)):
+    """Progreso del envío masivo en curso."""
+    return _promo_masiva_estado
+
+
+async def _enviar_promo_background(all_leads: list[dict], plantilla: str):
+    """Tarea background: envía plantilla a todos los leads."""
+    import httpx as _httpx_pm
+    _promo_masiva_estado.update({"activo": True, "total": len(all_leads), "enviados": 0, "errores": 0, "ultimo_enviado": ""})
+
+    promo_image_handle = os.getenv("PROMO_MADRE_IMAGE_HANDLE", "1295983018794545")
+    componentes_pm = [{"type": "header", "parameters": [{"type": "image", "image": {"id": promo_image_handle}}]}]
+
+    for i, lead in enumerate(all_leads):
+        ok = await proveedor.enviar_plantilla(lead["telefono"], plantilla, componentes=componentes_pm, language="es_AR")
+        if ok:
+            _promo_masiva_estado["enviados"] += 1
+            _promo_masiva_estado["ultimo_enviado"] = lead["nombre"] or lead["telefono"]
+            _leads_promo_madre_enviada.add(lead["telefono"])
+            # Marcar PROMOMADRE en LEADS FENIX
+            try:
+                from agent.airtable_client import obtener_lead_record_id, _patch, _LEADS
+                _rec = await obtener_lead_record_id(lead["telefono"])
+                if _rec:
+                    await _patch(_LEADS, _rec, {"PROMOMADRE": True})
+            except Exception:
+                pass
+            # Notificar Telegram
+            try:
+                _t_pm = await obtener_o_crear_topic(lead["telefono"], lead["nombre"] or lead["telefono"])
+                if _t_pm:
+                    await enviar_a_topic(_t_pm, "📢 Plantilla PROMO MADRE enviada", telefono=lead["telefono"])
+            except Exception:
+                pass
+        else:
+            _promo_masiva_estado["errores"] += 1
+        if (i + 1) % 50 == 0:
+            await asyncio.sleep(2)
+
+    _promo_masiva_estado["activo"] = False
+    logger.info(f"[PROMO-MASIVA] Terminado: {_promo_masiva_estado['enviados']}/{_promo_masiva_estado['total']}")
+
+
+@app.get("/debug/enviar-promo-masiva")
+async def debug_enviar_promo_masiva(
+    plantilla: str = "fenixpromomadre",
+    dry_run: str = "true",
+    telefono_test: str = "",
+    _: bool = Depends(_require_admin),
+):
+    """Envía plantilla promo madre a TODOS los leads. Background + progreso en /debug/estado-promo-masiva."""
+    if _promo_masiva_estado.get("activo"):
+        return {"error": "Ya hay un envío en curso", "estado": _promo_masiva_estado}
+
+    import httpx as _httpx_leads
+    from agent.airtable_client import _LEADS, _BASE_URL, _headers
+    all_leads: list[dict] = []
+    _offset_at = None
+    async with _httpx_leads.AsyncClient(timeout=30) as _cl_at:
+        while True:
+            _params_at: dict = {"pageSize": "100"}
+            if _offset_at:
+                _params_at["offset"] = _offset_at
+            _r_at = await _cl_at.get(f"{_BASE_URL}/{_LEADS}", headers=_headers(), params=_params_at)
+            if _r_at.status_code != 200:
+                return {"error": f"Airtable HTTP {_r_at.status_code}"}
+            _data_at = _r_at.json()
+            for rec in _data_at.get("records", []):
+                fields = rec.get("fields", {})
+                tel = fields.get("TELEFONO", "")
+                nombre = fields.get("NOMBRE RESPONSABLE", "") or fields.get("NOMBRE NIÑO", "")
+                if tel:
+                    all_leads.append({"telefono": tel, "nombre": nombre})
+            _offset_at = _data_at.get("offset")
+            if not _offset_at:
+                break
+
+    if not all_leads:
+        return {"total": 0, "mensaje": "No hay leads en LEADS FENIX"}
+    if telefono_test:
+        all_leads = [{"telefono": telefono_test, "nombre": "Test"}]
+
+    es_dry_run = dry_run.lower() in ("true", "1", "si", "sí")
+    if es_dry_run:
+        return {"modo": "DRY RUN", "plantilla": plantilla, "total_leads": len(all_leads),
+                "leads": [{"telefono": l["telefono"], "nombre": l["nombre"]} for l in all_leads]}
+
+    asyncio.create_task(_enviar_promo_background(all_leads, plantilla))
+    return {"mensaje": f"🚀 Envío masivo iniciado — {len(all_leads)} leads", "plantilla": plantilla,
+            "total": len(all_leads), "progreso_en": "/debug/estado-promo-masiva"}
 
 
 @app.get("/debug/{telefono}")
@@ -1614,6 +1715,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
             _admin_modo_padre.discard(telefono)
+            _esperando_pago_promo_madre.discard(telefono)
+            _leads_promo_madre_enviada.discard(telefono)
+            _esperando_formulario_promo.discard(telefono)
             if telefono == admin_phone:
                 # Admin: reset completo incluyendo Airtable
                 contador = await eliminar_todo_de_telefono(telefono)
@@ -2032,6 +2136,109 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
         if not await dorita_esta_activa(telefono):
             logger.info(f"Agente silenciado para {telefono} — Ivan activo en Telegram")
+            return
+
+        # ── PROMO MADRE: formulario (nombre+apellido responsable, nombre+apellido+fnac hijo) ──
+        if (telefono in _esperando_formulario_promo
+                and texto not in ("[imagen]", "[documento]", "[audio]")
+                and texto.lower() != "holayosoyfenix"):
+            await guardar_mensaje(telefono, "user", texto)
+            _esperando_formulario_promo.discard(telefono)
+
+            # Respuesta PRIMERO
+            _resp_pm = (
+                "¡Muchas gracias! 🎉 Ya estás dentro de la promo 💪\n\n"
+                "La promo cubre del *15 de mayo al 15 de julio* 📅\n"
+                "¡Nos vemos el sábado! 🌳"
+            )
+            await guardar_mensaje(telefono, "assistant", _resp_pm)
+            await proveedor.enviar_mensaje(telefono, _resp_pm)
+
+            # Guardar en Airtable
+            try:
+                from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm
+                _rec_pm = await _olri_pm(telefono)
+                if _rec_pm:
+                    await _p_pm(_L_pm, _rec_pm, {"CONVERSION": ["PAGO"], "PROMOMADRE": True})
+            except Exception as _e_pm:
+                logger.error(f"[PROMO-MADRE] Error Airtable: {_e_pm}")
+
+            # Notificar admin + Telegram
+            try:
+                await proveedor.enviar_mensaje(admin_phone, f"🎁 PROMO MADRE registrada\n📱 https://wa.me/{telefono}\nDatos: {texto}")
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"🎁 PROMO MADRE completada — {texto}", telefono=telefono)
+            except Exception:
+                pass
+            logger.info(f"[PROMO-MADRE] Formulario completado: {telefono} — {texto}")
+            return
+
+        # ── PROMO MADRE: lead respondió a plantilla → datos bancarios directo ──
+        if (telefono in _leads_promo_madre_enviada
+                and telefono not in _esperando_pago_promo_madre
+                and texto.lower() != "holayosoyfenix"):
+            _leads_promo_madre_enviada.discard(telefono)
+            await guardar_mensaje(telefono, "user", texto)
+            from agent.airtable_client import obtener_lead_record_id as _olri_pm2
+            if not await _olri_pm2(telefono):
+                from agent.airtable_client import crear_lead as _cl_pm
+                await _cl_pm(telefono)
+            _esperando_pago_promo_madre.add(telefono)
+            _resp_banco = (
+                "¡Genial! 🎉 Espero tu transferencia para asegurar el lugar "
+                "de tu hijo/a porque quedan pocos cupos!\n\n"
+                "🏦 *Datos bancarios:*\n"
+                "Alias | CI 1604338\n"
+                "Itaú | Iván Lafuente\n\n"
+                "💰 *Promo Madre: 350.000 Gs*\n"
+                "✅ 2 meses de clases\n"
+                "✅ Matrícula exonerada\n\n"
+                "Enviame la foto del comprobante cuando hagas la transferencia 📸"
+            )
+            await guardar_mensaje(telefono, "assistant", _resp_banco)
+            await proveedor.enviar_mensaje(telefono, _resp_banco)
+            if topic_id:
+                await enviar_a_topic(topic_id, "🎁 Lead respondió a promo madre", telefono=telefono)
+            logger.info(f"[PROMO-MADRE] {telefono} respondió a plantilla")
+            return
+
+        # ── PROMO MADRE: comprobante ──
+        if telefono in _esperando_pago_promo_madre and texto in ("[imagen]", "[documento]"):
+            await guardar_mensaje(telefono, "user", texto)
+            _esperando_pago_promo_madre.discard(telefono)
+            _leads_promo_madre_enviada.discard(telefono)
+            _esperando_formulario_promo.add(telefono)
+
+            # Reenviar imagen al admin
+            if msg.media_id and hasattr(proveedor, "enviar_imagen"):
+                await proveedor.enviar_imagen(admin_phone, msg.media_id, caption=f"🎁 Comprobante PROMO MADRE — {telefono}")
+
+            # Espejo Telegram
+            if topic_id and msg.media_id:
+                try:
+                    _mb_pm, _mm_pm = await descargar_audio_whatsapp(msg.media_id)
+                    if _mb_pm:
+                        await enviar_media_a_topic(topic_id=topic_id, media_bytes=_mb_pm, tipo="imagen",
+                                                   caption=f"🎁 Comprobante PROMO MADRE", telefono=telefono)
+                except Exception:
+                    pass
+
+            _msg_gracias_pm = "¡Muchas gracias por tu pago! 🎉\n\nAhora necesito los datos para registrar:"
+            _msg_form_pm = (
+                "Completá los datos 👇\n\n"
+                "• Nombre y apellido del responsable\n"
+                "• Nombre y apellido del hijo/a\n"
+                "• Fecha de nacimiento del hijo/a"
+            )
+            await proveedor.enviar_mensaje(telefono, _msg_gracias_pm)
+            await guardar_mensaje(telefono, "assistant", _msg_gracias_pm)
+            await proveedor.enviar_mensaje(telefono, _msg_form_pm)
+            await guardar_mensaje(telefono, "assistant", _msg_form_pm)
+
+            await proveedor.enviar_mensaje(admin_phone, f"🎁 *PROMO MADRE — Pago recibido*\nLead: {telefono}\nMonto: 350.000 Gs")
+            if topic_id:
+                await enviar_a_topic(topic_id, "🎁 Comprobante promo madre — formulario enviado", telefono=telefono)
+            logger.info(f"[PROMO-MADRE] Comprobante recibido de {telefono}")
             return
 
         # ── Detección de comprobante de pago ───────���─────────────────────

@@ -240,6 +240,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         telefono: str,
         template_name: str,
         variables: list[str] | None = None,
+        componentes: list[dict] | None = None,
         language: str = "es",
     ) -> bool:
         """
@@ -249,7 +250,8 @@ class ProveedorMeta(ProveedorWhatsApp):
         Args:
             telefono: Número del destinatario
             template_name: Nombre de la plantilla en Meta Business
-            variables: Lista de variables {{1}}, {{2}}, etc.
+            variables: Lista de variables {{1}}, {{2}}, etc. (backward compat)
+            componentes: Componentes raw (header, body, buttons) — prioridad sobre variables
             language: Código de idioma (default: es)
         """
         if not self.access_token or not self.phone_number_id:
@@ -264,7 +266,10 @@ class ProveedorMeta(ProveedorWhatsApp):
             "name": template_name,
             "language": {"code": language},
         }
-        if variables:
+        if componentes:
+            # Componentes raw (header imagen, botones, etc.)
+            template["components"] = componentes
+        elif variables:
             template["components"] = [
                 {
                     "type": "body",

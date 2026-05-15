@@ -155,6 +155,15 @@ async def generar_respuesta(
 
     system_prompt = cargar_prompt_agente(agent_actual)
 
+    # Override promo madre
+    system_prompt += (
+        "\n\n═══ PROMO DÍA DE LA MADRE (vigente) ═══\n"
+        "🎁 350.000 Gs → 2 meses de clases + matrícula exonerada.\n"
+        "Solo hasta las 20:00 de hoy. Cupos limitados.\n"
+        "Si el padre pregunta por la promo, decile que escriba 'quiero la promo' "
+        "o contale los datos bancarios: Alias CI 1604338, Itaú, Iván Lafuente.\n"
+    )
+
     if contexto_extra:
         system_prompt += f"\n\n{contexto_extra}"
 
