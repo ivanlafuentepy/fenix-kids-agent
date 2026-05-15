@@ -628,15 +628,57 @@ async def debug_enviar_promo_masiva(
             "total": len(all_leads), "progreso_en": "/debug/estado-promo-masiva"}
 
 
+@app.get("/debug/revertir-pago-promomadre")
+async def debug_revertir_pago_promomadre(
+    dry_run: str = "true",
+    _: bool = Depends(_require_admin),
+):
+    """Desmarca PAGO PROMOMADRE de todos los leads que lo tengan."""
+    import httpx as _httpx_rev
+    from agent.airtable_client import _LEADS, _BASE_URL, _headers, _patch
+
+    candidatos: list[dict] = []
+    _offset_rev = None
+    async with _httpx_rev.AsyncClient(timeout=30) as _cl_rev:
+        while True:
+            _params_rev: dict = {"pageSize": "100", "filterByFormula": "{PAGO PROMOMADRE}=TRUE()"}
+            if _offset_rev:
+                _params_rev["offset"] = _offset_rev
+            _r_rev = await _cl_rev.get(f"{_BASE_URL}/{_LEADS}", headers=_headers(), params=_params_rev)
+            if _r_rev.status_code != 200:
+                return {"error": f"Airtable HTTP {_r_rev.status_code}"}
+            _data_rev = _r_rev.json()
+            for rec in _data_rev.get("records", []):
+                fields = rec.get("fields", {})
+                candidatos.append({"id": rec["id"], "telefono": fields.get("TELEFONO", "")})
+            _offset_rev = _data_rev.get("offset")
+            if not _offset_rev:
+                break
+
+    es_dry_run = dry_run.lower() in ("true", "1", "si", "sí")
+    if es_dry_run:
+        return {"modo": "DRY RUN", "por_revertir": len(candidatos), "leads": candidatos}
+
+    revertidos = 0
+    for c in candidatos:
+        try:
+            await _patch(_LEADS, c["id"], {"PAGO PROMOMADRE": False})
+            revertidos += 1
+        except Exception:
+            pass
+    return {"revertidos": revertidos}
+
+
 @app.get("/debug/marcar-pago-promomadre")
 async def debug_marcar_pago_promomadre(
     dry_run: str = "true",
     _: bool = Depends(_require_admin),
 ):
-    """Escanea leads con PROMOMADRE=true y CONVERSION=PAGO → marca PAGO PROMOMADRE."""
+    """Escanea leads que pagaron la promo madre (verificando historial de conversación) → marca PAGO PROMOMADRE."""
     import httpx as _httpx_ppm
     from agent.airtable_client import _LEADS, _BASE_URL, _headers, _patch
 
+    # Buscar leads con BOTON PROMOMADRE (respondieron a la promo)
     marcados = 0
     ya_marcados = 0
     candidatos: list[dict] = []
@@ -646,7 +688,7 @@ async def debug_marcar_pago_promomadre(
         while True:
             _params_ppm: dict = {
                 "pageSize": "100",
-                "filterByFormula": "AND({PROMOMADRE}=TRUE(), FIND('PAGO', ARRAYJOIN({CONVERSION}))>0)",
+                "filterByFormula": "{BOTON PROMOMADRE}=TRUE()",
             }
             if _offset_ppm:
                 _params_ppm["offset"] = _offset_ppm
@@ -659,11 +701,27 @@ async def debug_marcar_pago_promomadre(
                 if fields.get("PAGO PROMOMADRE"):
                     ya_marcados += 1
                     continue
-                candidatos.append({
-                    "id": rec["id"],
-                    "telefono": fields.get("TELEFONO", ""),
-                    "nombre": fields.get("NOMBRE RESPONSABLE", "") or fields.get("NOMBRE NIÑO", ""),
-                })
+                tel = fields.get("TELEFONO", "")
+                if not tel:
+                    continue
+                # Verificar en historial si envió comprobante promo madre
+                # El bot responde "gracias por tu pago" SOLO cuando recibe comprobante promo madre
+                historial = await obtener_historial(tel, limite=50)
+                tiene_datos_banco_promo = any(
+                    "promo madre" in m.get("content", "").lower() and "350" in m.get("content", "")
+                    for m in historial if m.get("role") == "assistant"
+                )
+                tiene_comprobante = any(
+                    m.get("content", "") in ("[imagen]", "[documento]")
+                    for m in historial if m.get("role") == "user"
+                )
+                pago_confirmado = tiene_datos_banco_promo and tiene_comprobante
+                if pago_confirmado:
+                    candidatos.append({
+                        "id": rec["id"],
+                        "telefono": tel,
+                        "nombre": fields.get("NOMBRE RESPONSABLE", "") or fields.get("NOMBRE NIÑO", ""),
+                    })
             _offset_ppm = _data_ppm.get("offset")
             if not _offset_ppm:
                 break
