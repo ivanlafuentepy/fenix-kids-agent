@@ -577,6 +577,7 @@ async def debug_enviar_promo_masiva(
     plantilla: str = "fenixpromomadre",
     dry_run: str = "true",
     telefono_test: str = "",
+    excluir: str = "",
     _: bool = Depends(_require_admin),
 ):
     """Envía plantilla promo madre a TODOS los leads. Background + progreso en /debug/estado-promo-masiva."""
@@ -600,14 +601,20 @@ async def debug_enviar_promo_masiva(
                 fields = rec.get("fields", {})
                 tel = fields.get("TELEFONO", "")
                 nombre = fields.get("NOMBRE RESPONSABLE", "") or fields.get("NOMBRE NIÑO", "")
-                if tel:
+                ya_enviado = fields.get("PROMOMADRE", False)
+                if tel and not ya_enviado:
                     all_leads.append({"telefono": tel, "nombre": nombre})
             _offset_at = _data_at.get("offset")
             if not _offset_at:
                 break
 
+    # Excluir números específicos
+    if excluir:
+        _excluir_set = set(excluir.split(","))
+        all_leads = [l for l in all_leads if l["telefono"] not in _excluir_set]
+
     if not all_leads:
-        return {"total": 0, "mensaje": "No hay leads en LEADS FENIX"}
+        return {"total": 0, "mensaje": "No hay leads pendientes en LEADS FENIX (todos ya enviados o excluidos)"}
     if telefono_test:
         all_leads = [{"telefono": telefono_test, "nombre": "Test"}]
 
