@@ -5244,21 +5244,25 @@ async def _agregar_presentes_por_nombres(telefono: str, texto: str):
         t = unicodedata.normalize("NFD", t.lower())
         return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
+    def _match_nombre(buscar: str, completo: str) -> bool:
+        """Todas las palabras de 'buscar' deben estar en 'completo'."""
+        palabras = _normalizar(buscar).split()
+        target = _normalizar(completo)
+        return all(p in target for p in palabras)
+
     # Parsear nombres (separados por línea o coma)
     nombres = [n.strip() for n in re.split(r'[,\n]+', texto) if n.strip()]
 
     resultados = []
+    ninos_all = await _get_records(_NINOS, formula="", max_records=200)
     for nombre_buscar in nombres:
-        nombre_norm = _normalizar(nombre_buscar)
-
         # Buscar en NIÑOS FENIX
-        ninos_all = await _get_records(_NINOS, formula="", max_records=200)
         nino_match = None
         for n in ninos_all:
             f = n.get("fields", {})
             nombre_full = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
             apodo = f.get("APODO", "")
-            if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+            if _match_nombre(nombre_buscar, nombre_full) or (apodo and _match_nombre(nombre_buscar, apodo)):
                 nino_match = {"id": n["id"], "nombre": nombre_full, "familia": f.get("FAMILIA", [])}
                 break
 
@@ -5286,7 +5290,7 @@ async def _agregar_presentes_por_nombres(telefono: str, texto: str):
             for p in pruebas + pruebas_iso:
                 pf = p.get("fields", {})
                 nombre_full = f"{pf.get('NOMBRE HIJO', '')} {pf.get('APELLIDO HIJO', '')}".strip()
-                if nombre_norm in _normalizar(nombre_full):
+                if _match_nombre(nombre_buscar, nombre_full):
                     prueba_match = p
                     break
 
@@ -5326,7 +5330,12 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
         t = unicodedata.normalize("NFD", t.lower())
         return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
-    nombre_norm = _normalizar(nombre_buscar)
+    def _match_nombre(buscar: str, completo: str) -> bool:
+        """Todas las palabras de 'buscar' deben estar en 'completo'."""
+        palabras = _normalizar(buscar).split()
+        target = _normalizar(completo)
+        return all(p in target for p in palabras)
+
     encontrados = []
 
     for hora in ["9:30", "11:00", "15:30"]:
@@ -5336,7 +5345,7 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
             for n in ninos_aurora:
                 nombre_full = f"{n.get('nombre', '')} {n.get('apellido', '')}".strip()
                 apodo = n.get("apodo", "")
-                if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+                if _match_nombre(nombre_buscar, nombre_full) or (apodo and _match_nombre(nombre_buscar, apodo)):
                     encontrados.append({"nombre": nombre_full, "tabla": "RESERVAS", "record_id": n.get("reserva_id", ""), "hora": hora})
 
         # Pruebas (solo si ES solo_prueba)
@@ -5351,7 +5360,7 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
                     if f.get("CONVERSION") == "CANCELADO":
                         continue
                     nombre_full = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
-                    if nombre_norm in _normalizar(nombre_full):
+                    if _match_nombre(nombre_buscar, nombre_full):
                         encontrados.append({"nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"], "hora": hora})
 
     if not encontrados:
@@ -5365,7 +5374,7 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
                 f = n.get("fields", {})
                 nombre_full = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
                 apodo = f.get("APODO", "")
-                if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+                if _match_nombre(nombre_buscar, nombre_full) or (apodo and _match_nombre(nombre_buscar, apodo)):
                     nino_match = {"id": n["id"], "nombre": nombre_full, "familia": f.get("FAMILIA", [])}
                     break
 
