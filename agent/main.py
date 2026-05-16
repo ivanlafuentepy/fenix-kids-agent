@@ -2033,6 +2033,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen anuncios` — métricas de anuncios Meta\n"
                 "• `resumen anuncios hoy` / `ayer` / `[mes]`\n"
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
+                "• `resumen flias` — familias con nombre hijo + padre + link wa.me\n"
                 "• `resumen asis` / `resumen asis 10/5` — quién vino (presentes por turno)\n"
                 "• `resumen prueba` / `resumen prueba 9/5` — dashboard pruebas (asis+pagos+seguimiento)\n"
                 "• `resumen seguimiento` / `seguimiento 9/5` — estado mensajes personalizados\n"
@@ -2296,6 +2297,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESUMEN RESERVAS] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen reservas: {e}")
+            return
+
+        # ── Comando resumen flias (solo admin) ─────────────────────────
+        if telefono == admin_phone and "resumen" in _texto_cmd and "flia" in _texto_cmd:
+            _fecha_override_fl = None
+            _m_fecha_fl = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
+            if _m_fecha_fl:
+                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
+                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
+                try:
+                    _fecha_override_fl = _date_cls(_anio, int(_m_fecha_fl.group(2)), int(_m_fecha_fl.group(1)))
+                except ValueError:
+                    pass
+            try:
+                await _generar_resumen_flias(telefono, fecha_override=_fecha_override_fl)
+            except Exception as e:
+                logger.error(f"[RESUMEN FLIAS] Error: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error generando resumen flias: {e}")
             return
 
         # ── Comando resumen asistencia (solo admin) ─────────────────────────
@@ -4753,6 +4772,112 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
     total = total_aurora + total_fenix
     lineas.append(f"👧👦 *Total: {total} guerrero{'s' if total != 1 else ''}*")
     lineas.append(f"   🌳 Aurora: {total_aurora} | 🔥 Prueba: {total_fenix}")
+
+    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
+
+
+async def _generar_resumen_flias(telefono: str, fecha_override=None):
+    """Resumen tipo reservas pero con nombre hijo | nombre padre + link wa.me."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    if fecha_override:
+        sabado = fecha_override
+    else:
+        dias_hasta_sabado = (5 - hoy.weekday()) % 7
+        if dias_hasta_sabado == 0 and hoy.weekday() != 5:
+            dias_hasta_sabado = 7
+        sabado = hoy + timedelta(days=dias_hasta_sabado)
+    fecha_iso = sabado.isoformat()
+
+    _DIAS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
+    fecha_label = f"{_DIAS[sabado.weekday()]} {sabado.day}/{sabado.month}"
+
+    turnos = ["9:30", "11:00", "15:30"]
+
+    # AURORA: inscriptos
+    aurora_por_turno = {}
+    for hora in turnos:
+        ninos = await obtener_ninos_por_horario(fecha_iso, hora)
+        aurora_por_turno[hora] = ninos
+
+    # FENIX: pruebas
+    pruebas_iso = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
+    fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
+    for rec in pruebas_iso:
+        f = rec.get("fields", {})
+        hora_raw = (f.get("HORA") or "").strip()
+        if hora_raw not in fenix_por_turno:
+            _h_clean = hora_raw.replace("h", "").replace("hs", "").strip()
+            for t in turnos:
+                if _h_clean == t or _h_clean.lstrip("0") == t or _h_clean == t.split(":")[0]:
+                    hora_raw = t
+                    break
+        if hora_raw in fenix_por_turno:
+            tel_padre = f.get("TELEFONO", "")
+            nombre_hijo = (f.get("NOMBRE HIJO") or "").split()[0]
+            nombre_padre = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
+            fenix_por_turno[hora_raw].append({
+                "nombre_hijo": nombre_hijo,
+                "nombre_padre": nombre_padre,
+                "telefono": tel_padre,
+            })
+
+    # Armar mensaje
+    lineas = [f"👨‍👩‍👧‍👦 *FAMILIAS — {fecha_label}*\n"]
+    total = 0
+
+    for hora in turnos:
+        aurora = aurora_por_turno[hora]
+        fenix = fenix_por_turno[hora]
+        total_turno = len(aurora) + len(fenix)
+        total += total_turno
+
+        lineas.append(f"⏰ *{hora}h* — {total_turno}")
+
+        if aurora:
+            for n in aurora:
+                nombre_hijo = (n.get("apodo") or n["nombre"]).split()[0]
+                # Buscar padre en familia
+                _fam_id = n.get("familia_id", "")
+                _padre_nombre = ""
+                _tel_padre = ""
+                if _fam_id:
+                    try:
+                        from agent.airtable_client import _BASE_URL, _headers
+                        import httpx
+                        async with httpx.AsyncClient() as _cl:
+                            _r = await _cl.get(f"{_BASE_URL}/FAMILIAS%20FENIX/{_fam_id}", headers=_headers(), timeout=10)
+                            if _r.status_code == 200:
+                                _ff = _r.json().get("fields", {})
+                                if _ff.get("CELL MADRE"):
+                                    _padre_nombre = f"{_ff.get('NOMBRE MADRE', '')} {_ff.get('APELLIDO MADRE', '')}".strip()
+                                    _tel_padre = _ff["CELL MADRE"]
+                                elif _ff.get("CELL PADRE"):
+                                    _padre_nombre = f"{_ff.get('NOMBRE PADRE', '')} {_ff.get('APELLIDO PADRE', '')}".strip()
+                                    _tel_padre = _ff["CELL PADRE"]
+                    except Exception:
+                        pass
+                wa_link = f"wa.me/{_tel_padre}" if _tel_padre else ""
+                lineas.append(f"  🌳 {nombre_hijo} | {_padre_nombre}")
+                if wa_link:
+                    lineas.append(f"      {wa_link}")
+
+        if fenix:
+            for n in fenix:
+                wa_link = f"wa.me/{n['telefono']}" if n["telefono"] else ""
+                lineas.append(f"  🔥 {n['nombre_hijo']} | {n['nombre_padre']}")
+                if wa_link:
+                    lineas.append(f"      {wa_link}")
+
+        if not aurora and not fenix:
+            lineas.append("   — vacio")
+        lineas.append("")
+
+    lineas.append(f"*Total: {total}*")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
