@@ -4827,8 +4827,10 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
             })
 
     # Armar mensaje
+    emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆", "🦈", "🐉", "🦖", "🌵", "🎸"]
     lineas = [f"👨‍👩‍👧‍👦 *FAMILIAS — {fecha_label}*\n"]
     total = 0
+    _emoji_idx = 0
 
     for hora in turnos:
         aurora = aurora_por_turno[hora]
@@ -4840,8 +4842,9 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
 
         if aurora:
             for n in aurora:
+                emoji = emojis[_emoji_idx % len(emojis)]
+                _emoji_idx += 1
                 nombre_hijo = (n.get("apodo") or n["nombre"]).split()[0]
-                # Buscar padre en familia
                 _fam_id = n.get("familia_id", "")
                 _padre_nombre = ""
                 _tel_padre = ""
@@ -4862,14 +4865,16 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
                     except Exception:
                         pass
                 wa_link = f"wa.me/{_tel_padre}" if _tel_padre else ""
-                lineas.append(f"  🌳 {nombre_hijo} | {_padre_nombre}")
+                lineas.append(f"  {emoji} {nombre_hijo} | {_padre_nombre}")
                 if wa_link:
                     lineas.append(f"      {wa_link}")
 
         if fenix:
             for n in fenix:
+                emoji = emojis[_emoji_idx % len(emojis)]
+                _emoji_idx += 1
                 wa_link = f"wa.me/{n['telefono']}" if n["telefono"] else ""
-                lineas.append(f"  🔥 {n['nombre_hijo']} | {n['nombre_padre']}")
+                lineas.append(f"  {emoji} {n['nombre_hijo']} | {n['nombre_padre']}")
                 if wa_link:
                     lineas.append(f"      {wa_link}")
 
