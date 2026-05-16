@@ -5904,9 +5904,13 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
 
         # Mensaje corto después del afiche
         msg_precios = (
-            "🌳 *Probá FENIX (padres entran gratis):*\n"
-            "👦 Prueba: 90.000 Gs (1 sábado)\n"
+            "🌳 *Probá FENIX (padres entran gratis):*\n\n"
+            "👦 *1 hijo:*\n"
+            "Prueba: 90.000 Gs (1 sábado)\n"
             "🔥 *PROMO HOY:* 100.000 Gs por 2 sábados\n\n"
+            "👦👦 *2 hijos:*\n"
+            "Prueba: 120.000 Gs (1 sábado)\n"
+            "🔥 *PROMO HOY:* 150.000 Gs por 2 sábados\n\n"
             "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
             "5 clases: 350.000 Gs | 12 clases: 750.000 Gs\n\n"
             "¿Te gustaría aprovechar la promo de hoy? 🤝"
