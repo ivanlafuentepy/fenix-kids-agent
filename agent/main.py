@@ -3511,6 +3511,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Crear PRUEBA FENIX si el padre completó el formulario ─────────
         if _es_formulario_completo:
+            # Guard: no crear si ya existe en PRUEBA FENIX (reagendamiento, re-deploy, etc.)
+            from agent.airtable_client import _get_records as _get_r_form, _PRUEBAS as _PR_FORM
+            _ya_existe_prueba = await _get_r_form(_PR_FORM, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            if _ya_existe_prueba:
+                logger.info(f"[FORMULARIO] {telefono} ya tiene PRUEBA FENIX — no se crea duplicado")
+                _es_formulario_completo = False
+                _prueba_creada.add(telefono)
+        if _es_formulario_completo:
             _prueba_creada.add(telefono)
             try:
                 from urllib.parse import quote
@@ -3720,8 +3728,15 @@ async def _procesar_confirmacion_reserva(
 
     logger.info(f"Confirmación detectada ({agent_actual}): {fecha_str} {hora_str} para {telefono}")
 
-    # Solo Ivan toca LEADS FENIX — Aurora NUNCA toca LEADS ni PRUEBA
+    # ── Verificar si es REAGENDAMIENTO (ya tiene PRUEBA FENIX) ────────────────
+    _es_reagendamiento = False
     if agent_actual == "ivan":
+        from agent.airtable_client import _get_records as _get_recs_conf, _PRUEBAS as _PR_CONF
+        _pruebas_prev = await _get_recs_conf(_PR_CONF, formula=f"{{TELEFONO}}='{telefono}'", max_records=5)
+        _es_reagendamiento = len(_pruebas_prev) > 0
+
+    # Solo Ivan toca LEADS FENIX — Aurora NUNCA toca LEADS ni PRUEBA
+    if agent_actual == "ivan" and not _es_reagendamiento:
         await actualizar_conversion_lead(telefono, "PAGO")
         await actualizar_reserva_lead(telefono, fecha_str, hora_str)
 
@@ -3818,13 +3833,34 @@ async def _procesar_confirmacion_reserva(
                 _hora_norm = hora_str.replace("h", "").replace(".", ":")
                 if ":" not in _hora_norm:
                     _hora_norm = f"{_hora_norm}:00"
+                # Obtener fecha anterior para la notificación
+                _fecha_anterior = _pruebas_existentes[0].get("fields", {}).get("FECHA RESERVA", "?")
+                _hora_anterior = _pruebas_existentes[0].get("fields", {}).get("HORA", "?")
+                _nombre_resp_re = _pruebas_existentes[0].get("fields", {}).get("NOMBRE", "?")
+                _hijos_re = []
                 for _pr in _pruebas_existentes:
                     await _patch(_PRUEBAS, _pr["id"], {
                         "FECHA RESERVA": fecha_str,
                         "HORA": _hora_norm,
                     })
                     _nh_pr = _pr.get("fields", {}).get("NOMBRE HIJO", "?")
+                    _hijos_re.append(_nh_pr)
                     logger.info(f"[REAGENDAR] {_nh_pr} ({telefono}): {fecha_str} {_hora_norm}")
+
+                # Notificar admin por WhatsApp
+                _admin_phone_re = os.getenv("ADMIN_PHONE", "595982790407")
+                _hijos_txt = ", ".join(_hijos_re)
+                _msg_re = (
+                    f"🔄 REAGENDAMIENTO\n"
+                    f"👤 {_nombre_resp_re}\n"
+                    f"👧 {_hijos_txt}\n"
+                    f"❌ De: {_fecha_anterior} {_hora_anterior}\n"
+                    f"✅ A: {fecha_str} {_hora_norm}\n"
+                    f"📱 https://wa.me/{telefono}"
+                )
+                if telefono != _admin_phone_re:
+                    await proveedor.enviar_mensaje(_admin_phone_re, _msg_re)
+                return  # No seguir procesando (no crear RESERVAS, no actualizar LEADS)
         except Exception as e:
             logger.error(f"[REAGENDAR] Error actualizando PRUEBA FENIX: {e}")
 
