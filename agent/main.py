@@ -203,7 +203,8 @@ _fotos_sesion: dict[str, dict] = {}
 # Estado de registro de cara pendiente: {telefono: "nombre del niño"}
 _cara_pendiente: dict[str, str] = {}
 
-# ── Promo Madre ──
+# ── Promo Madre (DESACTIVADA 2026-05-16 — venció 15/5 20h) ──
+_PROMO_MADRE_ACTIVA = False  # cambiar a True para reactivar
 _esperando_pago_promo_madre: set[str] = set()       # leads esperando comprobante
 _leads_promo_madre_enviada: set[str] = set()         # leads que recibieron plantilla
 _esperando_formulario_promo: set[str] = set()        # leads que enviaron comprobante, esperan datos
@@ -2563,7 +2564,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── PROMO MADRE: formulario (nombre+apellido responsable, nombre+apellido+fnac hijo) ──
-        if (telefono in _esperando_formulario_promo
+        if (_PROMO_MADRE_ACTIVA
+                and telefono in _esperando_formulario_promo
                 and texto not in ("[imagen]", "[documento]", "[audio]")
                 and texto.lower() != "holayosoyfenix"):
             await guardar_mensaje(telefono, "user", texto)
@@ -2642,7 +2644,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── PROMO MADRE: lead respondió a plantilla O escribe "quiero la promo" ──
         _texto_lower_pm = texto.strip().lower()
         _es_quiero_promo = "quiero" in _texto_lower_pm and "promo" in _texto_lower_pm
-        if (_es_quiero_promo or telefono in _leads_promo_madre_enviada) and telefono not in _esperando_pago_promo_madre and texto.lower() != "holayosoyfenix":
+        if (_PROMO_MADRE_ACTIVA
+                and (_es_quiero_promo or telefono in _leads_promo_madre_enviada)
+                and telefono not in _esperando_pago_promo_madre
+                and texto.lower() != "holayosoyfenix"):
             _leads_promo_madre_enviada.discard(telefono)
             await guardar_mensaje(telefono, "user", texto)
             from agent.airtable_client import obtener_lead_record_id as _olri_pm2
@@ -2677,7 +2682,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── PROMO MADRE: comprobante ──
-        if telefono in _esperando_pago_promo_madre and texto in ("[imagen]", "[documento]"):
+        if _PROMO_MADRE_ACTIVA and telefono in _esperando_pago_promo_madre and texto in ("[imagen]", "[documento]"):
             await guardar_mensaje(telefono, "user", texto)
             _esperando_pago_promo_madre.discard(telefono)
             _leads_promo_madre_enviada.discard(telefono)
