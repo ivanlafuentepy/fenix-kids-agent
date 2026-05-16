@@ -71,7 +71,7 @@ def _contexto_fechas() -> str:
         sabados = []
         s = primer_sabado
         while s.month == mes:
-            if desde is None or s > desde:  # estrictamente posterior a hoy (no incluir si ya es hoy)
+            if desde is None or s >= desde:  # incluye hoy si es sábado
                 sabados.append(s)
             s += td(days=7)
         return sabados
@@ -79,7 +79,7 @@ def _contexto_fechas() -> str:
     def fmt(d: date) -> str:
         return f"sábado {d.day} de {meses_es[d.month - 1]}"
 
-    # Mes actual (solo sábados futuros, excluyendo hoy si es sábado)
+    # Mes actual (sábados desde hoy inclusive)
     sabados_actual = sabados_de_mes(hoy.year, hoy.month, desde=hoy)
 
     # Mes siguiente (todos)
