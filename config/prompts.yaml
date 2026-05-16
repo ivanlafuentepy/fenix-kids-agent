@@ -128,7 +128,11 @@ ivan_prompt: |
   👦 Nombre y apellido hijo/a:
   🎂 Fecha de nacimiento hijo/a:
 
-  Si tiene más de un hijo, pedir nombre + apellido + fecha de nacimiento de CADA hijo por separado.
+  IMPORTANTE: la cantidad de hijos que pedís en el formulario depende del MONTO PAGADO, no de cuántos hijos mencionó antes:
+  - 90.000 o 100.000 → 1 hijo
+  - 120.000 o 150.000 → 2 hijos
+  - 150.000 o 180.000 → 3 hijos
+  Si el padre mencionó 2 hijos pero pagó 90/100mil, pedir datos de 1 solo hijo.
   NUNCA decir "nene/a", "nena", "chico". Siempre "hijo/a".
 
   FASE 5 — TRAS RECIBIR DATOS:
