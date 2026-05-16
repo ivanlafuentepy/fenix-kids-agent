@@ -2042,7 +2042,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "✅ *Asistencia:*\n"
                 "• `asis 9.30` / `asis 11` / `asis 15.30` — pasar lista por turno\n"
                 "• `asistencia` — lista completa todos los turnos\n"
-                "• `PRESENTE nombre` — marca presente a un niño por nombre\n\n"
+                "• `PRESENTE nombre` — marca presente (inscripto)\n"
+                "• `PRESENTE PRUEBA nombre` — marca presente (prueba)\n\n"
                 "👨‍👩‍👧 *Inscripción:*\n"
                 "• `cargar familia [nombre padre]` — inscribir familia desde PRUEBA\n\n"
                 "📸 *Fotos (reconocimiento facial):*\n"
@@ -2164,9 +2165,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando PRESENTE nombre (solo admin) ──────────────────────────
         if telefono == admin_phone and texto.strip().upper().startswith("PRESENTE "):
-            _nombre_presente = texto.strip()[len("PRESENTE "):].strip()
+            _args_presente = texto.strip()[len("PRESENTE "):].strip()
+            _solo_prueba = False
+            if _args_presente.upper().startswith("PRUEBA "):
+                _solo_prueba = True
+                _args_presente = _args_presente[len("PRUEBA "):].strip()
             try:
-                await _marcar_presente_por_nombre(telefono, _nombre_presente)
+                await _marcar_presente_por_nombre(telefono, _args_presente, solo_prueba=_solo_prueba)
             except Exception as e:
                 logger.error(f"[PRESENTE] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error: {e}")
@@ -5117,8 +5122,8 @@ async def _procesar_respuesta_asistencia(telefono: str, respuesta: str):
     logger.info(f"[ASISTENCIA] {presentes}/{len(registros)} presentes, ausentes: {ausentes_nombres}")
 
 
-async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str):
-    """Marca PRESENTE=true para un niño buscado por nombre en las reservas/pruebas de hoy."""
+async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_prueba: bool = False):
+    """Marca PRESENTE=true para un niño buscado por nombre. solo_prueba=True busca solo en PRUEBA FENIX, False solo en NIÑOS/RESERVAS."""
     from datetime import date, timedelta, datetime, timezone
     from agent.airtable_client import obtener_ninos_por_horario, _get_records, _patch, _RESERVAS, _PRUEBAS
     import unicodedata
@@ -5145,27 +5150,29 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str):
     encontrados = []
 
     for hora in ["9:30", "11:00", "15:30"]:
-        # Inscriptos
-        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
-        for n in ninos_aurora:
-            nombre_full = f"{n.get('nombre', '')} {n.get('apellido', '')}".strip()
-            apodo = n.get("apodo", "")
-            if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
-                encontrados.append({"nombre": nombre_full, "tabla": "RESERVAS", "record_id": n.get("reserva_id", ""), "hora": hora})
+        # Inscriptos (solo si NO es solo_prueba)
+        if not solo_prueba:
+            ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
+            for n in ninos_aurora:
+                nombre_full = f"{n.get('nombre', '')} {n.get('apellido', '')}".strip()
+                apodo = n.get("apodo", "")
+                if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+                    encontrados.append({"nombre": nombre_full, "tabla": "RESERVAS", "record_id": n.get("reserva_id", ""), "hora": hora})
 
-        # Pruebas
-        pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
-        pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
-        _seen = set()
-        for p in pruebas + pruebas_iso:
-            if p["id"] not in _seen:
-                _seen.add(p["id"])
-                f = p.get("fields", {})
-                if f.get("CONVERSION") == "CANCELADO":
-                    continue
-                nombre_full = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
-                if nombre_norm in _normalizar(nombre_full):
-                    encontrados.append({"nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"], "hora": hora})
+        # Pruebas (solo si ES solo_prueba)
+        if solo_prueba:
+            pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
+            pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
+            _seen = set()
+            for p in pruebas + pruebas_iso:
+                if p["id"] not in _seen:
+                    _seen.add(p["id"])
+                    f = p.get("fields", {})
+                    if f.get("CONVERSION") == "CANCELADO":
+                        continue
+                    nombre_full = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
+                    if nombre_norm in _normalizar(nombre_full):
+                        encontrados.append({"nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"], "hora": hora})
 
     if not encontrados:
         await proveedor.enviar_mensaje(telefono, f"No encontré a *{nombre_buscar}* en las reservas de hoy ({sabado.day}/{sabado.month}).")
