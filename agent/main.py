@@ -5175,7 +5175,45 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
                         encontrados.append({"nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"], "hora": hora})
 
     if not encontrados:
-        await proveedor.enviar_mensaje(telefono, f"No encontré a *{nombre_buscar}* en las reservas de hoy ({sabado.day}/{sabado.month}).")
+        # No tiene reserva para hoy — buscar en NIÑOS FENIX y crear reserva
+        if not solo_prueba:
+            from agent.airtable_client import _get_records, _NINOS, obtener_o_crear_horario, crear_reserva
+            # Buscar niño por nombre en toda la tabla NIÑOS FENIX
+            ninos_all = await _get_records(_NINOS, formula="", max_records=200)
+            nino_match = None
+            for n in ninos_all:
+                f = n.get("fields", {})
+                nombre_full = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
+                apodo = f.get("APODO", "")
+                if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+                    nino_match = {"id": n["id"], "nombre": nombre_full, "familia": f.get("FAMILIA", [])}
+                    break
+
+            if nino_match:
+                # Deducir turno actual por hora PY
+                hora_py = datetime.now(_PY_TZ).hour
+                if hora_py < 11:
+                    turno_auto = "9:30"
+                elif hora_py < 15:
+                    turno_auto = "11:00"
+                else:
+                    turno_auto = "15:30"
+
+                # Crear horario + reserva
+                horario_id = await obtener_o_crear_horario(fecha_iso, turno_auto)
+                if horario_id:
+                    familia_id = nino_match["familia"][0] if nino_match["familia"] else ""
+                    reserva_id = await crear_reserva(nino_match["id"], horario_id, familia_id)
+                    if reserva_id:
+                        await _patch(_RESERVAS, reserva_id, {"PRESENTE": True})
+                        await proveedor.enviar_mensaje(telefono, f"✅ PRESENTE (reserva creada): {nino_match['nombre']} ({turno_auto}h)")
+                        logger.info(f"[PRESENTE] Creada reserva + presente: {nino_match['nombre']} {turno_auto}")
+                        return
+
+                await proveedor.enviar_mensaje(telefono, f"⚠️ Encontré a {nino_match['nombre']} pero no pude crear la reserva.")
+                return
+
+        await proveedor.enviar_mensaje(telefono, f"No encontré a *{nombre_buscar}* en {'PRUEBA FENIX' if solo_prueba else 'NIÑOS FENIX'}.")
         return
 
     # Marcar PRESENTE en todos los matches
