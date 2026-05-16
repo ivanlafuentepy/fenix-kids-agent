@@ -2187,6 +2187,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.error(f"[ASISTENCIA] Error: {e}")
                     await proveedor.enviar_mensaje(telefono, f"Error procesando asistencia: {e}")
                 return
+            # Si no es "ok" ni números, interpretar como nombres adicionales
+            # (niños que no estaban en la lista pero vinieron)
+            elif not _resp_asis.startswith(("resumen", "endpoint", "fotos", "registrar", "cargar")):
+                try:
+                    await _agregar_presentes_por_nombres(telefono, texto.strip())
+                except Exception as e:
+                    logger.error(f"[ASISTENCIA+] Error: {e}")
+                    await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+                return
 
         # ── Respuesta a inscripción pendiente (solo admin) ────────────────
         if telefono == admin_phone and telefono in _inscripcion_pendiente:
@@ -5197,6 +5206,100 @@ async def _procesar_respuesta_asistencia(telefono: str, respuesta: str):
 
     await proveedor.enviar_mensaje(telefono, msg)
     logger.info(f"[ASISTENCIA] {presentes}/{len(registros)} presentes, ausentes: {ausentes_nombres}")
+
+
+async def _agregar_presentes_por_nombres(telefono: str, texto: str):
+    """
+    Recibe nombres (separados por línea o coma) de niños que no estaban en la lista
+    de asistencia pero vinieron. Crea reserva + marca PRESENTE para cada uno.
+    Deduce el turno de la asistencia pendiente.
+    """
+    from datetime import datetime, timezone, timedelta
+    from agent.airtable_client import _get_records, _NINOS, _PRUEBAS, _patch, _RESERVAS, obtener_o_crear_horario, crear_reserva
+    import unicodedata
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+    if hoy.weekday() == 5:
+        sabado = hoy
+    else:
+        sabado = hoy - timedelta(days=(hoy.weekday() + 2) % 7)
+    fecha_iso = sabado.isoformat()
+
+    # Deducir turno de la asistencia pendiente
+    registros_pendientes = _asistencia_pendiente.get(telefono, [])
+    turno = "9:30"  # default
+    if registros_pendientes:
+        # Buscar el turno del último bloque — está implícito en el horario
+        # Deducir por hora actual
+        hora_py = datetime.now(_PY_TZ).hour
+        if hora_py < 11:
+            turno = "9:30"
+        elif hora_py < 15:
+            turno = "11:00"
+        else:
+            turno = "15:30"
+
+    def _normalizar(t: str) -> str:
+        t = unicodedata.normalize("NFD", t.lower())
+        return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+    # Parsear nombres (separados por línea o coma)
+    nombres = [n.strip() for n in re.split(r'[,\n]+', texto) if n.strip()]
+
+    resultados = []
+    for nombre_buscar in nombres:
+        nombre_norm = _normalizar(nombre_buscar)
+
+        # Buscar en NIÑOS FENIX
+        ninos_all = await _get_records(_NINOS, formula="", max_records=200)
+        nino_match = None
+        for n in ninos_all:
+            f = n.get("fields", {})
+            nombre_full = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
+            apodo = f.get("APODO", "")
+            if nombre_norm in _normalizar(nombre_full) or (apodo and nombre_norm in _normalizar(apodo)):
+                nino_match = {"id": n["id"], "nombre": nombre_full, "familia": f.get("FAMILIA", [])}
+                break
+
+        if nino_match:
+            # Crear reserva + marcar presente
+            horario_id = await obtener_o_crear_horario(fecha_iso, turno)
+            if horario_id:
+                familia_id = nino_match["familia"][0] if nino_match["familia"] else ""
+                reserva_id = await crear_reserva(nino_match["id"], horario_id, familia_id)
+                if reserva_id:
+                    await _patch(_RESERVAS, reserva_id, {"PRESENTE": True})
+                    resultados.append(f"✅ {nino_match['nombre']}")
+                else:
+                    resultados.append(f"⚠️ {nombre_buscar} (no pude crear reserva)")
+            else:
+                resultados.append(f"⚠️ {nombre_buscar} (no pude obtener horario)")
+        else:
+            # Buscar en PRUEBA FENIX
+            _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+                      7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+            fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+            pruebas = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_texto}'", max_records=50)
+            pruebas_iso = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
+            prueba_match = None
+            for p in pruebas + pruebas_iso:
+                pf = p.get("fields", {})
+                nombre_full = f"{pf.get('NOMBRE HIJO', '')} {pf.get('APELLIDO HIJO', '')}".strip()
+                if nombre_norm in _normalizar(nombre_full):
+                    prueba_match = p
+                    break
+
+            if prueba_match:
+                await _patch(_PRUEBAS, prueba_match["id"], {"PRESENTE": True})
+                resultados.append(f"✅ {nombre_full} 🔥")
+            else:
+                resultados.append(f"❌ {nombre_buscar} (no encontrado)")
+
+    # No limpiar asistencia pendiente — permite seguir agregando
+    msg = f"📋 Asistencia extra ({turno}h):\n" + "\n".join(resultados)
+    await proveedor.enviar_mensaje(telefono, msg)
+    logger.info(f"[ASISTENCIA+] {resultados}")
 
 
 async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_prueba: bool = False):
