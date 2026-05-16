@@ -2187,14 +2187,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.error(f"[ASISTENCIA] Error: {e}")
                     await proveedor.enviar_mensaje(telefono, f"Error procesando asistencia: {e}")
                 return
-            # Si no es "ok" ni números, interpretar como nombres adicionales
-            # (niños que no estaban en la lista pero vinieron)
+            # Si no es "ok" ni números, interpretar como nombres adicionales UNA VEZ y salir del modo
             elif not _resp_asis.startswith(("resumen", "endpoint", "fotos", "registrar", "cargar")):
                 try:
                     await _agregar_presentes_por_nombres(telefono, texto.strip())
                 except Exception as e:
                     logger.error(f"[ASISTENCIA+] Error: {e}")
                     await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+                # Salir del modo asistencia
+                _asistencia_pendiente.pop(telefono, None)
                 return
 
         # ── Respuesta a inscripción pendiente (solo admin) ────────────────
