@@ -3813,6 +3813,25 @@ async def _procesar_confirmacion_reserva(
             horario_id = await obtener_o_crear_horario(fecha_airtable, hora_str)
             if horario_id:
                 for nino in ninos:
+                    # Detectar reserva doble (mismo niño, mismo día, otro horario)
+                    from agent.airtable_client import _get_records as _gr_dup, _RESERVAS as _RES_DUP
+                    _nid = nino["id"]
+                    _reservas_dia = await _gr_dup(
+                        _RES_DUP,
+                        formula=f"AND(FIND('{_nid}', ARRAYJOIN({{NINO}})), DATESTR({{FECHA}})='{fecha_iso}')",
+                        max_records=5,
+                    )
+                    if _reservas_dia:
+                        # Ya tiene reserva ese día — alertar admin
+                        _horas_existentes = [r.get("fields", {}).get("HORA", ["?"])[0] if isinstance(r.get("fields", {}).get("HORA"), list) else r.get("fields", {}).get("HORA", "?") for r in _reservas_dia]
+                        _admin_phone_dup = os.getenv("ADMIN_PHONE", "595982790407")
+                        _nombre_nino = nino.get("nombre_completo") or nino.get("nombre") or "?"
+                        await proveedor.enviar_mensaje(
+                            _admin_phone_dup,
+                            f"⚠️ RESERVA DOBLE\n{_nombre_nino} ya tiene reserva el {fecha_iso} a las {', '.join(_horas_existentes)}.\nSe intentó agregar a las {hora_str}.\n📱 https://wa.me/{telefono}"
+                        )
+                        logger.warning(f"[RESERVA DOBLE] {_nombre_nino} ya tiene reserva {fecha_iso} {_horas_existentes}, nueva {hora_str}")
+
                     rid = await crear_reserva(nino["id"], horario_id, familia_id or "")
                     if rid:
                         logger.info(f"Reserva creada: {nino.get('nombre_completo', nino['id'])} → {rid}")
