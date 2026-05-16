@@ -7263,11 +7263,11 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         await proveedor.enviar_mensaje(telefono, "❌ No pude descargar la foto")
         return
 
-    # Buscar niño en Airtable por nombre/apodo
-    from agent.airtable_client import _get_records, _NINOS, _patch
+    # Buscar niño en Airtable por nombre/apodo (NIÑOS FENIX + PRUEBA FENIX)
+    from agent.airtable_client import _get_records, _NINOS, _PRUEBAS, _patch
     nombre_norm = nombre_buscar.lower().strip()
 
-    # Buscar por apodo o nombre
+    # Buscar en NIÑOS FENIX por apodo o nombre
     records = await _get_records(
         _NINOS,
         formula=f"OR(LOWER({{APODO}})='{nombre_norm}', LOWER({{NOMBRE}})='{nombre_norm}')",
@@ -7275,15 +7275,26 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
     )
 
     if not records:
-        # Intentar búsqueda parcial
+        # Intentar búsqueda parcial en NIÑOS
         records = await _get_records(
             _NINOS,
             formula=f"OR(FIND('{nombre_norm}', LOWER({{APODO}})), FIND('{nombre_norm}', LOWER({{NOMBRE}})))",
             max_records=5,
         )
 
+    # Si no encontró en NIÑOS, buscar en PRUEBA FENIX
+    _es_prueba = False
     if not records:
-        await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS FENIX")
+        records = await _get_records(
+            _PRUEBAS,
+            formula=f"FIND('{nombre_norm}', LOWER({{NOMBRE HIJO}}))",
+            max_records=5,
+        )
+        if records:
+            _es_prueba = True
+
+    if not records:
+        await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS ni PRUEBA FENIX")
         return
 
     if len(records) > 1:
@@ -7291,7 +7302,10 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         opciones = []
         for r in records:
             f = r.get("fields", {})
-            opciones.append(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')} ({f.get('APODO', '-')})")
+            if _es_prueba:
+                opciones.append(f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')} 🔥")
+            else:
+                opciones.append(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')} ({f.get('APODO', '-')})")
         await proveedor.enviar_mensaje(
             telefono,
             f"Encontré {len(records)} niños:\n" + "\n".join(f"  {i+1}. {o}" for i, o in enumerate(opciones)) +
@@ -7303,7 +7317,13 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
     nino_record = records[0]
     nino_id = nino_record["id"]
     fields = nino_record.get("fields", {})
-    nombre_display = fields.get("APODO") or fields.get("NOMBRE", "")
+
+    if _es_prueba:
+        nombre_display = fields.get("NOMBRE HIJO", "")
+        tabla_destino = _PRUEBAS
+    else:
+        nombre_display = fields.get("APODO") or fields.get("NOMBRE", "")
+        tabla_destino = _NINOS
 
     from agent.face_recognition import registrar_cara, actualizar_cara
 
@@ -7317,9 +7337,10 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         accion = "registrada"
 
     if face_id:
-        # Guardar FACE_ID en Airtable
-        await _patch(_NINOS, nino_id, {"FACE_ID": face_id})
-        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} (FaceId: {face_id[:8]}...)")
+        # Guardar FACE_ID en Airtable (NIÑOS o PRUEBA según corresponda)
+        await _patch(tabla_destino, nino_id, {"FACE_ID": face_id})
+        _label = "🔥 PRUEBA" if _es_prueba else "NIÑOS"
+        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} [{_label}] (FaceId: {face_id[:8]}...)")
     else:
         await proveedor.enviar_mensaje(telefono, f"❌ No se detectó una cara clara en la foto de {nombre_display}. Probá con otra foto.")
 
