@@ -4350,6 +4350,12 @@ async def _ejecutar_inscripcion(
             }, familia_id)
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
+                # Vincular PRUEBA FENIX → NIÑO FENIX
+                try:
+                    await _patch(_PRUEBAS, op["id"], {"NINO FENIX": [nino_id]})
+                    logger.info(f"[INSCRIPCION] Vinculado PRUEBA {op['id']} → NIÑO {nino_id}")
+                except Exception as e:
+                    logger.warning(f"[INSCRIPCION] Error vinculando PRUEBA→NIÑO: {e}")
                 # Migrar cara de PRUEBA FENIX → NIÑOS FENIX
                 prueba_face_id = of.get("FACE_ID", "")
                 prueba_foto = of.get("FOTO", [])
