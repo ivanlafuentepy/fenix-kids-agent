@@ -759,6 +759,8 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                             "edad": edad,
                             "apodo": nf.get("APODO", ""),
                             "familia_id": familia_ids[0] if familia_ids else "",
+                            "presente": res_fields.get("PRESENTE", False),
+                            "ausente": res_fields.get("AUSENTE", False),
                         })
             except Exception as e:
                 logger.error(f"Error obteniendo reserva/niño: {e}")

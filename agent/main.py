@@ -5131,7 +5131,13 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             _nombres_inscriptos.add(_norm_asis(f"{n.get('nombre', '')} {n.get('apellido', '')}"))
             reserva_id = n.get("reserva_id", "")
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "RESERVAS", "record_id": reserva_id, "nino_id": n.get("id", "")})
-            lineas.append(f"   {idx}. {nombre_full}")
+            # Indicador de asistencia ya cargada
+            _mark = ""
+            if n.get("presente"):
+                _mark = " ✅"
+            elif n.get("ausente"):
+                _mark = " ❌"
+            lineas.append(f"   {idx}. {nombre_full}{_mark}")
 
         # Fenix pruebas (excluir si ya está como inscripto)
         for pid in _seen:
@@ -5151,7 +5157,12 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             apellido = _a_parts[0] if _a_parts else ""
             nombre_full = f"{nombre} {apellido}".strip()
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"]})
-            lineas.append(f"   {idx}. {nombre_full} 🔥")
+            _mark_p = ""
+            if f.get("PRESENTE"):
+                _mark_p = " ✅"
+            elif f.get("AUSENTE"):
+                _mark_p = " ❌"
+            lineas.append(f"   {idx}. {nombre_full} 🔥{_mark_p}")
 
         # Reemplazar header con total real
         _total_turno = len(registros) - _idx_antes
@@ -5191,10 +5202,11 @@ async def _procesar_respuesta_asistencia(telefono: str, respuesta: str):
 
     for reg in registros:
         es_presente = reg["idx"] not in ausentes
+        campos_update = {"PRESENTE": es_presente, "AUSENTE": not es_presente}
         if reg["tabla"] == "RESERVAS" and reg.get("record_id"):
-            await _patch(_RESERVAS, reg["record_id"], {"PRESENTE": es_presente})
+            await _patch(_RESERVAS, reg["record_id"], campos_update)
         elif reg["tabla"] == "PRUEBAS" and reg.get("record_id"):
-            await _patch(_PRUEBAS, reg["record_id"], {"PRESENTE": es_presente})
+            await _patch(_PRUEBAS, reg["record_id"], campos_update)
 
         if es_presente:
             presentes += 1
