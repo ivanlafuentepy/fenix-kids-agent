@@ -1922,8 +1922,8 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                 # Pruebas (PRUEBA FENIX)
                 _fd = _date_cls.fromisoformat(fecha_iso)
                 fecha_texto = f"{_fd.day}/{_fd.month}"
-                pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
-                pruebas2 = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
+                pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))", max_records=50)
+                pruebas2 = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))", max_records=50)
                 # Dedup por teléfono
                 _tels_prueba = set()
                 n_prueba = 0
@@ -4679,12 +4679,12 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
     # Buscar por formato texto ("9 de mayo") y también ISO por si se normaliza a futuro
     pruebas_texto = await _get_records(
         _PRUEBAS,
-        formula=f"{{FECHA RESERVA}}='{fecha_texto}'",
+        formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', NOT({{INSCRIPTO}}))",
         max_records=50,
     )
     pruebas_iso = await _get_records(
         _PRUEBAS,
-        formula=f"{{FECHA RESERVA}}='{fecha_iso}'",
+        formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))",
         max_records=50,
     )
     # Dedup por record id
@@ -4804,8 +4804,8 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
         ninos = await obtener_ninos_por_horario(fecha_iso, hora)
         aurora_por_turno[hora] = ninos
 
-    # FENIX: pruebas
-    pruebas_iso = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
+    # FENIX: pruebas (excluir INSCRIPTO=true, ya están en RESERVAS)
+    pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))", max_records=50)
     fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
     for rec in pruebas_iso:
         f = rec.get("fields", {})
