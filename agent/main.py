@@ -5091,13 +5091,20 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             if p["id"] not in _seen:
                 _seen.add(p["id"])
 
-        total = len(ninos_aurora) + len(_seen)
-        if total == 0:
+        if not ninos_aurora and not _seen:
             continue
 
-        lineas.append(f"⏰ *{hora}h* ({total})")
+        # El total real se calcula después de filtrar duplicados
+        _idx_antes = len(registros)
+        _linea_header_idx = len(lineas)
+        lineas.append("")  # placeholder — se reemplaza abajo
 
-        # Aurora
+        # Aurora (inscriptos)
+        # Guardar nombres normalizados para dedup contra pruebas
+        import unicodedata as _ud_asis
+        def _norm_asis(t): return "".join(c for c in _ud_asis.normalize("NFD", t.lower()) if _ud_asis.category(c) != "Mn")
+        _nombres_inscriptos = set()
+
         for n in ninos_aurora:
             idx = len(registros) + 1
             _n_parts = (n.get("apodo") or n.get("nombre", "?")).split()
@@ -5105,16 +5112,22 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             _a_parts = (n.get("apellido") or "").split()
             apellido = _a_parts[0] if _a_parts else ""
             nombre_full = f"{nombre} {apellido}".strip()
+            _nombres_inscriptos.add(_norm_asis(f"{n.get('nombre', '')} {n.get('apellido', '')}"))
             reserva_id = n.get("reserva_id", "")
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "RESERVAS", "record_id": reserva_id, "nino_id": n.get("id", "")})
             lineas.append(f"   {idx}. {nombre_full}")
 
-        # Fenix pruebas
+        # Fenix pruebas (excluir si ya está como inscripto)
         for pid in _seen:
             p = next(x for x in pruebas + pruebas_iso if x["id"] == pid)
             f = p.get("fields", {})
             if f.get("CONVERSION") == "CANCELADO":
                 continue
+            if f.get("INSCRIPTO"):
+                continue
+            _nombre_prueba = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
+            if _norm_asis(_nombre_prueba) in _nombres_inscriptos:
+                continue  # ya listado como inscripto
             idx = len(registros) + 1
             _n_parts = (f.get("NOMBRE HIJO") or "?").split()
             nombre = _n_parts[0] if _n_parts else "?"
@@ -5124,6 +5137,9 @@ async def _generar_lista_asistencia(telefono: str, turno_especifico: str = ""):
             registros.append({"idx": idx, "nombre": nombre_full, "tabla": "PRUEBAS", "record_id": p["id"]})
             lineas.append(f"   {idx}. {nombre_full} 🔥")
 
+        # Reemplazar header con total real
+        _total_turno = len(registros) - _idx_antes
+        lineas[_linea_header_idx] = f"⏰ *{hora}h* ({_total_turno})"
         lineas.append("")
 
     if not registros:
