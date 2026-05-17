@@ -5015,6 +5015,9 @@ _MONTOS_CONCEPTO = {
     "F.PRUEBA 120MIL": 120_000,
     "F.PRUEBA 150MIL": 150_000,
     "F.PRUEBA 180MIL": 180_000,
+    "FENIXMAMA": 350_000,
+    "PAQUETE5": 350_000,
+    "PAQUETE12": 750_000,
 }
 
 
@@ -6432,16 +6435,17 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         await proveedor.enviar_mensaje(telefono, f"📊 RESUMEN ANUNCIOS — {label}\n\nSin datos en este período.")
         return
 
-    # Agrupar por fecha + contar por concepto
+    # Agrupar por fecha + contar por concepto (solo con monto > 0)
     por_fecha = defaultdict(lambda: {"conceptos": defaultdict(int), "total_monto": 0, "cantidad": 0})
     for rec in registros_filtrados:
         f = rec.get("fields", {})
         fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
         concepto = f.get("CONCEPTO", "") or "s/concepto"
         monto = f.get("MONTO", 0) or _MONTOS_CONCEPTO.get(concepto, 0)
-        por_fecha[fecha_raw]["cantidad"] += 1
-        por_fecha[fecha_raw]["total_monto"] += monto
-        por_fecha[fecha_raw]["conceptos"][concepto] += 1
+        if monto > 0:
+            por_fecha[fecha_raw]["cantidad"] += 1
+            por_fecha[fecha_raw]["total_monto"] += monto
+            por_fecha[fecha_raw]["conceptos"][concepto] += 1
 
     # Totales generales — gasto real desde GASTOS FENIX (fallback 200k/día)
     _GASTO_DEFAULT = 200_000
@@ -6507,7 +6511,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     # Totales finales
     lineas.append("")
     lineas.append(f"💰 Total agendado: {total_agendado_fmt} Gs")
-    lineas.append(f"📢 Total gastado ({num_dias} días x {f'{_GASTO_DEFAULT:,}'.replace(',','.')}): {total_gastado_fmt} Gs")
+    lineas.append(f"📢 Total anuncios ({num_dias} días): {total_gastado_fmt} Gs")
     lineas.append(f"{'✅' if diferencia >= 0 else '🔴'} Diferencia: {signo}{diferencia_fmt} Gs")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
