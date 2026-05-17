@@ -7505,28 +7505,38 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         # Eliminar duplicados manteniendo orden
         _buscar_nombres = list(dict.fromkeys(_buscar_nombres))
 
-        # Buscar en NIÑOS FENIX por apodo o nombre (todas las variantes)
+        # Buscar en AMBAS tablas siempre (NIÑOS + PRUEBA) y juntar resultados
         _or_parts_ninos = []
         for _bn in _buscar_nombres:
             _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APODO}}))")
             _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
-        records = await _get_records(
+        _records_ninos = await _get_records(
             _NINOS,
             formula=f"OR({','.join(_or_parts_ninos)})",
             max_records=5,
         )
 
-        # Si no encontró en NIÑOS, buscar en PRUEBA FENIX
+        _or_parts_prueba = [f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))" for _bn in _buscar_nombres]
+        _records_prueba = await _get_records(
+            _PRUEBAS,
+            formula=f"OR({','.join(_or_parts_prueba)})",
+            max_records=5,
+        )
+
+        # Juntar resultados marcando origen
+        records = []
         _es_prueba = False
-        if not records:
-            _or_parts_prueba = [f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))" for _bn in _buscar_nombres]
-            records = await _get_records(
-                _PRUEBAS,
-                formula=f"OR({','.join(_or_parts_prueba)})",
-                max_records=5,
-            )
-            if records:
-                _es_prueba = True
+        # Agregar records de NIÑOS (no son prueba)
+        for _r in _records_ninos:
+            _r["_es_prueba"] = False
+            records.append(_r)
+        # Agregar records de PRUEBA
+        for _r in _records_prueba:
+            _r["_es_prueba"] = True
+            records.append(_r)
+        # Si todos son de prueba, marcar flag
+        if records and all(r.get("_es_prueba") for r in records):
+            _es_prueba = True
 
         if not records:
             await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS ni PRUEBA FENIX")
@@ -7538,14 +7548,15 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         candidatos_lista = []
         for r in records:
             f = r.get("fields", {})
-            if _es_prueba:
+            _r_es_prueba = r.get("_es_prueba", _es_prueba)
+            if _r_es_prueba:
                 nombre_c = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
                 opciones.append(f"{nombre_c} 🔥")
             else:
                 nombre_c = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
                 apodo = f.get('APODO', '')
                 opciones.append(f"{nombre_c} ({apodo})" if apodo else nombre_c)
-            candidatos_lista.append({"id": r["id"], "nombre_completo": nombre_c, "es_prueba": _es_prueba})
+            candidatos_lista.append({"id": r["id"], "nombre_completo": nombre_c, "es_prueba": _r_es_prueba})
         _cara_candidatos[telefono] = candidatos_lista
         await proveedor.enviar_mensaje(
             telefono,
@@ -7558,6 +7569,7 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
     nino_record = records[0]
     nino_id = nino_record["id"]
     fields = nino_record.get("fields", {})
+    _es_prueba = nino_record.get("_es_prueba", _es_prueba)
 
     if _es_prueba:
         nombre_display = fields.get("NOMBRE HIJO", "")
