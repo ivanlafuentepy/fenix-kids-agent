@@ -7483,29 +7483,46 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
             return
     else:
         # Buscar niño en Airtable por nombre/apodo (NIÑOS FENIX + PRUEBA FENIX)
+        import unicodedata
         nombre_norm = nombre_buscar.lower().strip()
+        # Variante sin acentos para búsqueda tolerante
+        nombre_sin_acento = ''.join(
+            c for c in unicodedata.normalize('NFD', nombre_norm)
+            if unicodedata.category(c) != 'Mn'
+        )
+        # Variante con acentos comunes (cesar→césar, etc.)
+        _acento_map = {'a': 'á', 'e': 'é', 'i': 'í', 'o': 'ó', 'u': 'ú'}
+        _variantes_acento = set()
+        for i, c in enumerate(nombre_sin_acento):
+            if c in _acento_map:
+                _variantes_acento.add(nombre_sin_acento[:i] + _acento_map[c] + nombre_sin_acento[i+1:])
 
-        # Buscar en NIÑOS FENIX por apodo o nombre
+        # Construir búsqueda: nombre exacto + sin acento + variantes con acento
+        _buscar_nombres = [nombre_norm]
+        if nombre_sin_acento != nombre_norm:
+            _buscar_nombres.append(nombre_sin_acento)
+        _buscar_nombres.extend(_variantes_acento)
+        # Eliminar duplicados manteniendo orden
+        _buscar_nombres = list(dict.fromkeys(_buscar_nombres))
+
+        # Buscar en NIÑOS FENIX por apodo o nombre (todas las variantes)
+        _or_parts_ninos = []
+        for _bn in _buscar_nombres:
+            _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APODO}}))")
+            _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
         records = await _get_records(
             _NINOS,
-            formula=f"OR(LOWER({{APODO}})='{nombre_norm}', LOWER({{NOMBRE}})='{nombre_norm}')",
+            formula=f"OR({','.join(_or_parts_ninos)})",
             max_records=5,
         )
-
-        if not records:
-            # Intentar búsqueda parcial en NIÑOS
-            records = await _get_records(
-                _NINOS,
-                formula=f"OR(FIND('{nombre_norm}', LOWER({{APODO}})), FIND('{nombre_norm}', LOWER({{NOMBRE}})))",
-                max_records=5,
-            )
 
         # Si no encontró en NIÑOS, buscar en PRUEBA FENIX
         _es_prueba = False
         if not records:
+            _or_parts_prueba = [f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))" for _bn in _buscar_nombres]
             records = await _get_records(
                 _PRUEBAS,
-                formula=f"FIND('{nombre_norm}', LOWER({{NOMBRE HIJO}}))",
+                formula=f"OR({','.join(_or_parts_prueba)})",
                 max_records=5,
             )
             if records:
