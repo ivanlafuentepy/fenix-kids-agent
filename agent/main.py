@@ -5075,7 +5075,7 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
                 nombre_full = f"{nombre} {apellido}".strip()
                 edad_str = f" ({n['edad']})" if n.get("edad") else ""
                 _slug = _generar_slug(n.get("nombre", ""), n.get("apellido", ""))
-                _link = f" 📎 fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
+                _link = f"\n         📎 https://fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
                 lineas.append(f"      {emoji} {nombre_full}{edad_str}{_link}")
 
         if fenix:
@@ -5087,7 +5087,7 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
                 nombre_full = f"{nombre} {apellido}".strip()
                 edad_str = f" ({n['edad']})" if n.get("edad") else ""
                 _slug = _generar_slug(n.get("nombre", ""), n.get("apellido", ""))
-                _link = f" 📎 fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
+                _link = f"\n         📎 https://fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
                 lineas.append(f"      {emoji} {nombre_full}{edad_str}{_link}")
 
         if not aurora and not fenix:
