@@ -202,6 +202,10 @@ _fotos_sesion: dict[str, dict] = {}
 
 # Estado de registro de cara pendiente: {telefono: "nombre del niño"}
 _cara_pendiente: dict[str, str] = {}
+# Candidatos múltiples para registrar cara: {telefono: [{"id":..., "nombre_completo":..., "es_prueba":...}, ...]}
+_cara_candidatos: dict[str, list[dict]] = {}
+# Record preseleccionado por número: {telefono: {"id":..., "nombre_completo":..., "es_prueba":...}}
+_cara_record_preseleccionado: dict[str, dict] = {}
 
 # ── Promo Madre (DESACTIVADA 2026-05-16 — venció 15/5 20h) ──
 _PROMO_MADRE_ACTIVA = False  # cambiar a True para reactivar
@@ -2248,6 +2252,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_nombre_cara} para registrar su cara")
             else:
                 await proveedor.enviar_mensaje(telefono, "Usá: registrar cara [nombre del niño]")
+            return
+
+        # ── Selección numérica de candidato para registrar cara ──────────
+        if telefono == admin_phone and telefono in _cara_candidatos and texto.strip().isdigit():
+            _idx = int(texto.strip()) - 1
+            _candidatos = _cara_candidatos[telefono]
+            if 0 <= _idx < len(_candidatos):
+                _sel = _candidatos[_idx]
+                del _cara_candidatos[telefono]
+                _cara_pendiente[telefono] = _sel["nombre_completo"]
+                _cara_record_preseleccionado[telefono] = _sel
+                await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_sel['nombre_completo']} para registrar su cara")
+            else:
+                await proveedor.enviar_mensaje(telefono, f"Número inválido. Elegí entre 1 y {len(_candidatos)}")
             return
 
         # ── Recibir foto para registrar cara ──────────────────────────────
@@ -7429,53 +7447,72 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         await proveedor.enviar_mensaje(telefono, "❌ No pude descargar la foto")
         return
 
-    # Buscar niño en Airtable por nombre/apodo (NIÑOS FENIX + PRUEBA FENIX)
     from agent.airtable_client import _get_records, _NINOS, _PRUEBAS, _patch
-    nombre_norm = nombre_buscar.lower().strip()
 
-    # Buscar en NIÑOS FENIX por apodo o nombre
-    records = await _get_records(
-        _NINOS,
-        formula=f"OR(LOWER({{APODO}})='{nombre_norm}', LOWER({{NOMBRE}})='{nombre_norm}')",
-        max_records=5,
-    )
+    # Si hay record preseleccionado (eligió de la lista numerada), usarlo directo
+    _presel = _cara_record_preseleccionado.pop(telefono, None)
+    if _presel:
+        _es_prueba = _presel["es_prueba"]
+        _tabla = _PRUEBAS if _es_prueba else _NINOS
+        _rec = await _get_records(_tabla, formula=f"RECORD_ID()='{_presel['id']}'", max_records=1)
+        if _rec:
+            records = _rec
+        else:
+            await proveedor.enviar_mensaje(telefono, f"❌ No encontré el registro preseleccionado")
+            return
+    else:
+        # Buscar niño en Airtable por nombre/apodo (NIÑOS FENIX + PRUEBA FENIX)
+        nombre_norm = nombre_buscar.lower().strip()
 
-    if not records:
-        # Intentar búsqueda parcial en NIÑOS
+        # Buscar en NIÑOS FENIX por apodo o nombre
         records = await _get_records(
             _NINOS,
-            formula=f"OR(FIND('{nombre_norm}', LOWER({{APODO}})), FIND('{nombre_norm}', LOWER({{NOMBRE}})))",
+            formula=f"OR(LOWER({{APODO}})='{nombre_norm}', LOWER({{NOMBRE}})='{nombre_norm}')",
             max_records=5,
         )
 
-    # Si no encontró en NIÑOS, buscar en PRUEBA FENIX
-    _es_prueba = False
-    if not records:
-        records = await _get_records(
-            _PRUEBAS,
-            formula=f"FIND('{nombre_norm}', LOWER({{NOMBRE HIJO}}))",
-            max_records=5,
-        )
-        if records:
-            _es_prueba = True
+        if not records:
+            # Intentar búsqueda parcial en NIÑOS
+            records = await _get_records(
+                _NINOS,
+                formula=f"OR(FIND('{nombre_norm}', LOWER({{APODO}})), FIND('{nombre_norm}', LOWER({{NOMBRE}})))",
+                max_records=5,
+            )
 
-    if not records:
-        await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS ni PRUEBA FENIX")
-        return
+        # Si no encontró en NIÑOS, buscar en PRUEBA FENIX
+        _es_prueba = False
+        if not records:
+            records = await _get_records(
+                _PRUEBAS,
+                formula=f"FIND('{nombre_norm}', LOWER({{NOMBRE HIJO}}))",
+                max_records=5,
+            )
+            if records:
+                _es_prueba = True
+
+        if not records:
+            await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS ni PRUEBA FENIX")
+            return
 
     if len(records) > 1:
-        # Múltiples matches — mostrar opciones
+        # Múltiples matches — mostrar lista numerada y esperar selección
         opciones = []
+        candidatos_lista = []
         for r in records:
             f = r.get("fields", {})
             if _es_prueba:
-                opciones.append(f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')} 🔥")
+                nombre_c = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
+                opciones.append(f"{nombre_c} 🔥")
             else:
-                opciones.append(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')} ({f.get('APODO', '-')})")
+                nombre_c = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
+                apodo = f.get('APODO', '')
+                opciones.append(f"{nombre_c} ({apodo})" if apodo else nombre_c)
+            candidatos_lista.append({"id": r["id"], "nombre_completo": nombre_c, "es_prueba": _es_prueba})
+        _cara_candidatos[telefono] = candidatos_lista
         await proveedor.enviar_mensaje(
             telefono,
             f"Encontré {len(records)} niños:\n" + "\n".join(f"  {i+1}. {o}" for i, o in enumerate(opciones)) +
-            "\n\nUsá el nombre completo para ser más específico."
+            "\n\nResponde con el número para seleccionar."
         )
         return
 
