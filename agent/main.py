@@ -6369,6 +6369,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     from datetime import date as _date_cls
     from collections import defaultdict
     import httpx as _httpx_r
+    from agent.airtable_client import _get_records
 
     label, fecha_desde, fecha_hasta = _parsear_filtro_fecha(texto_cmd)
 
@@ -6431,38 +6432,34 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         await proveedor.enviar_mensaje(telefono, f"📊 RESUMEN ANUNCIOS — {label}\n\nSin datos en este período.")
         return
 
-    # Agrupar por fecha + contar por monto
-    por_fecha = defaultdict(lambda: {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "350": 0, "750": 0, "otro": 0, "total_monto": 0, "cantidad": 0})
+    # Agrupar por fecha + contar por concepto
+    por_fecha = defaultdict(lambda: {"conceptos": defaultdict(int), "total_monto": 0, "cantidad": 0})
     for rec in registros_filtrados:
         f = rec.get("fields", {})
         fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
-        concepto = f.get("CONCEPTO", "")
+        concepto = f.get("CONCEPTO", "") or "s/concepto"
         monto = f.get("MONTO", 0) or _MONTOS_CONCEPTO.get(concepto, 0)
         por_fecha[fecha_raw]["cantidad"] += 1
         por_fecha[fecha_raw]["total_monto"] += monto
-        if monto == 90_000:
-            por_fecha[fecha_raw]["90"] += 1
-        elif monto == 100_000:
-            por_fecha[fecha_raw]["100"] += 1
-        elif monto == 120_000:
-            por_fecha[fecha_raw]["120"] += 1
-        elif monto == 150_000:
-            por_fecha[fecha_raw]["150"] += 1
-        elif monto == 180_000:
-            por_fecha[fecha_raw]["180"] += 1
-        elif monto == 350_000:
-            por_fecha[fecha_raw]["350"] += 1
-        elif monto == 750_000:
-            por_fecha[fecha_raw]["750"] += 1
-        elif monto > 0:
-            por_fecha[fecha_raw]["otro"] += 1
+        por_fecha[fecha_raw]["conceptos"][concepto] += 1
 
-    # Totales generales
-    _GASTO_DIARIO = 200_000  # Gs por día en anuncios
+    # Totales generales — gasto real desde GASTOS FENIX (fallback 200k/día)
+    _GASTO_DEFAULT = 200_000
+    gastos_reales = {}
+    try:
+        _gastos_recs = await _get_records("GASTOS FENIX", max_records=100)
+        for _gr in _gastos_recs:
+            _gf = _gr.get("fields", {})
+            if _gf.get("FECHA"):
+                gastos_reales[_gf["FECHA"]] = _gf.get("MONTO", 0) or 0
+    except Exception:
+        pass
     total_agendados = len(registros_filtrados)
     total_agendado = sum(d["total_monto"] for d in por_fecha.values())
     num_dias = max(len(leads_por_fecha), len(por_fecha))
-    total_gastado = num_dias * _GASTO_DIARIO
+    # Sumar gasto real por cada día del período
+    todas_fechas_gasto = sorted(set(list(leads_por_fecha.keys()) + list(por_fecha.keys())))
+    total_gastado = sum(gastos_reales.get(f, _GASTO_DEFAULT) for f in todas_fechas_gasto)
     diferencia = total_agendado - total_gastado
     total_agendado_fmt = f"{total_agendado:,}".replace(",", ".")
     total_gastado_fmt = f"{total_gastado:,}".replace(",", ".")
@@ -6493,7 +6490,8 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             fecha_label = fecha_iso
         pct_dia = f"{(d['cantidad']/leads_dia*100):.0f}%" if leads_dia else "0%"
         monto_dia = f"{d['total_monto']:,}".replace(",", ".")
-        gasto_dia_fmt = f"{_GASTO_DIARIO:,}".replace(",", ".")
+        _gasto_este_dia = gastos_reales.get(fecha_iso, _GASTO_DEFAULT)
+        gasto_dia_fmt = f"{_gasto_este_dia:,}".replace(",", ".")
         lineas.append("")
         lineas.append(f"📅 {fecha_label} — {leads_dia} leads")
         if d["cantidad"]:
