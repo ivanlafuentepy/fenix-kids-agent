@@ -524,6 +524,192 @@ async def estadisticas(_: bool = Depends(_require_admin)):
     return {"conversion": stats}
 
 
+# ── API Pública: fichas de alumnos ────────────────────────────────────────────
+
+@app.get("/api/alumnos")
+async def api_alumnos():
+    """Devuelve todos los alumnos (NIÑOS FENIX) con datos para la web pública."""
+    from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
+    from datetime import date
+    import unicodedata
+    import re
+
+    records = await _get_records(_NINOS, max_records=100)
+
+    # Cargar familias para obtener teléfonos padres
+    familias_cache = {}
+    familias_recs = await _get_records(_FAMILIAS, max_records=100)
+    for fam in familias_recs:
+        ff = fam.get("fields", {})
+        familias_cache[fam["id"]] = {
+            "padre": ff.get("NOMBRE PADRE", ""),
+            "madre": ff.get("NOMBRE MADRE", ""),
+            "cell_padre": ff.get("CELL PADRE", ""),
+            "cell_madre": ff.get("CELL MADRE", ""),
+        }
+
+    alumnos = []
+    for rec in records:
+        f = rec.get("fields", {})
+        nombre = f.get("NOMBRE", "").strip()
+        apellido = f.get("APELLIDO", "").strip()
+        if not nombre:
+            continue
+        # Slug para URL
+        _slug_raw = f"{nombre} {apellido}".lower().strip()
+        _slug_norm = unicodedata.normalize("NFD", _slug_raw)
+        _slug_norm = "".join(c for c in _slug_norm if unicodedata.category(c) != "Mn")
+        slug = re.sub(r"[^a-z0-9]+", "-", _slug_norm).strip("-")
+        # Edad
+        fn = f.get("FECHA NACIMIENTO", "")
+        edad = None
+        if fn:
+            try:
+                nacimiento = date.fromisoformat(fn)
+                hoy = date.today()
+                edad = hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
+            except ValueError:
+                pass
+        # Foto
+        foto_url = ""
+        fotos_raw = f.get("FOTO", [])
+        if fotos_raw and isinstance(fotos_raw, list):
+            foto_url = fotos_raw[0].get("url", "")
+        # Reservas count
+        reservas = f.get("RESERVAS FENIX", [])
+        n_reservas = len(reservas) if isinstance(reservas, list) else 0
+        # Familia / teléfonos padres
+        familia_ids = f.get("FAMILIA", [])
+        padre_info = {}
+        if familia_ids and isinstance(familia_ids, list):
+            padre_info = familias_cache.get(familia_ids[0], {})
+
+        alumnos.append({
+            "id": rec["id"],
+            "nombre": nombre,
+            "apellido": apellido,
+            "apodo": f.get("APODO", ""),
+            "slug": slug,
+            "edad": edad,
+            "sexo": f.get("SEXO", ""),
+            "foto": foto_url,
+            "reservas": n_reservas,
+            "fecha_nacimiento": fn,
+            "padre": padre_info.get("padre", ""),
+            "madre": padre_info.get("madre", ""),
+            "cell_padre": padre_info.get("cell_padre", ""),
+            "cell_madre": padre_info.get("cell_madre", ""),
+        })
+    # Agregar niños de PRUEBA FENIX (que no estén ya en NIÑOS)
+    from agent.airtable_client import _PRUEBAS
+    pruebas_recs = await _get_records(_PRUEBAS, formula="{INSCRIPTO}!=TRUE()", max_records=100)
+    # Dedup por nombre+apellido
+    _slugs_existentes = {a["slug"] for a in alumnos}
+    for rec in pruebas_recs:
+        f = rec.get("fields", {})
+        nombre = f.get("NOMBRE HIJO", "").strip()
+        apellido = f.get("APELLIDO HIJO", "").strip()
+        if not nombre:
+            continue
+        _slug_raw = f"{nombre} {apellido}".lower().strip()
+        _slug_norm = unicodedata.normalize("NFD", _slug_raw)
+        _slug_norm = "".join(c for c in _slug_norm if unicodedata.category(c) != "Mn")
+        slug = re.sub(r"[^a-z0-9]+", "-", _slug_norm).strip("-")
+        if slug in _slugs_existentes:
+            continue
+        _slugs_existentes.add(slug)
+        fn = f.get("FECHA NACIMIENTO", "")
+        edad = None
+        if fn:
+            try:
+                nacimiento = date.fromisoformat(fn)
+                hoy = date.today()
+                edad = hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
+            except ValueError:
+                pass
+        foto_url = ""
+        fotos_raw = f.get("FOTO", [])
+        if fotos_raw and isinstance(fotos_raw, list):
+            foto_url = fotos_raw[0].get("url", "")
+        alumnos.append({
+            "id": rec["id"],
+            "nombre": nombre,
+            "apellido": apellido,
+            "apodo": "",
+            "slug": slug,
+            "edad": edad,
+            "sexo": f.get("GENERO", ""),
+            "foto": foto_url,
+            "reservas": 0,
+            "fecha_nacimiento": fn,
+            "padre": f.get("NOMBRE", ""),
+            "madre": "",
+            "cell_padre": f.get("TELEFONO", ""),
+            "cell_madre": "",
+            "es_prueba": True,
+        })
+
+    # CORS header para Cloudflare Pages
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=alumnos, headers={"Access-Control-Allow-Origin": "*"})
+
+
+@app.get("/api/alumno/{slug}")
+async def api_alumno_detalle(slug: str):
+    """Devuelve detalle de un alumno por slug (nombre-apellido)."""
+    from agent.airtable_client import _get_records, _NINOS, _PRUEBAS
+    from datetime import date
+    import unicodedata
+    import re
+
+    # Buscar en NIÑOS FENIX
+    records = await _get_records(_NINOS, max_records=100)
+    alumno = None
+    for rec in records:
+        f = rec.get("fields", {})
+        nombre = f.get("NOMBRE", "").strip()
+        apellido = f.get("APELLIDO", "").strip()
+        if not nombre:
+            continue
+        _slug_raw = f"{nombre} {apellido}".lower().strip()
+        _slug_norm = unicodedata.normalize("NFD", _slug_raw)
+        _slug_norm = "".join(c for c in _slug_norm if unicodedata.category(c) != "Mn")
+        _s = re.sub(r"[^a-z0-9]+", "-", _slug_norm).strip("-")
+        if _s == slug:
+            fn = f.get("FECHA NACIMIENTO", "")
+            edad = None
+            if fn:
+                try:
+                    nacimiento = date.fromisoformat(fn)
+                    hoy = date.today()
+                    edad = hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
+                except ValueError:
+                    pass
+            foto_url = ""
+            fotos_raw = f.get("FOTO", [])
+            if fotos_raw and isinstance(fotos_raw, list):
+                foto_url = fotos_raw[0].get("url", "")
+            alumno = {
+                "id": rec["id"],
+                "nombre": nombre,
+                "apellido": apellido,
+                "apodo": f.get("APODO", ""),
+                "slug": _s,
+                "edad": edad,
+                "sexo": f.get("SEXO", ""),
+                "foto": foto_url,
+                "fecha_nacimiento": fn,
+                "reservas_ids": f.get("RESERVAS FENIX", []),
+            }
+            break
+
+    if not alumno:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=alumno, headers={"Access-Control-Allow-Origin": "*"})
+
+
 # ── Promo Madre: envío masivo + progreso ───────────────────────────────────────
 
 @app.get("/debug/estado-promo-masiva")
@@ -4766,6 +4952,15 @@ def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
     return f"{_MESES_NOMBRE[hoy.month]} {hoy.year}", desde, ultimo.isoformat()
 
 
+def _generar_slug(nombre: str, apellido: str) -> str:
+    """Genera slug URL-friendly: 'Mariano Emanuel' + 'Centurion Saucedo' → 'mariano-emanuel-centurion-saucedo'"""
+    import unicodedata
+    raw = f"{nombre} {apellido}".lower().strip()
+    norm = unicodedata.normalize("NFD", raw)
+    norm = "".join(c for c in norm if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]+", "-", norm).strip("-")
+
+
 async def _generar_resumen_reservas(telefono: str, fecha_override=None):
     """Genera resumen de reservas de un sábado, agrupado por turno.
     Si fecha_override es None, usa el sábado más cercano.
@@ -4879,7 +5074,9 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
                 apellido = n["apellido"].split()[0] if n["apellido"] else ""
                 nombre_full = f"{nombre} {apellido}".strip()
                 edad_str = f" ({n['edad']})" if n.get("edad") else ""
-                lineas.append(f"      {emoji} {nombre_full}{edad_str}")
+                _slug = _generar_slug(n.get("nombre", ""), n.get("apellido", ""))
+                _link = f" 📎 fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
+                lineas.append(f"      {emoji} {nombre_full}{edad_str}{_link}")
 
         if fenix:
             lineas.append(f"   🔥 *Fenix — prueba ({len(fenix)}):*")
@@ -4889,7 +5086,9 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
                 apellido = n["apellido"].split()[0] if n["apellido"] else ""
                 nombre_full = f"{nombre} {apellido}".strip()
                 edad_str = f" ({n['edad']})" if n.get("edad") else ""
-                lineas.append(f"      {emoji} {nombre_full}{edad_str}")
+                _slug = _generar_slug(n.get("nombre", ""), n.get("apellido", ""))
+                _link = f" 📎 fenixkidsacademy.com/alumnos#/alumno/{_slug}" if _slug else ""
+                lineas.append(f"      {emoji} {nombre_full}{edad_str}{_link}")
 
         if not aurora and not fenix:
             lineas.append("   — vacío")
