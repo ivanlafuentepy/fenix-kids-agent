@@ -6508,11 +6508,26 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         else:
             lineas.append(f"✅ 0 agendados")
 
+    # Contar inscriptos + monto PLAN
+    _inscriptos = [r for r in all_records if r.get("fields", {}).get("CONVERSION") == "INSCRIPTO"]
+    _total_inscriptos = len(_inscriptos)
+    _total_plan = sum(r.get("fields", {}).get("PLAN", 0) or 0 for r in _inscriptos)
+    _total_plan_fmt = f"{_total_plan:,}".replace(",", ".")
+
+    # Total recaudado = agendados + planes inscriptos
+    _total_recaudado = total_agendado + _total_plan
+    _total_recaudado_fmt = f"{_total_recaudado:,}".replace(",", ".")
+    _diferencia_real = _total_recaudado - total_gastado
+    _dif_real_fmt = f"{_diferencia_real:,}".replace(",", ".")
+    _signo_real = "+" if _diferencia_real >= 0 else ""
+
     # Totales finales
     lineas.append("")
     lineas.append(f"💰 Total agendado: {total_agendado_fmt} Gs")
+    lineas.append(f"🏆 Inscriptos: {_total_inscriptos} | Planes: {_total_plan_fmt} Gs")
+    lineas.append(f"💵 *Total recaudado: {_total_recaudado_fmt} Gs*")
     lineas.append(f"📢 Total anuncios ({num_dias} días): {total_gastado_fmt} Gs")
-    lineas.append(f"{'✅' if diferencia >= 0 else '🔴'} Diferencia: {signo}{diferencia_fmt} Gs")
+    lineas.append(f"{'✅' if _diferencia_real >= 0 else '🔴'} Diferencia: {_signo_real}{_dif_real_fmt} Gs")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
