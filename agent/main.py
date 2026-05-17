@@ -6479,7 +6479,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     # Todas las fechas (leads + agendados)
     todas_fechas = sorted(set(list(leads_por_fecha.keys()) + list(por_fecha.keys())), reverse=True)
     for fecha_iso in todas_fechas:
-        d = por_fecha.get(fecha_iso, {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+        d = por_fecha.get(fecha_iso, {"conceptos": defaultdict(int), "total_monto": 0, "cantidad": 0})
         leads_dia = leads_por_fecha.get(fecha_iso, 0)
         # Formato: DOM 4/5
         try:
@@ -6497,24 +6497,8 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         if d["cantidad"]:
             lineas.append(f"✅ {d['cantidad']} agendados | {pct_dia}")
             lineas.append(f"🔔 Total: {monto_dia} Gs (gasto: {gasto_dia_fmt})")
-            # Desglose por monto
-            desglose = []
-            if d["90"]:
-                desglose.append(f"90mil: {d['90']}")
-            if d["100"]:
-                desglose.append(f"100mil: {d['100']}")
-            if d["120"]:
-                desglose.append(f"120mil: {d['120']}")
-            if d["150"]:
-                desglose.append(f"150mil: {d['150']}")
-            if d["180"]:
-                desglose.append(f"180mil: {d['180']}")
-            if d["350"]:
-                desglose.append(f"PAQ5: {d['350']}")
-            if d["750"]:
-                desglose.append(f"PAQ12: {d['750']}")
-            if d["otro"]:
-                desglose.append(f"otro: {d['otro']}")
+            # Desglose por concepto
+            desglose = [f"{c}: {n}" for c, n in sorted(d["conceptos"].items()) if n > 0]
             if desglose:
                 lineas.append(f"   💵 {' | '.join(desglose)}")
         else:
