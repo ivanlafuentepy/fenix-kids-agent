@@ -7507,22 +7507,30 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         _buscar_nombres = list(dict.fromkeys(_buscar_nombres))
 
         # Buscar en AMBAS tablas siempre (NIÑOS + PRUEBA) y juntar resultados
-        _or_parts_ninos = []
-        for _bn in _buscar_nombres:
-            _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APODO}}))")
-            _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
-        _records_ninos = await _get_records(
-            _NINOS,
-            formula=f"OR({','.join(_or_parts_ninos)})",
-            max_records=5,
-        )
+        # Si hay múltiples palabras ("max lee"), buscar registros que contengan TODAS
+        _palabras = nombre_norm.split()
+        if len(_palabras) > 1:
+            # Multi-palabra: AND de cada palabra en NOMBRE/APODO (o NOMBRE HIJO/APELLIDO HIJO)
+            _and_ninos = [f"OR(FIND('{p}', LOWER({{NOMBRE}})), FIND('{p}', LOWER({{APODO}})), FIND('{p}', LOWER({{APELLIDO}})))" for p in _palabras]
+            _formula_ninos = f"AND({','.join(_and_ninos)})"
+            _and_prueba = [f"OR(FIND('{p}', LOWER({{NOMBRE HIJO}})), FIND('{p}', LOWER({{APELLIDO HIJO}})))" for p in _palabras]
+            _formula_prueba = f"AND({','.join(_and_prueba)})"
+        else:
+            # Una palabra: OR de variantes con/sin acentos
+            _or_parts_ninos = []
+            for _bn in _buscar_nombres:
+                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APODO}}))")
+                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
+                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APELLIDO}}))")
+            _formula_ninos = f"OR({','.join(_or_parts_ninos)})"
+            _or_parts_prueba = []
+            for _bn in _buscar_nombres:
+                _or_parts_prueba.append(f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))")
+                _or_parts_prueba.append(f"FIND('{_bn}', LOWER({{APELLIDO HIJO}}))")
+            _formula_prueba = f"OR({','.join(_or_parts_prueba)})"
 
-        _or_parts_prueba = [f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))" for _bn in _buscar_nombres]
-        _records_prueba = await _get_records(
-            _PRUEBAS,
-            formula=f"OR({','.join(_or_parts_prueba)})",
-            max_records=5,
-        )
+        _records_ninos = await _get_records(_NINOS, formula=_formula_ninos, max_records=5)
+        _records_prueba = await _get_records(_PRUEBAS, formula=_formula_prueba, max_records=5)
 
         # Juntar resultados marcando origen
         records = []
