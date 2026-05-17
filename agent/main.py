@@ -6432,12 +6432,12 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         return
 
     # Agrupar por fecha + contar por monto
-    por_fecha = defaultdict(lambda: {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "sin": 0, "total_monto": 0, "cantidad": 0})
+    por_fecha = defaultdict(lambda: {"90": 0, "100": 0, "120": 0, "150": 0, "180": 0, "350": 0, "750": 0, "otro": 0, "total_monto": 0, "cantidad": 0})
     for rec in registros_filtrados:
         f = rec.get("fields", {})
         fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
         concepto = f.get("CONCEPTO", "")
-        monto = _MONTOS_CONCEPTO.get(concepto, 0)
+        monto = f.get("MONTO", 0) or _MONTOS_CONCEPTO.get(concepto, 0)
         por_fecha[fecha_raw]["cantidad"] += 1
         por_fecha[fecha_raw]["total_monto"] += monto
         if monto == 90_000:
@@ -6450,8 +6450,12 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
             por_fecha[fecha_raw]["150"] += 1
         elif monto == 180_000:
             por_fecha[fecha_raw]["180"] += 1
-        else:
-            por_fecha[fecha_raw]["sin"] += 1
+        elif monto == 350_000:
+            por_fecha[fecha_raw]["350"] += 1
+        elif monto == 750_000:
+            por_fecha[fecha_raw]["750"] += 1
+        elif monto > 0:
+            por_fecha[fecha_raw]["otro"] += 1
 
     # Totales generales
     _GASTO_DIARIO = 200_000  # Gs por día en anuncios
@@ -6507,8 +6511,12 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
                 desglose.append(f"150mil: {d['150']}")
             if d["180"]:
                 desglose.append(f"180mil: {d['180']}")
-            if d["sin"]:
-                desglose.append(f"s/monto: {d['sin']}")
+            if d["350"]:
+                desglose.append(f"PAQ5: {d['350']}")
+            if d["750"]:
+                desglose.append(f"PAQ12: {d['750']}")
+            if d["otro"]:
+                desglose.append(f"otro: {d['otro']}")
             if desglose:
                 lineas.append(f"   💵 {' | '.join(desglose)}")
         else:
