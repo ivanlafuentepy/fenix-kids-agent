@@ -6507,7 +6507,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     # Totales finales
     lineas.append("")
     lineas.append(f"💰 Total agendado: {total_agendado_fmt} Gs")
-    lineas.append(f"📢 Total gastado ({num_dias} días x {f'{_GASTO_DIARIO:,}'.replace(',','.')}): {total_gastado_fmt} Gs")
+    lineas.append(f"📢 Total gastado ({num_dias} días x {f'{_GASTO_DEFAULT:,}'.replace(',','.')}): {total_gastado_fmt} Gs")
     lineas.append(f"{'✅' if diferencia >= 0 else '🔴'} Diferencia: {signo}{diferencia_fmt} Gs")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
