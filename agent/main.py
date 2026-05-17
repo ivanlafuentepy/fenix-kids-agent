@@ -518,6 +518,120 @@ async def health_check():
 
 
 
+@app.get("/api/reservas")
+async def api_reservas(fecha: str = ""):
+    """Devuelve reservas de un sábado agrupadas por turno. ?fecha=2026-05-24 o próximo sábado."""
+    from datetime import date, timedelta, datetime, timezone
+    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+    import unicodedata
+
+    _PY_TZ = timezone(timedelta(hours=-3))
+    hoy = datetime.now(_PY_TZ).date()
+
+    if fecha:
+        try:
+            sabado = date.fromisoformat(fecha)
+        except ValueError:
+            sabado = None
+    else:
+        sabado = None
+
+    if not sabado:
+        dias_hasta_sabado = (5 - hoy.weekday()) % 7
+        if dias_hasta_sabado == 0 and hoy.weekday() != 5:
+            dias_hasta_sabado = 7
+        sabado = hoy + timedelta(days=dias_hasta_sabado)
+
+    fecha_iso = sabado.isoformat()
+    _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+              7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
+    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
+    turnos = ["9:30", "11:00", "15:30"]
+
+    def _slug(nombre, apellido):
+        raw = f"{nombre} {apellido}".lower().strip()
+        norm = unicodedata.normalize("NFD", raw)
+        norm = "".join(c for c in norm if unicodedata.category(c) != "Mn")
+        return re.sub(r"[^a-z0-9]+", "-", norm).strip("-")
+
+    resultado = {"fecha": fecha_iso, "fecha_label": f"Sábado {sabado.day}/{sabado.month}", "turnos": []}
+
+    # Cargar familias + niños para fotos y teléfonos
+    from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
+    _ninos_recs = await _get_records(_NINOS, max_records=100)
+    _ninos_map = {}
+    for _nr in _ninos_recs:
+        _nf = _nr.get("fields", {})
+        _ninos_map[_nr["id"]] = {
+            "foto": (_nf.get("FOTO") or [{}])[0].get("url", "") if _nf.get("FOTO") else "",
+            "familia_id": (_nf.get("FAMILIA") or [None])[0],
+        }
+    _familias_recs = await _get_records(_FAMILIAS, max_records=100)
+    _fam_map = {}
+    for _fr in _familias_recs:
+        _ff = _fr.get("fields", {})
+        _fam_map[_fr["id"]] = {
+            "padre": _ff.get("NOMBRE PADRE", ""),
+            "madre": _ff.get("NOMBRE MADRE", ""),
+            "cell": _ff.get("CELL PADRE", "") or _ff.get("CELL MADRE", ""),
+        }
+
+    # Aurora (inscriptos)
+    for hora in turnos:
+        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
+        turno_data = {"hora": hora, "aurora": [], "prueba": []}
+        for n in ninos_aurora:
+            _nino_extra = _ninos_map.get(n.get("id", ""), {})
+            _fam_extra = _fam_map.get(_nino_extra.get("familia_id"), {})
+            turno_data["aurora"].append({
+                "nombre": n.get("nombre", ""),
+                "apellido": n.get("apellido", ""),
+                "apodo": n.get("apodo", ""),
+                "edad": n.get("edad", ""),
+                "slug": _slug(n.get("nombre", ""), n.get("apellido", "")),
+                "foto": _nino_extra.get("foto", ""),
+                "padre": _fam_extra.get("padre", "") or _fam_extra.get("madre", ""),
+                "cell": _fam_extra.get("cell", ""),
+            })
+        resultado["turnos"].append(turno_data)
+
+    # Prueba FENIX
+    pruebas_texto = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', NOT({{INSCRIPTO}}))", max_records=50)
+    pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))", max_records=50)
+    _seen = set()
+    pruebas = []
+    for rec in pruebas_texto + pruebas_iso:
+        if rec["id"] not in _seen:
+            _seen.add(rec["id"])
+            pruebas.append(rec)
+
+    for rec in pruebas:
+        f = rec.get("fields", {})
+        hora_raw = (f.get("HORA") or "").strip().replace("h", "").replace("hs", "").strip()
+        matched_turno = None
+        for i, t in enumerate(turnos):
+            if hora_raw == t or hora_raw == t.split(":")[0]:
+                matched_turno = i
+                break
+        if matched_turno is not None:
+            nombre = f.get("NOMBRE HIJO", "")
+            apellido = f.get("APELLIDO HIJO", "")
+            foto_prueba = (f.get("FOTO") or [{}])[0].get("url", "") if f.get("FOTO") else ""
+            resultado["turnos"][matched_turno]["prueba"].append({
+                "nombre": nombre,
+                "apellido": apellido,
+                "apodo": "",
+                "edad": str(f.get("EDAD HIJO", "")),
+                "slug": _slug(nombre, apellido),
+                "foto": foto_prueba,
+                "padre": f.get("NOMBRE", ""),
+                "cell": f.get("TELEFONO", ""),
+            })
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=resultado, headers={"Access-Control-Allow-Origin": "*"})
+
+
 @app.get("/stats")
 async def estadisticas(_: bool = Depends(_require_admin)):
     stats = await obtener_estadisticas()
