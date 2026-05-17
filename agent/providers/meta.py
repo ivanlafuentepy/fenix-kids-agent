@@ -61,10 +61,12 @@ class ProveedorMeta(ProveedorWhatsApp):
                     media_id = None
                     es_boton = False
                     btn_id = None
+                    _img_caption = ""
                     if tipo == "text":
                         texto = msg.get("text", {}).get("body", "")
                     elif tipo == "image":
                         media_id = msg.get("image", {}).get("id")
+                        _img_caption = msg.get("image", {}).get("caption", "")
                         texto = "[imagen]"
                     elif tipo == "document":
                         media_id = msg.get("document", {}).get("id")
@@ -102,6 +104,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                             mensaje_id=mensaje_id,
                             es_propio=False,
                             media_id=media_id,
+                            caption=_img_caption,
                             es_boton=es_boton,
                             btn_id=btn_id,
                             ctwa_clid=_ctwa_clid,

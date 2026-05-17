@@ -206,6 +206,8 @@ _cara_pendiente: dict[str, str] = {}
 _cara_candidatos: dict[str, list[dict]] = {}
 # Record preseleccionado por número: {telefono: {"id":..., "nombre_completo":..., "es_prueba":...}}
 _cara_record_preseleccionado: dict[str, dict] = {}
+# Media ID pendiente cuando se envió foto+nombre pero hubo múltiples matches
+_cara_media_pendiente: dict[str, str] = {}
 
 # ── Promo Madre (DESACTIVADA 2026-05-16 — venció 15/5 20h) ──
 _PROMO_MADRE_ACTIVA = False  # cambiar a True para reactivar
@@ -2245,11 +2247,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Comando "registrar cara [nombre]" (solo admin) ────────────────
-        if telefono == admin_phone and texto.lower().strip().startswith("registrar cara"):
-            _nombre_cara = texto.strip()[len("registrar cara"):].strip()
+        # Acepta: texto "registrar cara matheo" (sin foto) O imagen con caption "registrar cara matheo"
+        _caption_cara = getattr(msg, "caption", "") or ""
+        _es_cmd_cara_texto = telefono == admin_phone and texto.lower().strip().startswith("registrar cara")
+        _es_cmd_cara_caption = telefono == admin_phone and texto == "[imagen]" and msg.media_id and _caption_cara.lower().strip().startswith("registrar cara")
+        if _es_cmd_cara_texto or _es_cmd_cara_caption:
+            if _es_cmd_cara_caption:
+                _nombre_cara = _caption_cara.strip()[len("registrar cara"):].strip()
+            else:
+                _nombre_cara = texto.strip()[len("registrar cara"):].strip()
             if _nombre_cara:
-                _cara_pendiente[telefono] = _nombre_cara
-                await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_nombre_cara} para registrar su cara")
+                if _es_cmd_cara_caption:
+                    # Foto + nombre en un solo mensaje → procesar directo
+                    _cara_pendiente[telefono] = _nombre_cara
+                    _cara_media_pendiente[telefono] = msg.media_id
+                    await _procesar_registro_cara(telefono, msg.media_id)
+                else:
+                    # Solo texto → esperar foto
+                    _cara_pendiente[telefono] = _nombre_cara
+                    await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_nombre_cara} para registrar su cara")
             else:
                 await proveedor.enviar_mensaje(telefono, "Usá: registrar cara [nombre del niño]")
             return
@@ -2263,7 +2279,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 del _cara_candidatos[telefono]
                 _cara_pendiente[telefono] = _sel["nombre_completo"]
                 _cara_record_preseleccionado[telefono] = _sel
-                await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_sel['nombre_completo']} para registrar su cara")
+                # Si ya tenía foto pendiente (mandó foto+nombre y hubo múltiples), usar esa foto
+                _media_guardado = _cara_media_pendiente.pop(telefono, None)
+                if _media_guardado:
+                    await _procesar_registro_cara(telefono, _media_guardado)
+                else:
+                    await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_sel['nombre_completo']} para registrar su cara")
             else:
                 await proveedor.enviar_mensaje(telefono, f"Número inválido. Elegí entre 1 y {len(_candidatos)}")
             return

@@ -19,6 +19,7 @@ class MensajeEntrante:
     mensaje_id: str          # ID único del mensaje
     es_propio: bool          # True si lo envió el agente (se ignora)
     media_id: str | None = None   # ID de media (audio, imagen, documento)
+    caption: str = ""             # Caption de imagen/video (si tiene)
     es_boton: bool = False        # True si es respuesta a botón interactivo
     btn_id: str | None = None     # ID del botón clickeado (para distinguir acciones)
     ctwa_clid: str | None = None   # Click ID del anuncio CTWA (para atribución Meta CAPI)
