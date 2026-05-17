@@ -5153,7 +5153,8 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
 
     # ── Armar mensaje ──
     emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆"]
-    lineas = [f"📋 *RESERVAS — {fecha_label}*\n"]
+    _link_web = f"https://fenixkidsacademy.com/reservas?fecha={fecha_iso}"
+    lineas = [f"📋 *RESERVAS — {fecha_label}*\n🔗 {_link_web}\n"]
     total_aurora = 0
     total_fenix = 0
 
