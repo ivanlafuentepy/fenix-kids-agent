@@ -517,6 +517,7 @@ async def health_check():
     return {"status": "ok", "service": "fenix-kids-agent"}
 
 
+
 @app.get("/stats")
 async def estadisticas(_: bool = Depends(_require_admin)):
     stats = await obtener_estadisticas()
@@ -7592,8 +7593,17 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
     if face_id:
         # Guardar FACE_ID en Airtable (NIÑOS o PRUEBA según corresponda)
         await _patch(tabla_destino, nino_id, {"FACE_ID": face_id})
+        # Subir foto como attachment al campo FOTO
+        from agent.airtable_client import subir_attachment_airtable
+        _foto_ok = await subir_attachment_airtable(
+            record_id=nino_id,
+            field_name="FOTO",
+            image_bytes=image_bytes,
+            filename=f"{nombre_display.replace(' ', '_')}.jpg",
+        )
         _label = "🔥 PRUEBA" if _es_prueba else "NIÑOS"
-        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} [{_label}] (FaceId: {face_id[:8]}...)")
+        _foto_msg = " + foto subida" if _foto_ok else " (foto no subió)"
+        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} [{_label}]{_foto_msg}")
     else:
         await proveedor.enviar_mensaje(telefono, f"❌ No se detectó una cara clara en la foto de {nombre_display}. Probá con otra foto.")
 

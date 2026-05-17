@@ -121,6 +121,49 @@ async def _post(table: str, campos: dict) -> dict | None:
     return None
 
 
+async def subir_attachment_airtable(
+    record_id: str,
+    field_name: str,
+    image_bytes: bytes,
+    filename: str = "foto.jpg",
+    content_type: str = "image/jpeg",
+) -> bool:
+    """Sube un archivo binario como attachment a un registro existente en Airtable.
+    Usa el endpoint content.airtable.com con JSON + base64.
+    """
+    if not AIRTABLE_API_KEY or not record_id:
+        return False
+    import base64
+    url = (
+        f"https://content.airtable.com/v0/{AIRTABLE_BASE_ID}"
+        f"/{record_id}/{field_name}/uploadAttachment"
+    )
+    headers = {
+        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    file_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    payload = {
+        "contentType": content_type,
+        "filename": filename,
+        "file": file_b64,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(url, headers=headers, json=payload)
+            if r.status_code in (200, 201):
+                logger.info(f"[Airtable] Attachment subido a {record_id}/{field_name}")
+                return True
+            logger.error(
+                f"[Airtable] Upload attachment {record_id}/{field_name} "
+                f"→ {r.status_code}: {r.text[:300]}"
+            )
+            return False
+    except Exception as e:
+        logger.error(f"[Airtable] Upload attachment error: {e}")
+        return False
+
+
 async def _patch(table: str, record_id: str, campos: dict) -> bool:
     """Actualiza campos de un registro existente. Retorna True si fue exitoso."""
     if not AIRTABLE_API_KEY or not record_id:
