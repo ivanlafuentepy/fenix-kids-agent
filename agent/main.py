@@ -2378,9 +2378,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `fotos 9:30` / `fotos 11` / `fotos 15:30` — modo fotos de clase\n"
                 "• `registrar cara [nombre]` — registrar cara de un niño nuevo\n\n"
                 "🔄 *Reset:*\n"
-                "• `holayosoyfenix` — reset completo (conversación + Airtable)\n"
+                "• `modo padre` — reset completo + entrar como padre nuevo\n"
                 "• `modo alumno` — reset conversación, simular padre inscripto\n"
-                "• `modo padre` — activar flujo normal (diagnóstico/Claude)\n"
                 "• `modo secre` — volver a solo comandos (default)\n\n"
                 "📋 *Info:*\n"
                 "• `comandos` — esta lista\n\n"
@@ -2464,7 +2463,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando reset (solo admin) ────────────────────────────────────
         _reset_phones = {admin_phone, "595982844548"}
-        if texto.lower() == "holayosoyfenix" and telefono in _reset_phones:
+        _texto_reset = texto.lower().strip()
+        if _texto_reset in ("holayosoyfenix", "modo padre", "modopadre") and telefono in _reset_phones:
             cancelar_seguimiento(telefono)
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
@@ -2485,6 +2485,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # No admin: solo limpiar estado local, NO tocar Airtable
                 await limpiar_estado_completo(telefono)
                 resumen = "Reset conversación ✅ (datos de Airtable intactos)"
+            # Si es admin, activar modo padre automáticamente después del reset
+            if telefono == admin_phone:
+                _admin_modo_padre.add(telefono)
+                resumen += "\n\nModo padre activado — te respondo como si fueras un padre. Escribí 'modo secre' para volver."
             await proveedor.enviar_mensaje(telefono, resumen)
             topic_reset = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
             if topic_reset:
@@ -2825,14 +2829,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Solo "modo padre" activa el flujo normal (diagnóstico/Claude).
         if telefono == admin_phone:
             _texto_admin = texto.strip().lower().replace(" ", "")
-            if _texto_admin == "modopadre":
-                # Activar modo padre: limpiar estado y dejar que fluya como lead
-                _admin_modo_padre.add(telefono)
-                await proveedor.enviar_mensaje(
-                    telefono,
-                    "Modo padre ✅\nAhora te respondo como si fueras un padre. Escribí 'modo secre' para volver."
-                )
-                return
             if _texto_admin == "modosecre":
                 _admin_modo_padre.discard(telefono)
                 await proveedor.enviar_mensaje(telefono, "Modo secre ✅\nSolo comandos admin.")
@@ -2971,7 +2967,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if (_PROMO_MADRE_ACTIVA
                 and telefono in _esperando_formulario_promo
                 and texto not in ("[imagen]", "[documento]", "[audio]")
-                and texto.lower() != "holayosoyfenix"):
+                and texto.lower() not in ("holayosoyfenix", "modo padre", "modopadre")):
             await guardar_mensaje(telefono, "user", texto)
             _esperando_formulario_promo.discard(telefono)
 
@@ -3051,7 +3047,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if (_PROMO_MADRE_ACTIVA
                 and (_es_quiero_promo or telefono in _leads_promo_madre_enviada)
                 and telefono not in _esperando_pago_promo_madre
-                and texto.lower() != "holayosoyfenix"):
+                and texto.lower() not in ("holayosoyfenix", "modo padre", "modopadre")):
             _leads_promo_madre_enviada.discard(telefono)
             await guardar_mensaje(telefono, "user", texto)
             from agent.airtable_client import obtener_lead_record_id as _olri_pm2
