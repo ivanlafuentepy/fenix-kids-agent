@@ -425,11 +425,10 @@ def generar_html():
         .dot-blue {{ background: #42a5f5; }}
         .dot-orange {{ background: #ff9800; }}
         .sent {{
-            opacity: 0.4;
+            opacity: 0.7;
         }}
         .sent .btn-whatsapp {{
-            background: #444;
-            pointer-events: none;
+            background: #1a8a3e;
         }}
         .sent .btn-whatsapp::after {{
             content: ' (enviado)';
