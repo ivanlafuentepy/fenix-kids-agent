@@ -187,45 +187,54 @@ def generar_mensaje(familia):
             rango = "mixto"
         multi = True
 
-    # Bloques según rango de edad
-    comentarios = {
-        "3-5": [
-            f"Se notó que {'disfrutaron' if multi else 'disfrutó'} mucho del movimiento libre y los juegos.",
-            f"A esta edad, lo que más trabajan es la coordinación, la motricidad y la conexión con su cuerpo a través del juego.",
-            f"Es la etapa donde más impacto tiene el movimiento en su desarrollo emocional: autoestima, seguridad y vínculos con otros niños.",
-        ],
-        "6-8": [
-            f"Se {'notaron muy comprometidos' if multi else 'notó muy comprometido/a'} con los desafíos del entrenamiento.",
-            f"A esta edad, lo que más trabajamos es la confianza, la coordinación y la superación de miedos a través de desafíos físicos reales.",
-            f"Es una etapa clave para canalizar toda esa energía de forma positiva, y generar hábitos de independencia y actividad física.",
-        ],
-        "9-12": [
-            f"Se {'notaron con mucha actitud' if multi else 'notó con mucha actitud'} durante el entrenamiento.",
-            f"A esta edad, lo que más trabajamos es la disciplina, el liderazgo y la fuerza mental a través del entrenamiento funcional.",
-            f"Es la etapa perfecta para fortalecer hábitos saludables, desconectar de las pantallas y construir autoestima real a través del esfuerzo.",
-        ],
-        "mixto": [
-            f"Se notó que cada uno disfrutó el entrenamiento a su manera — los más chiquitos en el juego y el movimiento libre, los más grandes en los desafíos físicos.",
-            f"En FENIX trabajamos por edades justamente para respetar lo que cada etapa necesita: coordinación y autoestima en los más chicos, disciplina y liderazgo en los más grandes.",
-            f"Es un espacio donde cada uno crece a su ritmo, y eso se nota desde la primera clase.",
-        ],
-        "general": [
-            f"Se notó que disfrutó mucho del entrenamiento y conectó bien con el grupo.",
-            f"En FENIX trabajamos la parte física y emocional: confianza, coordinación, autoestima y hábitos saludables.",
-            f"Es un espacio donde los chicos crecen de verdad, y eso se nota desde la primera clase.",
-        ],
+    # Pregunta abierta según cantidad de hijos
+    if multi:
+        pregunta = f"Contame, ¿qué tal se sintieron {nombre_hijo} después del entrenamiento? ¿Qué dijeron? ¿Les gustó?"
+    else:
+        pregunta = f"Contame, ¿qué tal se sintió {nombre_hijo} después del entrenamiento? ¿Qué dijo? ¿Le gustó?"
+
+    # Consejo personalizado por edad (voz de profe, desde la experiencia)
+    consejos = {
+        "3-5": (
+            f"Te aconsejo vivamente que sigas haciendo este tipo de actividad con {nombre_hijo} al aire libre. "
+            f"Cada vez que puedas, {'llevalos' if multi else f'llevá a {nombre_hijo}'} al parque, {'haceles' if multi else 'hacele'} trepar árboles, subir murallas, hacer cosas que {'les' if multi else 'le'} desafíen. "
+            f"A esta edad eso {'les' if multi else 'le'} desarrolla muchísimo la coordinación, la confianza y la autoestima. "
+            f"La valentía se construye desde chiquitos superando desafíos reales."
+        ),
+        "6-8": (
+            f"Te aconsejo vivamente que sigas fomentando este tipo de actividad con {nombre_hijo}. "
+            f"A esta edad {'necesitan' if multi else 'necesita'} desafíos físicos reales: trepar, saltar, correr, caerse y levantarse. "
+            f"Eso {'les' if multi else 'le'} desarrolla la confianza, la independencia y la capacidad de superar miedos. "
+            f"Es la mejor forma de canalizar toda esa energía de forma positiva."
+        ),
+        "9-12": (
+            f"Te aconsejo vivamente que sigas fomentando este tipo de actividad con {nombre_hijo}. "
+            f"A esta edad el entrenamiento funcional {'les' if multi else 'le'} desarrolla disciplina, fuerza mental y liderazgo. "
+            f"Es la etapa perfecta para construir hábitos saludables, desconectar de las pantallas y fortalecer la autoestima a través del esfuerzo real. "
+            f"Lo que {'construyan' if multi else 'construya'} ahora {'les' if multi else 'le'} queda para siempre."
+        ),
+        "mixto": (
+            f"Te aconsejo vivamente que sigas haciendo este tipo de actividades con ellos. "
+            f"Cada uno a su edad necesita cosas distintas: los más chiquitos desarrollan coordinación y confianza a través del juego y los desafíos físicos, "
+            f"y los más grandes fortalecen la disciplina, la fuerza mental y hábitos saludables. "
+            f"La valentía y la autoestima se construyen superando desafíos reales, y eso es exactamente lo que hacemos en FENIX."
+        ),
+        "general": (
+            f"Te aconsejo vivamente que sigas fomentando este tipo de actividad con {nombre_hijo}. "
+            f"El entrenamiento funcional al aire libre desarrolla la confianza, la coordinación y la autoestima de una forma que ninguna otra actividad logra. "
+            f"La valentía se construye desde chicos superando desafíos reales."
+        ),
     }
 
-    bloque = comentarios.get(rango, comentarios["general"])
+    consejo = consejos.get(rango, consejos["general"])
 
     msg = (
         f"Hola {padre} 😊 Soy Iván, profe de FENIX Kids.\n\n"
         f"Quería agradecerte por haber venido el sábado con {nombre_hijo} al entrenamiento. "
-        f"{bloque[0]}\n\n"
-        f"{bloque[1]}\n\n"
-        f"{bloque[2]}\n\n"
-        f"Te cuento que los cupos para este mes están casi completos — estamos cerrando los últimos lugares de la promoción de lanzamiento.\n\n"
-        f"Si te interesa asegurar el lugar de {nombre_hijo}, avisame y te paso los detalles. Sin presión, pero no quiero que se queden afuera 🙌"
+        f"{pregunta}\n\n"
+        f"{consejo}\n\n"
+        f"Te cuento que estoy teniendo mucha demanda y la promoción que tenemos de 12 clases a 750.000 guaraníes sin matrícula en estos días ya estaré cerrando.\n\n"
+        f"Si te interesa asegurar el lugar de {nombre_hijo} con esa promo, avisame y te paso todos los datos 🙌"
     )
     return msg
 
