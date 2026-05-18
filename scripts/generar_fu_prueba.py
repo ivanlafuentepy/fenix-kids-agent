@@ -16,13 +16,7 @@ FAMILIAS = [
         "hijos": [{"nombre": "Piero", "edad": "4,5", "rango": "3-5"}],
         "hora": "11:00"
     },
-    {
-        "padre": "Genesis",
-        "apellido": "Yegros",
-        "tel": "595981130388",
-        "hijos": [{"nombre": "Mathias", "edad": "4,11", "rango": "3-5"}],
-        "hora": "11:00"
-    },
+    # Genesis Yegros (595981130388) — INSCRIPTO, excluida
     {
         "padre": "Fabiana",
         "apellido": "Aguilera",
@@ -33,16 +27,7 @@ FAMILIAS = [
         ],
         "hora": "11:00"
     },
-    {
-        "padre": "Janeth",
-        "apellido": "Paredes de Niz",
-        "tel": "595971886648",
-        "hijos": [
-            {"nombre": "Mauro Jesus", "edad": "4,4", "rango": "3-5"},
-            {"nombre": "Bruno Marcelo", "edad": "9,5", "rango": "9-12"}
-        ],
-        "hora": "9:30"
-    },
+    # Janeth Paredes de Niz (595971886648) — INSCRIPTO, excluida
     {
         "padre": "Lee Jun",
         "apellido": "Yob",
@@ -84,13 +69,7 @@ FAMILIAS = [
         "hijos": [{"nombre": "César Emanuel", "edad": "8,4", "rango": "6-8"}],
         "hora": "15:30"
     },
-    {
-        "padre": "Beatriz",
-        "apellido": "Benitez",
-        "tel": "595984842052",
-        "hijos": [{"nombre": "Mateo Daniel", "edad": "10,0", "rango": "9-12"}],
-        "hora": "9:30"
-    },
+    # Beatriz Benitez (595984842052) — INSCRIPTO, excluida
     {
         "padre": "Milagros",
         "apellido": "Maldonado",
@@ -105,13 +84,7 @@ FAMILIAS = [
         "hijos": [{"nombre": "Facundo", "edad": "5,1", "rango": "3-5"}],
         "hora": "11:00"
     },
-    {
-        "padre": "Biviana",
-        "apellido": "Bazán",
-        "tel": "595973686713",
-        "hijos": [{"nombre": "Christopher", "edad": "4,11", "rango": "3-5"}],
-        "hora": "11:00"
-    },
+    # Biviana Bazán (595973686713) — INSCRIPTO, excluida
     {
         "padre": "Victor",
         "apellido": "Martinez",
@@ -129,13 +102,7 @@ FAMILIAS = [
         "hijos": [{"nombre": "Sebastián", "edad": "", "rango": "general"}],
         "hora": "15:30"
     },
-    {
-        "padre": "Erica",
-        "apellido": "Bogado",
-        "tel": "595961550099",
-        "hijos": [{"nombre": "Tomás Benjamín", "edad": "5,0", "rango": "3-5"}],
-        "hora": "11:00"
-    },
+    # Erica Bogado (595961550099) — INSCRIPTO, excluida
     {
         "padre": "Solange",
         "apellido": "Recalde",
