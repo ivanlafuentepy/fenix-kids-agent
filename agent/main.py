@@ -1625,6 +1625,7 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
 _diagnostico_pendiente: dict[str, asyncio.Task] = {}
 _DELAY_DIAGNOSTICO = 180  # 3 minutos
 _afiche_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche
+_afiche_hermanos_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche hermanos
 
 
 def _cancelar_diagnostico_pendiente(telefono: str):
@@ -3386,6 +3387,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ni llamamos a Claude — ahorra tokens y evita respuestas duplicadas.
         if not _interceptado and agent_actual == "ivan":
             _pide_precios = _padre_pregunta_precios(texto)
+            _pide_hermanos = _padre_pregunta_hermanos(texto)
             _pide_horarios = _padre_pregunta_horarios(texto)
             _pide_ubicacion = _padre_pregunta_ubicacion(texto)
             _pide_duracion = _padre_pregunta_duracion(texto)
@@ -3401,7 +3403,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             )
 
             _hay_intercepcion = (
-                _pide_precios or _pide_horarios or _pide_ubicacion or _interes_post_diag
+                _pide_precios or _pide_hermanos or _pide_horarios or _pide_ubicacion or _interes_post_diag
                 or _pide_duracion or _pide_que_llevar or _pide_devolucion
                 or _pide_efectivo or _dice_ya_transfiri or _pide_alias
             )
@@ -3411,10 +3413,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _partes = []  # texto de respuesta
 
                 # Interés post-diagnóstico → afiche precios (es lo que corresponde)
-                if _interes_post_diag and not _pide_precios:
+                if _interes_post_diag and not _pide_precios and not _pide_hermanos:
                     _pide_precios = True  # tratar como pedido de precios
 
-                if _pide_precios and telefono not in _afiche_enviado:
+                # Hermanos tiene prioridad sobre precios generales
+                if _pide_hermanos and telefono not in _afiche_hermanos_enviado:
+                    _acciones_interceptadas.append("afiche_hermanos")
+                    _partes.append("Tenemos un plan especial para familias 💪 Te paso el afiche de hermanos")
+                elif _pide_hermanos:
+                    _partes.append(
+                        "👦👦 *Descuentos hermanos:*\n"
+                        "Paq 5 clases: 2do hijo 30% OFF (245mil), 3er hijo 50% OFF (175mil)\n"
+                        "Paq 12 clases: 2do hijo 40% OFF (450mil), 3er hijo GRATIS 🎁\n"
+                        "¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
+                    )
+                elif _pide_precios and telefono not in _afiche_enviado:
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
@@ -3857,7 +3870,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await proveedor.enviar_mensaje(telefono, respuesta)
             # Ejecutar acciones (enviar afiches)
             for _accion in _acciones_interceptadas:
-                if _accion == "afiche_precios":
+                if _accion == "afiche_hermanos":
+                    _afiche_hermanos_enviado.add(telefono)
+                    await _enviar_afiche_hermanos_y_followup(telefono, topic_id, _tg_group)
+                elif _accion == "afiche_precios":
                     _afiche_enviado.add(telefono)
                     await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
                 elif _accion == "afiche_horarios":
@@ -6625,6 +6641,22 @@ def _padre_pregunta_precios(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 
+def _padre_pregunta_hermanos(texto: str) -> bool:
+    """Detecta si el padre pregunta por precios/descuentos para hermanos o tiene 2+ hijos."""
+    t = texto.lower().strip()
+    patrones = [
+        "hermano", "hermanos", "hermana", "hermanas",
+        "combo", "descuento familiar", "plan familiar",
+        "plan hermano", "plan hermanos",
+        "precio hermano", "precio hermanos",
+        "2 hijos", "3 hijos", "dos hijos", "tres hijos",
+        "dos nenes", "tres nenes", "dos nenas", "tres nenas",
+        "varios hijos", "mas de un hijo", "más de un hijo",
+        "familia", "descuento por hermano",
+    ]
+    return any(p in t for p in patrones)
+
+
 def _padre_pregunta_ubicacion(texto: str) -> bool:
     """Detecta si el padre pregunta por ubicación o dirección."""
     t = texto.lower().strip()
@@ -6735,6 +6767,57 @@ async def _armar_followup_afiche(telefono: str) -> str:
             "Te puedo reservar por acá, o si preferís te llamo "
             "un rato así te explico todo 😊"
         )
+
+
+async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
+    """Envía el afiche HERMANOS + descuentos por hijo + CTA."""
+    try:
+        with open(_AFICHE_HERMANOS_PATH, "rb") as f:
+            image_bytes = f.read()
+
+        ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
+        if ok:
+            logger.info(f"[AFICHE HERMANOS] Imagen enviada a {telefono}")
+        else:
+            logger.error(f"[AFICHE HERMANOS] Error enviando imagen a {telefono}")
+
+        await asyncio.sleep(3)
+
+        msg_hermanos = (
+            "👦👦 *Plan Hermanos FENIX — Crecen juntos, entrenan juntos* 💪\n\n"
+            "⭐ *Paquete 5 clases (c/hijo):*\n"
+            "1er hijo: 350.000\n"
+            "2do hijo: 245.000 (30% OFF)\n"
+            "3er hijo: 175.000 (50% OFF)\n"
+            "👉 Total 3 hijos: 770.000\n\n"
+            "🔥 *Paquete 12 clases (c/hijo) — EL MÁS ELEGIDO:*\n"
+            "1er hijo: 750.000\n"
+            "2do hijo: 450.000 (40% OFF)\n"
+            "3er hijo: GRATIS (3x2) 🎁\n"
+            "👉 Total 3 hijos: 1.200.000 (36 clases, 41mil por clase)\n\n"
+            "Sin matrícula, sin vencimiento ✅\n"
+            "¿Cuántos hijos tenés y qué edades tienen? Así te armo el combo exacto 🤝"
+        )
+        await proveedor.enviar_mensaje(telefono, msg_hermanos)
+        await guardar_mensaje(telefono, "assistant", msg_hermanos)
+
+        # Espejar en Telegram
+        _tid = topic_id
+        if not _tid:
+            try:
+                _tid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=tg_group)
+            except Exception:
+                pass
+        if _tid:
+            await enviar_a_topic(_tid, "👨‍🏫 IVAN: [📸 Afiche HERMANOS enviado]", telefono=telefono, group_override=tg_group)
+            await enviar_a_topic(_tid, f"👨‍🏫 IVAN: {msg_hermanos}", telefono=telefono, group_override=tg_group)
+
+        logger.info(f"[AFICHE HERMANOS] Follow-up enviado a {telefono}")
+
+    except FileNotFoundError:
+        logger.error(f"[AFICHE HERMANOS] Archivo no encontrado: {_AFICHE_HERMANOS_PATH}")
+    except Exception as e:
+        logger.error(f"[AFICHE HERMANOS] Error: {e}")
 
 
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
