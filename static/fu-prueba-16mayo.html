@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FENIX Kids — Follow-up Prueba 16 Mayo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #ff6b00;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #ff6b00;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #888;
+            font-size: 0.95em;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-num {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ff6b00;
+        }
+        .stat-label {
+            font-size: 0.8em;
+            color: #888;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        .card:hover {
+            border-color: #ff6b00;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .padre-name {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #fff;
+        }
+        .turno {
+            background: #222;
+            color: #ff6b00;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+        }
+        .hijos {
+            margin-bottom: 8px;
+        }
+        .hijo {
+            margin-right: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .badge-green { background: #1a3a1a; color: #4caf50; }
+        .badge-blue { background: #1a2a3a; color: #42a5f5; }
+        .badge-orange { background: #3a2a1a; color: #ff9800; }
+        .badge-gray { background: #2a2a2a; color: #999; }
+        .telefono {
+            color: #666;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+        }
+        .mensaje-preview {
+            background: #111;
+            border-left: 3px solid #333;
+            padding: 10px 14px;
+            font-size: 0.85em;
+            color: #999;
+            margin-bottom: 14px;
+            border-radius: 0 8px 8px 0;
+            line-height: 1.4;
+        }
+        .btn-whatsapp {
+            display: block;
+            text-align: center;
+            background: #25d366;
+            color: #fff;
+            text-decoration: none;
+            padding: 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1em;
+            transition: background 0.2s;
+        }
+        .btn-whatsapp:hover {
+            background: #1ea952;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            font-size: 0.85em;
+        }
+        .legend span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .dot-green { background: #4caf50; }
+        .dot-blue { background: #42a5f5; }
+        .dot-orange { background: #ff9800; }
+        .sent {
+            opacity: 0.4;
+        }
+        .sent .btn-whatsapp {
+            background: #444;
+            pointer-events: none;
+        }
+        .sent .btn-whatsapp::after {
+            content: ' (enviado)';
+        }
+        .mark-sent {
+            display: block;
+            text-align: center;
+            margin-top: 8px;
+            color: #666;
+            font-size: 0.8em;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>FENIX Kids</h1>
+        <p>Follow-up — Prueba Sábado 16 de Mayo 2026</p>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-num">18</div>
+                <div class="stat-label">Familias</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num">24</div>
+                <div class="stat-label">Niños</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="legend">
+        <span><span class="dot dot-green"></span> 3-5 años</span>
+        <span><span class="dot dot-blue"></span> 6-8 años</span>
+        <span><span class="dot dot-orange"></span> 9-12 años</span>
+    </div>
+
+    
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Marco Mernes</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Piero <span class="badge badge-green">4 años</span></span></div>
+            <div class="telefono">+595981614009</div>
+            <div class="mensaje-preview">Hola Marco 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Piero al entrenamiento. Se notó que disfrutó mucho del ...</div>
+            <a href="https://wa.me/595981614009?text=Hola%20Marco%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Piero%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Piero%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Genesis Yegros</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Mathias <span class="badge badge-green">4 años</span></span></div>
+            <div class="telefono">+595981130388</div>
+            <div class="mensaje-preview">Hola Genesis 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Mathias al entrenamiento. Se notó que disfrutó mucho ...</div>
+            <a href="https://wa.me/595981130388?text=Hola%20Genesis%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Mathias%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Mathias%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Fabiana Aguilera</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Amanda Milena <span class="badge badge-green">4 años</span></span> &bull; <span class="hijo">Alana <span class="badge badge-green">4 años</span></span></div>
+            <div class="telefono">+595985765996</div>
+            <div class="mensaje-preview">Hola Fabiana 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Amanda y Alana al entrenamiento. Se notó que disfruta...</div>
+            <a href="https://wa.me/595985765996?text=Hola%20Fabiana%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Amanda%20y%20Alana%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrutaron%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Amanda%20y%20Alana%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Janeth Paredes de Niz</div>
+                <div class="turno">Turno 9:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Mauro Jesus <span class="badge badge-green">4 años</span></span> &bull; <span class="hijo">Bruno Marcelo <span class="badge badge-orange">9 años</span></span></div>
+            <div class="telefono">+595971886648</div>
+            <div class="mensaje-preview">Hola Janeth 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Mauro y Bruno al entrenamiento. Se notó que cada uno d...</div>
+            <a href="https://wa.me/595971886648?text=Hola%20Janeth%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Mauro%20y%20Bruno%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20cada%20uno%20disfrut%C3%B3%20el%20entrenamiento%20a%20su%20manera%20%E2%80%94%20los%20m%C3%A1s%20chiquitos%20en%20el%20juego%20y%20el%20movimiento%20libre%2C%20los%20m%C3%A1s%20grandes%20en%20los%20desaf%C3%ADos%20f%C3%ADsicos.%0A%0AEn%20FENIX%20trabajamos%20por%20edades%20justamente%20para%20respetar%20lo%20que%20cada%20etapa%20necesita%3A%20coordinaci%C3%B3n%20y%20autoestima%20en%20los%20m%C3%A1s%20chicos%2C%20disciplina%20y%20liderazgo%20en%20los%20m%C3%A1s%20grandes.%0A%0AEs%20un%20espacio%20donde%20cada%20uno%20crece%20a%20su%20ritmo%2C%20y%20eso%20se%20nota%20desde%20la%20primera%20clase.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Mauro%20y%20Bruno%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Lee Jun Yob</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Max Ki Bae <span class="badge badge-blue">7 años</span></span></div>
+            <div class="telefono">+595992247697</div>
+            <div class="mensaje-preview">Hola Lee Jun 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Max al entrenamiento. Se notó muy comprometido/a con ...</div>
+            <a href="https://wa.me/595992247697?text=Hola%20Lee%20Jun%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Max%20al%20entrenamiento.%20Se%20not%C3%B3%20muy%20comprometido/a%20con%20los%20desaf%C3%ADos%20del%20entrenamiento.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajamos%20es%20la%20confianza%2C%20la%20coordinaci%C3%B3n%20y%20la%20superaci%C3%B3n%20de%20miedos%20a%20trav%C3%A9s%20de%20desaf%C3%ADos%20f%C3%ADsicos%20reales.%0A%0AEs%20una%20etapa%20clave%20para%20canalizar%20toda%20esa%20energ%C3%ADa%20de%20forma%20positiva%2C%20y%20generar%20h%C3%A1bitos%20de%20independencia%20y%20actividad%20f%C3%ADsica.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Max%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Debora Aguiar</div>
+                <div class="turno">Turno 9:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Samuel <span class="badge badge-green">5 años</span></span> &bull; <span class="hijo">Fabrizio <span class="badge badge-orange">10 años</span></span></div>
+            <div class="telefono">+595971115636</div>
+            <div class="mensaje-preview">Hola Debora 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Samuel y Fabrizio al entrenamiento. Se notó que cada u...</div>
+            <a href="https://wa.me/595971115636?text=Hola%20Debora%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Samuel%20y%20Fabrizio%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20cada%20uno%20disfrut%C3%B3%20el%20entrenamiento%20a%20su%20manera%20%E2%80%94%20los%20m%C3%A1s%20chiquitos%20en%20el%20juego%20y%20el%20movimiento%20libre%2C%20los%20m%C3%A1s%20grandes%20en%20los%20desaf%C3%ADos%20f%C3%ADsicos.%0A%0AEn%20FENIX%20trabajamos%20por%20edades%20justamente%20para%20respetar%20lo%20que%20cada%20etapa%20necesita%3A%20coordinaci%C3%B3n%20y%20autoestima%20en%20los%20m%C3%A1s%20chicos%2C%20disciplina%20y%20liderazgo%20en%20los%20m%C3%A1s%20grandes.%0A%0AEs%20un%20espacio%20donde%20cada%20uno%20crece%20a%20su%20ritmo%2C%20y%20eso%20se%20nota%20desde%20la%20primera%20clase.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Samuel%20y%20Fabrizio%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Alejandra Alvarenga</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Ian José <span class="badge badge-green">5 años</span></span></div>
+            <div class="telefono">+595961739906</div>
+            <div class="mensaje-preview">Hola Alejandra 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Ian al entrenamiento. Se notó que disfrutó mucho de...</div>
+            <a href="https://wa.me/595961739906?text=Hola%20Alejandra%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Ian%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Ian%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Juan Enrique Núñez</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Marcelo <span class="badge badge-green">4 años</span></span> &bull; <span class="hijo">Mateo <span class="badge badge-green">3 años</span></span></div>
+            <div class="telefono">+595984417866</div>
+            <div class="mensaje-preview">Hola Juan 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Marcelo y Mateo al entrenamiento. Se notó que disfrutaro...</div>
+            <a href="https://wa.me/595984417866?text=Hola%20Juan%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Marcelo%20y%20Mateo%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrutaron%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Marcelo%20y%20Mateo%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">César Mendez</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">César Emanuel <span class="badge badge-blue">8 años</span></span></div>
+            <div class="telefono">+595985296645</div>
+            <div class="mensaje-preview">Hola César 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con César al entrenamiento. Se notó muy comprometido/a con ...</div>
+            <a href="https://wa.me/595985296645?text=Hola%20C%C3%A9sar%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20C%C3%A9sar%20al%20entrenamiento.%20Se%20not%C3%B3%20muy%20comprometido/a%20con%20los%20desaf%C3%ADos%20del%20entrenamiento.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajamos%20es%20la%20confianza%2C%20la%20coordinaci%C3%B3n%20y%20la%20superaci%C3%B3n%20de%20miedos%20a%20trav%C3%A9s%20de%20desaf%C3%ADos%20f%C3%ADsicos%20reales.%0A%0AEs%20una%20etapa%20clave%20para%20canalizar%20toda%20esa%20energ%C3%ADa%20de%20forma%20positiva%2C%20y%20generar%20h%C3%A1bitos%20de%20independencia%20y%20actividad%20f%C3%ADsica.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20C%C3%A9sar%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Beatriz Benitez</div>
+                <div class="turno">Turno 9:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Mateo Daniel <span class="badge badge-orange">10 años</span></span></div>
+            <div class="telefono">+595984842052</div>
+            <div class="mensaje-preview">Hola Beatriz 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Mateo al entrenamiento. Se notó con mucha actitud dur...</div>
+            <a href="https://wa.me/595984842052?text=Hola%20Beatriz%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Mateo%20al%20entrenamiento.%20Se%20not%C3%B3%20con%20mucha%20actitud%20durante%20el%20entrenamiento.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajamos%20es%20la%20disciplina%2C%20el%20liderazgo%20y%20la%20fuerza%20mental%20a%20trav%C3%A9s%20del%20entrenamiento%20funcional.%0A%0AEs%20la%20etapa%20perfecta%20para%20fortalecer%20h%C3%A1bitos%20saludables%2C%20desconectar%20de%20las%20pantallas%20y%20construir%20autoestima%20real%20a%20trav%C3%A9s%20del%20esfuerzo.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Mateo%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Milagros Maldonado</div>
+                <div class="turno">Turno 9:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Joaquín Eligio <span class="badge badge-green">5 años</span></span></div>
+            <div class="telefono">+595971462496</div>
+            <div class="mensaje-preview">Hola Milagros 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Joaquín al entrenamiento. Se notó que disfrutó mucho...</div>
+            <a href="https://wa.me/595971462496?text=Hola%20Milagros%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Joaqu%C3%ADn%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Joaqu%C3%ADn%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Roque Ojeda</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Facundo <span class="badge badge-green">5 años</span></span></div>
+            <div class="telefono">+595971676325</div>
+            <div class="mensaje-preview">Hola Roque 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Facundo al entrenamiento. Se notó que disfrutó mucho de...</div>
+            <a href="https://wa.me/595971676325?text=Hola%20Roque%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Facundo%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Facundo%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Biviana Bazán</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Christopher <span class="badge badge-green">4 años</span></span></div>
+            <div class="telefono">+595973686713</div>
+            <div class="mensaje-preview">Hola Biviana 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Christopher al entrenamiento. Se notó que disfrutó mu...</div>
+            <a href="https://wa.me/595973686713?text=Hola%20Biviana%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Christopher%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Christopher%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Victor Martinez</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Amira <span class="badge badge-blue">7 años</span></span> &bull; <span class="hijo">Eladio Andrés <span class="badge badge-green">3 años</span></span></div>
+            <div class="telefono">+595981634024</div>
+            <div class="mensaje-preview">Hola Victor 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Amira y Eladio al entrenamiento. Se notó que cada uno ...</div>
+            <a href="https://wa.me/595981634024?text=Hola%20Victor%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Amira%20y%20Eladio%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20cada%20uno%20disfrut%C3%B3%20el%20entrenamiento%20a%20su%20manera%20%E2%80%94%20los%20m%C3%A1s%20chiquitos%20en%20el%20juego%20y%20el%20movimiento%20libre%2C%20los%20m%C3%A1s%20grandes%20en%20los%20desaf%C3%ADos%20f%C3%ADsicos.%0A%0AEn%20FENIX%20trabajamos%20por%20edades%20justamente%20para%20respetar%20lo%20que%20cada%20etapa%20necesita%3A%20coordinaci%C3%B3n%20y%20autoestima%20en%20los%20m%C3%A1s%20chicos%2C%20disciplina%20y%20liderazgo%20en%20los%20m%C3%A1s%20grandes.%0A%0AEs%20un%20espacio%20donde%20cada%20uno%20crece%20a%20su%20ritmo%2C%20y%20eso%20se%20nota%20desde%20la%20primera%20clase.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Amira%20y%20Eladio%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Gilda Noguera</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Sebastián <span class="badge badge-gray">s/edad</span></span></div>
+            <div class="telefono">+595981410283</div>
+            <div class="mensaje-preview">Hola Gilda 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Sebastián al entrenamiento. Se notó que disfrutó mucho ...</div>
+            <a href="https://wa.me/595981410283?text=Hola%20Gilda%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Sebasti%C3%A1n%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20entrenamiento%20y%20conect%C3%B3%20bien%20con%20el%20grupo.%0A%0AEn%20FENIX%20trabajamos%20la%20parte%20f%C3%ADsica%20y%20emocional%3A%20confianza%2C%20coordinaci%C3%B3n%2C%20autoestima%20y%20h%C3%A1bitos%20saludables.%0A%0AEs%20un%20espacio%20donde%20los%20chicos%20crecen%20de%20verdad%2C%20y%20eso%20se%20nota%20desde%20la%20primera%20clase.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Sebasti%C3%A1n%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Erica Bogado</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Tomás Benjamín <span class="badge badge-green">5 años</span></span></div>
+            <div class="telefono">+595961550099</div>
+            <div class="mensaje-preview">Hola Erica 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Tomás al entrenamiento. Se notó que disfrutó mucho del ...</div>
+            <a href="https://wa.me/595961550099?text=Hola%20Erica%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Tom%C3%A1s%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20disfrut%C3%B3%20mucho%20del%20movimiento%20libre%20y%20los%20juegos.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajan%20es%20la%20coordinaci%C3%B3n%2C%20la%20motricidad%20y%20la%20conexi%C3%B3n%20con%20su%20cuerpo%20a%20trav%C3%A9s%20del%20juego.%0A%0AEs%20la%20etapa%20donde%20m%C3%A1s%20impacto%20tiene%20el%20movimiento%20en%20su%20desarrollo%20emocional%3A%20autoestima%2C%20seguridad%20y%20v%C3%ADnculos%20con%20otros%20ni%C3%B1os.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Tom%C3%A1s%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Solange Recalde</div>
+                <div class="turno">Turno 15:30</div>
+            </div>
+            <div class="hijos"><span class="hijo">Hannah <span class="badge badge-orange">9 años</span></span> &bull; <span class="hijo">Matheo <span class="badge badge-green">4 años</span></span></div>
+            <div class="telefono">+595991278888</div>
+            <div class="mensaje-preview">Hola Solange 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Hannah y Matheo al entrenamiento. Se notó que cada un...</div>
+            <a href="https://wa.me/595991278888?text=Hola%20Solange%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Hannah%20y%20Matheo%20al%20entrenamiento.%20Se%20not%C3%B3%20que%20cada%20uno%20disfrut%C3%B3%20el%20entrenamiento%20a%20su%20manera%20%E2%80%94%20los%20m%C3%A1s%20chiquitos%20en%20el%20juego%20y%20el%20movimiento%20libre%2C%20los%20m%C3%A1s%20grandes%20en%20los%20desaf%C3%ADos%20f%C3%ADsicos.%0A%0AEn%20FENIX%20trabajamos%20por%20edades%20justamente%20para%20respetar%20lo%20que%20cada%20etapa%20necesita%3A%20coordinaci%C3%B3n%20y%20autoestima%20en%20los%20m%C3%A1s%20chicos%2C%20disciplina%20y%20liderazgo%20en%20los%20m%C3%A1s%20grandes.%0A%0AEs%20un%20espacio%20donde%20cada%20uno%20crece%20a%20su%20ritmo%2C%20y%20eso%20se%20nota%20desde%20la%20primera%20clase.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Hannah%20y%20Matheo%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="padre-name">Soraya Chamorro</div>
+                <div class="turno">Turno 11:00</div>
+            </div>
+            <div class="hijos"><span class="hijo">Mateo <span class="badge badge-orange">9 años</span></span></div>
+            <div class="telefono">+595973564545</div>
+            <div class="mensaje-preview">Hola Soraya 😊 Soy Iván, profe de FENIX Kids.
+
+Quería agradecerte por haber venido el sábado con Mateo al entrenamiento. Se notó con mucha actitud dura...</div>
+            <a href="https://wa.me/595973564545?text=Hola%20Soraya%20%F0%9F%98%8A%20Soy%20Iv%C3%A1n%2C%20profe%20de%20FENIX%20Kids.%0A%0AQuer%C3%ADa%20agradecerte%20por%20haber%20venido%20el%20s%C3%A1bado%20con%20Mateo%20al%20entrenamiento.%20Se%20not%C3%B3%20con%20mucha%20actitud%20durante%20el%20entrenamiento.%0A%0AA%20esta%20edad%2C%20lo%20que%20m%C3%A1s%20trabajamos%20es%20la%20disciplina%2C%20el%20liderazgo%20y%20la%20fuerza%20mental%20a%20trav%C3%A9s%20del%20entrenamiento%20funcional.%0A%0AEs%20la%20etapa%20perfecta%20para%20fortalecer%20h%C3%A1bitos%20saludables%2C%20desconectar%20de%20las%20pantallas%20y%20construir%20autoestima%20real%20a%20trav%C3%A9s%20del%20esfuerzo.%0A%0ATe%20cuento%20que%20los%20cupos%20para%20este%20mes%20est%C3%A1n%20casi%20completos%20%E2%80%94%20estamos%20cerrando%20los%20%C3%BAltimos%20lugares%20de%20la%20promoci%C3%B3n%20de%20lanzamiento.%0A%0ASi%20te%20interesa%20asegurar%20el%20lugar%20de%20Mateo%2C%20avisame%20y%20te%20paso%20los%20detalles.%20Sin%20presi%C3%B3n%2C%20pero%20no%20quiero%20que%20se%20queden%20afuera%20%F0%9F%99%8C" target="_blank" class="btn-whatsapp">
+                Enviar mensaje por WhatsApp
+            </a>
+        </div>
+        
+
+    <script>
+        // Marcar como enviado (persiste en localStorage)
+        const sentKey = 'fenix-fu-16mayo-sent';
+        const sent = JSON.parse(localStorage.getItem(sentKey) || '[]');
+
+        document.querySelectorAll('.card').forEach((card, i) => {
+            if (sent.includes(i)) card.classList.add('sent');
+
+            const btn = card.querySelector('.btn-whatsapp');
+            btn.addEventListener('click', () => {
+                if (!sent.includes(i)) {
+                    sent.push(i);
+                    localStorage.setItem(sentKey, JSON.stringify(sent));
+                }
+                setTimeout(() => card.classList.add('sent'), 1000);
+            });
+        });
+    </script>
+</body>
+</html>

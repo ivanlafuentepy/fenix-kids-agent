@@ -517,6 +517,20 @@ async def health_check():
     return {"status": "ok", "service": "fenix-kids-agent"}
 
 
+@app.get("/fu/{nombre_archivo}")
+async def servir_followup(nombre_archivo: str, key: str = ""):
+    """Sirve páginas HTML estáticas de follow-up (protegido con ?key=ADMIN_API_KEY)."""
+    import os
+    from fastapi.responses import HTMLResponse
+    admin_key = os.getenv("ADMIN_API_KEY", "")
+    if not key or key != admin_key:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    ruta = os.path.join("static", f"{nombre_archivo}.html")
+    if not os.path.exists(ruta):
+        raise HTTPException(status_code=404, detail="Página no encontrada")
+    with open(ruta, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
 
 @app.get("/api/reservas")
 async def api_reservas(fecha: str = ""):
