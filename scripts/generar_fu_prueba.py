@@ -230,11 +230,12 @@ def generar_mensaje(familia):
 
     msg = (
         f"Hola {padre} 😊 Soy Iván, profe de FENIX Kids.\n\n"
-        f"Quería agradecerte por haber venido el sábado con {nombre_hijo} al entrenamiento. "
+        f"Quería agradecerte por haber venido a probar el sábado con {nombre_hijo}. "
         f"{pregunta}\n\n"
         f"{consejo}\n\n"
         f"Te cuento que estoy teniendo mucha demanda y la promoción que tenemos de 12 clases a 750.000 guaraníes sin matrícula en estos días ya estaré cerrando.\n\n"
-        f"Si te interesa asegurar el lugar de {nombre_hijo} con esa promo, avisame y te paso todos los datos 🙌"
+        f"Si te interesa asegurar el lugar de {nombre_hijo} con esa promo, avisame y te paso todos los datos 🙌\n\n"
+        f"P.D: Las 12 clases que comprás con el paquete son sin vencimiento, solo cuando venís se descuentan 🎁"
     )
     return msg
 
