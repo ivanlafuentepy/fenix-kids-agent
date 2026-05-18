@@ -1266,6 +1266,13 @@ async def debug_marcar_pago_promomadre(
     }
 
 
+@app.get("/test-envio/{telefono}")
+async def test_envio(telefono: str, msg: str = "Test desde Railway", _: bool = Depends(_require_admin)):
+    """Envía un mensaje de prueba DESDE el servidor de Railway."""
+    ok = await proveedor.enviar_mensaje(telefono, msg)
+    return {"enviado": ok, "telefono": telefono, "mensaje": msg}
+
+
 @app.get("/debug/{telefono}")
 async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     historial = await obtener_historial(telefono, limite=50)
