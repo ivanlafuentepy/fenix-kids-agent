@@ -20,6 +20,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from agent.brain import generar_respuesta, extraer_datos_formulario
@@ -493,6 +494,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
+
+# Servir archivos estaticos (catalogo de videos, afiches, etc.)
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir, html=True), name="static")
 
 _telegram_chats_vistos: dict[str, dict] = {}
 
