@@ -62,6 +62,11 @@ from agent.tools.detectores import (
     padre_pregunta_devolucion, padre_pregunta_efectivo, padre_dice_ya_transfiri,
     padre_pregunta_alias,
 )
+from agent.tool_definitions import TOOLS_IVAN
+from agent.tool_executor import ejecutar_tool
+
+# Feature flag: Tool Use (Fase 3 migración)
+_USE_TOOL_USE = os.getenv("USE_TOOL_USE", "false").lower() == "true"
 from agent.pagos import (
     es_posible_comprobante, detectar_tipo_pago,
     registrar_pago_pendiente, tiene_pago_pendiente,
@@ -3481,12 +3486,41 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Generar respuesta con Claude (solo si no fue interceptado) ────
         if not _interceptado:
-            respuesta = await generar_respuesta(
-                mensaje=texto,
-                historial=historial,
-                agent_actual=agent_actual,
-                contexto_extra=contexto_extra,
-            )
+            if _USE_TOOL_USE and agent_actual == "ivan":
+                # Flujo nuevo: Claude con Tool Use — decide qué acción tomar
+                respuesta, _tool_acciones = await generar_respuesta(
+                    mensaje=texto,
+                    historial=historial,
+                    agent_actual=agent_actual,
+                    contexto_extra=contexto_extra,
+                    tools=TOOLS_IVAN,
+                    tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
+                )
+                # Procesar acciones de tools
+                for _ta in _tool_acciones:
+                    _ta_result = _ta["result"]
+                    # Afiches: reusar el mecanismo existente
+                    _afiche_tipo = _ta_result.get("enviar_afiche")
+                    if _afiche_tipo:
+                        _afiche_key = f"afiche_{_afiche_tipo}"
+                        if _afiche_key not in _acciones_interceptadas:
+                            _acciones_interceptadas.append(_afiche_key)
+                            _interceptado = True
+                            await actualizar_estado_flags(telefono, **{f"{_afiche_key}_enviado": True})
+                    # Notificaciones al admin
+                    if _ta_result.get("enviar_admin") and _ta_result.get("mensaje_admin"):
+                        _admin_phone_tool = os.getenv("ADMIN_PHONE", "595982790407")
+                        if telefono != _admin_phone_tool:
+                            await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
+                logger.info(f"[TOOL-USE] {telefono}: {len(_tool_acciones)} tools, interceptado={_interceptado}")
+            else:
+                # Flujo original: Claude sin tools
+                respuesta = await generar_respuesta(
+                    mensaje=texto,
+                    historial=historial,
+                    agent_actual=agent_actual,
+                    contexto_extra=contexto_extra,
+                )
 
         # ── Limpiar comandos internos [SISTEMA:...] que Claude genera ─────
         # Estos son comandos internos que NUNCA deben llegar al padre
