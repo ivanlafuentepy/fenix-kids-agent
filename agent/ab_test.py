@@ -1,6 +1,7 @@
 # agent/ab_test.py — Estado de conversaciones FENIX KIDS ACADEMY
 # Maneja: agente activo, modo Aurora, variante rompehielos, conversión, Calendar
 
+import json
 import random
 import logging
 from datetime import datetime
@@ -269,3 +270,39 @@ async def obtener_leads_noche_pendiente() -> list[str]:
             select(ConversacionAB.telefono).where(ConversacionAB.noche_pendiente == True)
         )
         return [r[0] for r in result.all()]
+
+
+# ── Flags persistentes (reemplazan sets in-memory) ──────────────────────────
+
+async def obtener_estado_flags(telefono: str) -> dict:
+    """Lee los flags persistentes de la conversación (afiche_enviado, prueba_creada, etc.)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB.estado_json).where(ConversacionAB.telefono == telefono)
+        )
+        raw = result.scalar_one_or_none()
+        if raw:
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+
+async def actualizar_estado_flags(telefono: str, **kwargs):
+    """Actualiza flags persistentes (merge, no reemplaza)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            actual = {}
+            if conv.estado_json:
+                try:
+                    actual = json.loads(conv.estado_json)
+                except (json.JSONDecodeError, TypeError):
+                    actual = {}
+            actual.update(kwargs)
+            conv.estado_json = json.dumps(actual)
+            await session.commit()

@@ -85,6 +85,8 @@ class ConversacionAB(Base):
     ctwa_clid: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # ID del anuncio Meta (referral.source_id)
     ad_source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Flags persistentes (JSON): afiche_enviado, prueba_creada, etc.
+    estado_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class TopicTelegram(Base):
@@ -223,6 +225,7 @@ async def _migrar_columnas_nuevas():
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
         ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
         ("conversaciones_ab", "ad_source_id",          "VARCHAR(100)"),
+        ("conversaciones_ab", "estado_json",            "TEXT"),
     ]
     for tabla, columna, tipo in nuevas:
         async with engine.begin() as conn:

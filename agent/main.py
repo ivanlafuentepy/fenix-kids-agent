@@ -39,6 +39,7 @@ from agent.ab_test import (
     obtener_agent_actual, actualizar_agent_actual,
     obtener_familia_id, guardar_familia_id,
     marcar_noche_pendiente, tiene_noche_pendiente,
+    obtener_estado_flags, actualizar_estado_flags,
 )
 from agent.night_mode import (
     es_horario_nocturno, MENSAJE_NOCHE,
@@ -185,8 +186,7 @@ def _check_rate_limit(telefono: str) -> bool:
     return False
 
 
-# Guard: PRUEBA FENIX ya creada para este lead (evita duplicados)
-_prueba_creada: set[str] = set()
+# Guard: PRUEBA FENIX ya creada → persistido en estado_json (DB)
 
 # Admin en modo padre (flujo normal): si no está acá, admin queda en modo secre (solo comandos)
 _admin_modo_padre: set[str] = set()
@@ -1601,16 +1601,12 @@ _CLAVES_AURORA = [
     "hablar con aurora", "reservar con aurora", "agendar con aurora",
 ]
 
-# Teléfonos que ya pasaron por el flujo de registro/verificación (una vez por número)
-_registro_ya_iniciado: set[str] = set()
+# Guard: registro ya iniciado → persistido en estado_json (DB)
 
 
-def _detectar_registro(texto: str, telefono: str = "") -> bool:
-    """El padre quiere registrarse. Solo si menciona 'aurora' explícitamente. Una vez por número."""
-    if telefono and telefono in _registro_ya_iniciado:
-        return False
-    t = texto.lower()
-    return "aurora" in t
+def _detectar_registro(texto: str) -> bool:
+    """El padre quiere registrarse. Solo si menciona 'aurora' explícitamente."""
+    return "aurora" in texto.lower()
 
 
 def _detectar_activacion_aurora(texto: str) -> bool:
@@ -1629,8 +1625,7 @@ def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
 
 _diagnostico_pendiente: dict[str, asyncio.Task] = {}
 _DELAY_DIAGNOSTICO = 180  # 3 minutos
-_afiche_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche
-_afiche_hermanos_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche hermanos
+# Guards: afiche_enviado, afiche_hermanos_enviado → persistidos en estado_json (DB)
 
 
 def _cancelar_diagnostico_pendiente(telefono: str):
@@ -3283,9 +3278,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[FOLLOWUP] Error detectando respuesta post-FU: {e}")
 
         # ── "Hola Aurora" fuerza Aurora (una vez por número) ──────────────
-        _quiere_registro = _detectar_registro(texto, telefono)
+        _quiere_registro = _detectar_registro(texto) and not (await obtener_estado_flags(telefono)).get("registro_ya_iniciado")
         if _quiere_registro and agent_actual != "aurora":
-            _registro_ya_iniciado.add(telefono)
+            await actualizar_estado_flags(telefono, registro_ya_iniciado=True)
             familia_reg = await buscar_familia_por_telefono(telefono)
             if not familia_reg:
                 fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}, "madre": {"telefono": telefono}})
@@ -3391,6 +3386,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Si el padre pregunta algo que el código puede responder solo,
         # ni llamamos a Claude — ahorra tokens y evita respuestas duplicadas.
         if not _interceptado and agent_actual == "ivan":
+            # Leer flags de DB una sola vez (evita N queries)
+            _flags = await obtener_estado_flags(telefono)
+            _ya_envio_afiche = _flags.get("afiche_enviado", False)
+            _ya_envio_hermanos = _flags.get("afiche_hermanos_enviado", False)
+            _ya_envio_horarios = _flags.get("afiche_horarios_enviado", False)
+
             _pide_precios = _padre_pregunta_precios(texto)
             _pide_hermanos = _padre_pregunta_hermanos(texto)
             _pide_horarios = _padre_pregunta_horarios(texto)
@@ -3404,7 +3405,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _interes_post_diag = (
                 _diagnostico_ya_enviado(historial)
                 and _padre_muestra_interes(texto)
-                and telefono not in _afiche_enviado
+                and not _ya_envio_afiche
             )
 
             _hay_intercepcion = (
@@ -3422,7 +3423,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _pide_precios = True  # tratar como pedido de precios
 
                 # Hermanos tiene prioridad sobre precios generales
-                if _pide_hermanos and telefono not in _afiche_hermanos_enviado:
+                if _pide_hermanos and not _ya_envio_hermanos:
                     _acciones_interceptadas.append("afiche_hermanos")
                     _partes.append("Tenemos un plan especial para familias 💪 Te paso el afiche de hermanos")
                 elif _pide_hermanos:
@@ -3432,13 +3433,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         "Paq 12 clases: 2do hijo 40% OFF (450mil), 3er hijo GRATIS 🎁\n"
                         "¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
                     )
-                elif _pide_precios and telefono not in _afiche_enviado:
+                elif _pide_precios and not _ya_envio_afiche:
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
                     _partes.append("Prueba: 90mil (1 sábado). Promo hoy: 100mil por 2 sábados 🔥 Padres entran gratis. Solo transferencia 🌳")
 
-                if _pide_horarios and telefono not in _afiche_horarios_enviado:
+                if _pide_horarios and not _ya_envio_horarios:
                     _acciones_interceptadas.append("afiche_horarios")
                     _partes.append("Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios")
                 elif _pide_horarios:
@@ -3786,7 +3787,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Detectar si el padre mandó datos del formulario post-pago ──────
         _es_formulario_completo = False
-        if agent_actual == "ivan" and telefono not in _prueba_creada:
+        if agent_actual == "ivan" and not (await obtener_estado_flags(telefono)).get("prueba_creada"):
             _pago_confirmado_cierre = any(
                 "pago confirmado" in m.get("content", "").lower()
                 for m in historial if m.get("role") == "assistant"
@@ -3819,7 +3820,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Detectar si Claude dice "te paso un afiche" (safety net) ──────
         _va_a_enviar_afiche = False
-        if agent_actual == "ivan" and telefono not in _afiche_enviado and not _interceptado:
+        if agent_actual == "ivan" and not (await obtener_estado_flags(telefono)).get("afiche_enviado") and not _interceptado:
             _resp_lower = respuesta.lower()
             if "te paso un afiche" in _resp_lower:
                 _va_a_enviar_afiche = True
@@ -3876,17 +3877,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Ejecutar acciones (enviar afiches)
             for _accion in _acciones_interceptadas:
                 if _accion == "afiche_hermanos":
-                    _afiche_hermanos_enviado.add(telefono)
+                    await actualizar_estado_flags(telefono, afiche_hermanos_enviado=True)
                     await _enviar_afiche_hermanos_y_followup(telefono, topic_id, _tg_group)
                 elif _accion == "afiche_precios":
-                    _afiche_enviado.add(telefono)
+                    await actualizar_estado_flags(telefono, afiche_enviado=True)
                     await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
                 elif _accion == "afiche_horarios":
-                    _afiche_horarios_enviado.add(telefono)
+                    await actualizar_estado_flags(telefono, afiche_horarios_enviado=True)
                     await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
         elif _va_a_enviar_afiche:
             # Post-diagnóstico interés → afiche precios (respuesta Claude se omite)
-            _afiche_enviado.add(telefono)
+            await actualizar_estado_flags(telefono, afiche_enviado=True)
             await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
         else:
             await _delay_humano(respuesta)
@@ -3905,9 +3906,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _ya_existe_prueba:
                 logger.info(f"[FORMULARIO] {telefono} ya tiene PRUEBA FENIX — no se crea duplicado")
                 _es_formulario_completo = False
-                _prueba_creada.add(telefono)
+                await actualizar_estado_flags(telefono, prueba_creada=True)
         if _es_formulario_completo:
-            _prueba_creada.add(telefono)
+            await actualizar_estado_flags(telefono, prueba_creada=True)
             try:
                 from urllib.parse import quote
                 admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
@@ -6592,7 +6593,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
 _AFICHE_HERMANOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_hermanos.png")
 _AFICHE_HORARIOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_horarios.png")
-_afiche_horarios_enviado: set[str] = set()  # teléfonos a los que ya se envió afiche horarios
+# Guard: afiche_horarios_enviado → persistido en estado_json (DB)
 
 async def _enviar_afiche_horarios(telefono: str, topic_id: int | None, tg_group: int = 0):
     """Envía el afiche de horarios cuando el padre pregunta por frecuencia/días/horarios."""
@@ -7366,7 +7367,7 @@ async def telegram_webhook(request: Request):
             cancelar_recordatorios(telefono)
             _cancelar_diagnostico_pendiente(telefono)
             await limpiar_estado_completo(telefono)
-            _registro_ya_iniciado.discard(telefono)
+            await actualizar_estado_flags(telefono, registro_ya_iniciado=False)
             await reactivar_dorita(telefono)
             await enviar_a_topic(thread_id, "🔄 Conversación reseteada + agente activado.\nUsá /registro para iniciar registro.", telefono=telefono, group_override=_tg_grp)
             return {"status": "ok"}
@@ -7377,7 +7378,7 @@ async def telegram_webhook(request: Request):
             familia = await buscar_familia_por_telefono(telefono)
             logger.info(f"[/registro] familia={'ENCONTRADA: '+familia.get('fields',{}).get('FAMILIA','') if familia else 'NO ENCONTRADA'}")
             # Preparar Aurora para manejar las respuestas
-            _registro_ya_iniciado.discard(telefono)
+            await actualizar_estado_flags(telefono, registro_ya_iniciado=False)
             await asignar_variante(telefono)
             await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
             await reactivar_dorita(telefono)
