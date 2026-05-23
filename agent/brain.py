@@ -9,10 +9,12 @@ Lee los prompts desde config/prompts.yaml y los selecciona según el agente acti
 
 import os
 import re
+import json
 import yaml
 import asyncio
 import logging
 from datetime import datetime
+from typing import Callable
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 
@@ -145,25 +147,31 @@ async def generar_respuesta(
     historial: list[dict],
     agent_actual: str = "ivan",
     contexto_extra: str | None = None,
-) -> str:
+    tools: list[dict] | None = None,
+    tool_executor: Callable | None = None,
+) -> str | tuple[str, list[dict]]:
     """
-    Genera una respuesta usando Claude API.
+    Genera una respuesta usando Claude API. Soporta tool_use.
 
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
         agent_actual: "ivan" o "aurora" — determina qué prompt se usa
         contexto_extra: Texto adicional inyectado al final del system prompt
+        tools: Lista de tool schemas para Claude (opcional)
+        tool_executor: Función async(nombre, params) → dict (requerida si tools)
 
     Returns:
-        La respuesta generada por Claude
+        Sin tools → str (retrocompatible)
+        Con tools → tuple[str, list[dict]] (texto + acciones ejecutadas)
     """
+    _usa_tools = bool(tools and tool_executor)
+
     if not mensaje or not mensaje.strip():
-        return obtener_mensaje_fallback()
+        fallback = obtener_mensaje_fallback()
+        return (fallback, []) if _usa_tools else fallback
 
     system_prompt = cargar_prompt_agente(agent_actual)
-
-    # Promo madre DESACTIVADA (venció 15/5 20h)
 
     if contexto_extra:
         system_prompt += f"\n\n{contexto_extra}"
@@ -171,30 +179,78 @@ async def generar_respuesta(
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
     mensajes.append({"role": "user", "content": mensaje})
 
+    acciones = []  # tools ejecutados en esta llamada
+    _MAX_TOOL_ROUNDS = 3
+
     # Retry con backoff exponencial (3 intentos) + timeout 25s
     _MAX_REINTENTOS = 3
     for _intento in range(_MAX_REINTENTOS):
         try:
             _client = _client_para(agent_actual)
-            async with asyncio.timeout(25):
-                response = await _client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=1024,
-                    system=[
+
+            # Tool use loop: Claude puede llamar tools, ver resultados, y seguir
+            for _round in range(_MAX_TOOL_ROUNDS):
+                api_kwargs = {
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 1024,
+                    "system": [
                         {
                             "type": "text",
                             "text": system_prompt,
                             "cache_control": {"type": "ephemeral"},
                         }
                     ],
-                    messages=mensajes,
+                    "messages": mensajes,
+                }
+                if _usa_tools:
+                    api_kwargs["tools"] = tools
+
+                async with asyncio.timeout(25):
+                    response = await _client.messages.create(**api_kwargs)
+
+                logger.info(
+                    f"[{agent_actual.upper()}] Round {_round + 1} "
+                    f"({response.usage.input_tokens} in / {response.usage.output_tokens} out) "
+                    f"stop={response.stop_reason}"
                 )
-            respuesta = response.content[0].text
-            logger.info(
-                f"[{agent_actual.upper()}] Respuesta generada "
-                f"({response.usage.input_tokens} in / {response.usage.output_tokens} out)"
-            )
-            return respuesta
+
+                # Caso 1: Solo texto (sin tool_use) → retornar
+                if response.stop_reason == "end_turn" or not _usa_tools:
+                    texto = ""
+                    for block in response.content:
+                        if hasattr(block, "text"):
+                            texto += block.text
+                    return (texto, acciones) if _usa_tools else texto
+
+                # Caso 2: Tool use → ejecutar y continuar
+                if response.stop_reason == "tool_use":
+                    # Agregar respuesta del assistant al historial
+                    mensajes.append({"role": "assistant", "content": response.content})
+
+                    # Ejecutar cada tool call
+                    tool_results = []
+                    for block in response.content:
+                        if block.type == "tool_use":
+                            resultado = await tool_executor(block.name, block.input)
+                            acciones.append({
+                                "tool": block.name,
+                                "input": block.input,
+                                "result": resultado,
+                            })
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": json.dumps(resultado, ensure_ascii=False),
+                            })
+                            logger.info(f"[TOOL] {block.name}({block.input}) → ejecutado")
+
+                    mensajes.append({"role": "user", "content": tool_results})
+                    # Continuar loop → Claude ve el resultado y decide
+
+            # Si llegamos acá, se agotaron los rounds de tools
+            logger.warning(f"[{agent_actual.upper()}] Se agotaron {_MAX_TOOL_ROUNDS} rounds de tools")
+            error_msg = obtener_mensaje_error()
+            return (error_msg, acciones) if _usa_tools else error_msg
 
         except Exception as e:
             _es_transitorio = any(k in str(e).lower() for k in ("timeout", "connect", "overloaded", "529", "rate"))
@@ -204,9 +260,9 @@ async def generar_respuesta(
                 await asyncio.sleep(_espera)
             else:
                 logger.error(f"Error Claude API (intento {_intento + 1}): {e}")
-                # Alerta a Telegram si fallan todos los reintentos
                 asyncio.create_task(_alertar_fallo_api(str(e)))
-                return obtener_mensaje_error()
+                error_msg = obtener_mensaje_error()
+                return (error_msg, acciones) if _usa_tools else error_msg
 
 
 async def _alertar_fallo_api(error: str):
