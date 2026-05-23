@@ -90,6 +90,11 @@ def _contexto_fechas() -> str:
     sabados_siguiente = sabados_de_mes(anio_sig, mes_sig)
 
     hoy_str = f"{dias_es[hoy.weekday()]} {hoy.day} de {meses_es[hoy.month - 1]} de {hoy.year}"
+    hora_str = ahora.strftime("%H:%M")
+    manana = hoy + td(days=1)
+    pasado = hoy + td(days=2)
+    manana_str = f"{dias_es[manana.weekday()]} {manana.day} de {meses_es[manana.month - 1]}"
+    pasado_str = f"{dias_es[pasado.weekday()]} {pasado.day} de {meses_es[pasado.month - 1]}"
     nombre_mes_actual = meses_es[hoy.month - 1]
     nombre_mes_sig = meses_es[mes_sig - 1]
 
@@ -104,7 +109,10 @@ def _contexto_fechas() -> str:
     sabados_siguiente_str = "\n".join(f"  - {fmt(s)}" for s in sabados_siguiente)
 
     return (
-        f"Hoy es {hoy_str} (hora Asunción, Paraguay).\n"
+        f"HOY es {hoy_str}, hora: {hora_str} (Asunción, Paraguay).\n"
+        f"MAÑANA es {manana_str}.\n"
+        f"PASADO MAÑANA es {pasado_str}.\n"
+        f"🚨 NUNCA calcules qué día es hoy, mañana o pasado. Usá EXACTAMENTE lo de arriba.\n\n"
         f"{bloque_actual}\n"
         f"Sábados del mes siguiente ({nombre_mes_sig}) — USAR SOLO SI el padre dice que no le queda bien ninguno del mes corriente:\n{sabados_siguiente_str}\n"
         f"Horarios de cada sábado: 9:30h | 11:00h | 15:30h\n"
