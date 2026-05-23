@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FENIX Kids — Aviso Cambio Horario</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #ff6b00;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #ff6b00;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #888;
+            font-size: 0.95em;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+        }
+        .stat { text-align: center; }
+        .stat-num {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ff6b00;
+        }
+        .stat-label {
+            font-size: 0.8em;
+            color: #888;
+        }
+        .msg-template {
+            background: #111;
+            border-left: 3px solid #ff6b00;
+            padding: 14px 18px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.9em;
+            color: #ccc;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        .card:hover { border-color: #ff6b00; }
+        .card-header { margin-bottom: 10px; }
+        .padre-name {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #fff;
+        }
+        .hijos {
+            margin-bottom: 8px;
+            line-height: 1.8;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .badge-green { background: #1a3a1a; color: #4caf50; }
+        .badge-blue { background: #1a2a3a; color: #42a5f5; }
+        .badge-orange { background: #3a2a1a; color: #ff9800; }
+        .badge-gray { background: #2a2a2a; color: #999; }
+        .telefono {
+            color: #666;
+            font-size: 0.85em;
+            margin-bottom: 12px;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-whatsapp {
+            flex: 1;
+            min-width: 140px;
+            text-align: center;
+            background: #25d366;
+            color: #fff;
+            text-decoration: none;
+            padding: 12px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9em;
+            transition: background 0.2s, opacity 0.3s;
+        }
+        .btn-whatsapp:hover { background: #1ea952; }
+        .btn-papa { background: #2196f3; }
+        .btn-papa:hover { background: #1976d2; }
+        .btn-mama { background: #e91e90; }
+        .btn-mama:hover { background: #c2185b; }
+        .btn-whatsapp.sent {
+            opacity: 0.4;
+        }
+        .btn-whatsapp.sent::after {
+            content: ' ✓';
+        }
+        .counter {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #ff6b00;
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>FENIX Kids</h1>
+        <p>Aviso Cambio Horario — Reservas 9:30 del Sab 23/5</p>
+        <p style="color:#ff6b00; margin-top:8px; font-size:0.85em">Se cancela turno 9:30 — quedan 11:00 y 15:30</p>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-num">5</div>
+                <div class="stat-label">Familias</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num">7</div>
+                <div class="stat-label">Niños</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num">7</div>
+                <div class="stat-label">Mensajes</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="msg-template">Hola [nombre]! queria avisarte que como este y el proximo sabado anuncio mucho frio, y a las 9:30 el pasto sigue mojado, estaremos teniendo Fenix Kids solo a las 11 y a las 15:30h
+
+Te gustaria agendar para uno de esos dos horarios?</div>
+
+    <div class="card">
+    <div class="card-header">
+        <div class="padre-name">Carlos Raúl &amp; Blanca Zunilda</div>
+    </div>
+    <div class="hijos">Arianna <span class="badge badge-orange">10 a</span></div>
+    <div class="telefono">P: 0981-700075 | M: 0981-700076</div>
+    <div class="buttons"><a href="https://wa.me/595981700075?text=Hola%20Carlos%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-papa" onclick="markSent(this)">Enviar a Carlos (papa)</a><a href="https://wa.me/595981700076?text=Hola%20Blanca%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-mama" onclick="markSent(this)">Enviar a Blanca (mama)</a></div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <div class="padre-name">Jorge Andrés &amp; JAZMIN</div>
+    </div>
+    <div class="hijos">Fiorella <span class="badge badge-green">3 a</span></div>
+    <div class="telefono">P: 0981397589 | M: 0981683435</div>
+    <div class="buttons"><a href="https://wa.me/595981397589?text=Hola%20Jorge%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-papa" onclick="markSent(this)">Enviar a Jorge (papa)</a><a href="https://wa.me/595981683435?text=Hola%20JAZMIN%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-mama" onclick="markSent(this)">Enviar a JAZMIN (mama)</a></div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <div class="padre-name">Sixinio Cristobal <span class="badge badge-gray">PRUEBA</span></div>
+    </div>
+    <div class="hijos">Maria Isabella <span class="badge badge-blue">7 a</span> &bull; Sixinio Cristobal <span class="badge badge-orange">10 a</span> &bull; Pauka Arami <span class="badge badge-green">4 a</span></div>
+    <div class="telefono">P: 595971961717</div>
+    <div class="buttons"><a href="https://wa.me/595971961717?text=Hola%20Sixinio%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-papa" onclick="markSent(this)">Enviar a Sixinio (papa)</a></div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <div class="padre-name">Nancy <span class="badge badge-gray">PRUEBA</span></div>
+    </div>
+    <div class="hijos">Sebastián <span class="badge badge-green">4 a</span></div>
+    <div class="telefono">P: 595981980706</div>
+    <div class="buttons"><a href="https://wa.me/595981980706?text=Hola%20Nancy%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-papa" onclick="markSent(this)">Enviar a Nancy (papa)</a></div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <div class="padre-name">Viviana <span class="badge badge-gray">PRUEBA</span></div>
+    </div>
+    <div class="hijos">Franco Manuel <span class="badge badge-blue">7 a</span></div>
+    <div class="telefono">P: 595983888277</div>
+    <div class="buttons"><a href="https://wa.me/595983888277?text=Hola%20Viviana%21%20queria%20avisarte%20que%20como%20este%20y%20el%20proximo%20sabado%20anuncio%20mucho%20frio%2C%20y%20a%20las%209%3A30%20el%20pasto%20sigue%20mojado%2C%20estaremos%20teniendo%20Fenix%20Kids%20solo%20a%20las%2011%20y%20a%20las%2015%3A30h%0A%0ATe%20gustaria%20agendar%20para%20uno%20de%20esos%20dos%20horarios%3F" target="_blank" class="btn-whatsapp btn-papa" onclick="markSent(this)">Enviar a Viviana (papa)</a></div>
+</div>
+
+
+    <div class="counter" id="counter">0 enviados</div>
+
+    <script>
+        const sentKey = 'fenix-aviso-horario-23mayo';
+        const sent = new Set(JSON.parse(localStorage.getItem(sentKey) || '[]'));
+
+        document.querySelectorAll('.btn-whatsapp').forEach((btn, i) => {
+            btn.dataset.idx = i;
+            if (sent.has(i)) btn.classList.add('sent');
+        });
+        updateCounter();
+
+        function markSent(btn) {
+            const idx = parseInt(btn.dataset.idx);
+            setTimeout(() => {
+                btn.classList.add('sent');
+                sent.add(idx);
+                localStorage.setItem(sentKey, JSON.stringify([...sent]));
+                updateCounter();
+            }, 500);
+        }
+
+        function updateCounter() {
+            const total = document.querySelectorAll('.btn-whatsapp').length;
+            const sentCount = document.querySelectorAll('.btn-whatsapp.sent').length;
+            document.getElementById('counter').textContent = sentCount + '/' + total + ' enviados';
+        }
+    </script>
+</body>
+</html>
