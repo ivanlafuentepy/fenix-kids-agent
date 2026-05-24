@@ -6,6 +6,8 @@ import logging
 
 from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
 from agent.tools.escalacion import escalar_a_humano
+from agent.tools.disponibilidad import consultar_disponibilidad
+from agent.tools.llamada import programar_llamada
 
 logger = logging.getLogger("agentkit")
 
@@ -14,10 +16,12 @@ _TOOLS = {
     "reagendar_clase": reagendar_clase,
     "confirmar_reserva": confirmar_reserva_prueba,
     "escalar_a_humano": escalar_a_humano,
+    "consultar_disponibilidad": consultar_disponibilidad,
+    "programar_llamada": programar_llamada,
 }
 
 # Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
-_TOOLS_CON_TELEFONO = {"reagendar_clase", "confirmar_reserva", "escalar_a_humano"}
+_TOOLS_CON_TELEFONO = {*_TOOLS.keys()}  # todas necesitan teléfono
 
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:

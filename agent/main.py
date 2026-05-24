@@ -3485,6 +3485,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"[INTERCEPCIÓN] {telefono}: precios={_pide_precios} horarios={_pide_horarios} ubi={_pide_ubicacion} duracion={_pide_duracion} que_llevar={_pide_que_llevar} devolucion={_pide_devolucion} efectivo={_pide_efectivo} ya_transfiri={_dice_ya_transfiri} alias={_pide_alias}")
 
         # ── Generar respuesta con Claude (solo si no fue interceptado) ────
+        _tool_acciones = []  # inicializar para guards de regex más abajo
         if not _interceptado:
             if _USE_TOOL_USE and agent_actual == "ivan":
                 # Flujo nuevo: Claude con Tool Use — decide qué acción tomar
@@ -3495,6 +3496,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     contexto_extra=contexto_extra,
                     tools=TOOLS_IVAN,
                     tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
+                    context={"telefono": telefono, "agent_actual": agent_actual},
                 )
                 # Procesar acciones de tools
                 for _ta in _tool_acciones:
@@ -3802,7 +3804,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta, agent_actual)
 
         # ── Detectar llamada programada ("te llamo a las X") ──────────────
-        if agent_actual == "ivan":
+        _tool_names_used = {ta["tool"] for ta in _tool_acciones} if _tool_acciones else set()
+        if agent_actual == "ivan" and "programar_llamada" not in _tool_names_used:
             _m_llamada = re.search(
                 r'te llamo (?:a las?\s+)?(\d{1,2}(?:[:.]\d{2})?(?:\s*(?:hs?|pm|am))?)',
                 respuesta.lower()

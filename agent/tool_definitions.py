@@ -102,4 +102,51 @@ TOOLS_IVAN = [
             "required": ["motivo", "resumen"],
         },
     },
+    {
+        "name": "consultar_disponibilidad",
+        "description": (
+            "Consulta cuántos niños hay agendados para un sábado y horario. "
+            "Si fecha+hora: conteo para ese slot. Si solo fecha: conteo para los 3 turnos. "
+            "Si nada: próximos sábados disponibles con conteos. "
+            "Retorna: {slots: [{fecha, hora, cantidad}], texto}. "
+            "Usar cuando el padre pregunta si hay lugar, cuántos van, o cuál turno tiene menos gente. "
+            "NO usar para ver nombres de niños (privacidad). "
+            "NO usar para agendar — solo consulta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "Fecha del sábado (ISO o texto). Omitir para ver próximos sábados.",
+                },
+                "hora": {
+                    "type": "string",
+                    "enum": ["9:30", "11:00", "15:30"],
+                    "description": "Hora del turno. Omitir para ver los 3 turnos del día.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "programar_llamada",
+        "description": (
+            "Programa un recordatorio para que el Profe Ivan llame al padre a una hora específica. "
+            "Si la hora ya pasó, retorna aviso para llamar ahora. "
+            "Retorna: {programada: bool, hora, texto}. "
+            "Usar cuando le decís al padre 'te llamo a las X' o el padre pide que lo llamen. "
+            "NO usar para agendar clases (usar confirmar_reserva)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hora_llamada": {
+                    "type": "string",
+                    "description": "Hora para llamar (ej: '15:00', '3pm', '3'). Si es < 8, se asume PM.",
+                },
+            },
+            "required": ["hora_llamada"],
+        },
+    },
 ]

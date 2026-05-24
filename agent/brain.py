@@ -149,6 +149,7 @@ async def generar_respuesta(
     contexto_extra: str | None = None,
     tools: list[dict] | None = None,
     tool_executor: Callable | None = None,
+    context: dict | None = None,
 ) -> str | tuple[str, list[dict]]:
     """
     Genera una respuesta usando Claude API. Soporta tool_use.
@@ -227,11 +228,20 @@ async def generar_respuesta(
                     # Agregar respuesta del assistant al historial
                     mensajes.append({"role": "assistant", "content": response.content})
 
-                    # Ejecutar cada tool call
+                    # Ejecutar cada tool call (con hooks pre/post)
+                    from agent.hooks import ejecutar_pre_hooks, ejecutar_post_hooks
+                    _ctx = context or {}
                     tool_results = []
                     for block in response.content:
                         if block.type == "tool_use":
-                            resultado = await tool_executor(block.name, block.input)
+                            # PRE-HOOK: validar antes de ejecutar
+                            pre_error = await ejecutar_pre_hooks(block.name, block.input, _ctx)
+                            if pre_error:
+                                resultado = pre_error
+                            else:
+                                resultado = await tool_executor(block.name, block.input)
+                                # POST-HOOK: notificar, trackear, etc.
+                                resultado = await ejecutar_post_hooks(block.name, block.input, resultado, _ctx)
                             acciones.append({
                                 "tool": block.name,
                                 "input": block.input,
