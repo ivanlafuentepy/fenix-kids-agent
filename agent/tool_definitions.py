@@ -150,3 +150,183 @@ TOOLS_IVAN = [
         },
     },
 ]
+
+
+TOOLS_AURORA = [
+    {
+        "name": "agendar_clase",
+        "description": (
+            "Crea RESERVA para todos los hijos de la familia inscripta en un sábado y horario. "
+            "Por defecto reserva a TODOS los hijos. Si el padre dice solo un nombre, mencionar "
+            "que se reservó para todos y confirmar si quiere cambiar algo. "
+            "Retorna: {agendada: bool, fecha, hora, hijos, cantidad}. "
+            "Usar cuando el padre dice que quiere ir, quiere agendar, reservar o confirmar asistencia. "
+            "NO usar para leads (solo familias inscriptas). "
+            "NO usar sin fecha Y hora confirmadas por el padre."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": (
+                        "Fecha del sábado (ISO o texto: '31 de mayo', 'sábado 31', '31/5'). "
+                        "Se valida que sea sábado."
+                    ),
+                },
+                "hora": {
+                    "type": "string",
+                    "enum": ["9:30", "11:00", "15:30"],
+                    "description": "Hora del turno.",
+                },
+            },
+            "required": ["fecha", "hora"],
+        },
+    },
+    {
+        "name": "cancelar_reserva",
+        "description": (
+            "Cancela las reservas de la familia para un sábado. "
+            "Si se indica hora, cancela solo ese turno. Si no, cancela todos los turnos del día. "
+            "Retorna: {cancelada: bool, cantidad_borradas: int}. "
+            "Usar cuando el padre dice que no puede ir, quiere cancelar, o no va a asistir. "
+            "NO usar para reagendar (primero cancelar, luego agendar)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "Fecha del sábado a cancelar.",
+                },
+                "hora": {
+                    "type": "string",
+                    "enum": ["9:30", "11:00", "15:30"],
+                    "description": "Hora del turno a cancelar. Omitir para cancelar todo el día.",
+                },
+            },
+            "required": ["fecha"],
+        },
+    },
+    {
+        "name": "consultar_agendados",
+        "description": (
+            "Muestra la lista de niños agendados para un sábado y horario, con nombres. "
+            "Retorna: {lista: str formateada, cantidad: int}. "
+            "Usar cuando el padre pregunta quiénes van, cuántos hay, o quiere ver la lista. "
+            "NO usar para consultar disponibilidad sin nombres (eso es consultar_disponibilidad de Ivan)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha": {
+                    "type": "string",
+                    "description": "Fecha del sábado.",
+                },
+                "hora": {
+                    "type": "string",
+                    "enum": ["9:30", "11:00", "15:30"],
+                    "description": "Hora del turno.",
+                },
+            },
+            "required": ["fecha", "hora"],
+        },
+    },
+    {
+        "name": "registrar_familia",
+        "description": (
+            "Registra o actualiza el nombre del padre o madre en FAMILIAS FENIX. "
+            "Detecta automáticamente si es padre o madre por el nombre. "
+            "Si la familia ya existe, actualiza. Si no, crea nueva. "
+            "Retorna: {registrada: bool, familia_id, rol: PADRE|MADRE}. "
+            "Usar cuando el padre dice su nombre completo por primera vez o cuando se corrige. "
+            "NO usar si ya tenés el nombre registrado."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nombre": {
+                    "type": "string",
+                    "description": "Nombre de pila del padre/madre.",
+                },
+                "apellido": {
+                    "type": "string",
+                    "description": "Apellido. Puede omitirse si no lo dijo.",
+                },
+            },
+            "required": ["nombre"],
+        },
+    },
+    {
+        "name": "registrar_hijo",
+        "description": (
+            "Registra un hijo vinculado a la familia. "
+            "La familia debe existir previamente (usar registrar_familia primero si no existe). "
+            "Retorna: {registrado: bool, nino_id, familia_id}. "
+            "Usar cuando el padre da datos de un hijo (nombre, fecha de nacimiento, CI, talla). "
+            "NO usar si el hijo ya está registrado."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nombre": {
+                    "type": "string",
+                    "description": "Nombre del hijo.",
+                },
+                "apellido": {
+                    "type": "string",
+                    "description": "Apellido del hijo.",
+                },
+                "fecha_nacimiento": {
+                    "type": "string",
+                    "description": "Fecha de nacimiento (cualquier formato legible).",
+                },
+                "ci": {
+                    "type": "string",
+                    "description": "Cédula de identidad del hijo.",
+                },
+                "talla_remera": {
+                    "type": "string",
+                    "description": "Talla de remera (ej: '4', '6', '8', '10', '12').",
+                },
+            },
+            "required": ["nombre"],
+        },
+    },
+    {
+        "name": "escalar_a_humano",
+        "description": (
+            "Transfiere la conversación al Profe Ivan real (humano). "
+            "El agente se silencia y el admin recibe alerta con resumen en WhatsApp y Telegram. "
+            "Retorna: {escalado: bool, texto: mensaje para el padre}. "
+            "Usar cuando: no sabés la respuesta, el padre pide hablar con una persona, "
+            "el tema es sensible, o la pregunta está fuera del ámbito. "
+            "NO usar para preguntas operativas que podés resolver con las otras herramientas. "
+            "Después de escalar, NO seguir respondiendo — esperar a que el humano retome."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "motivo": {
+                    "type": "string",
+                    "enum": [
+                        "no_se_la_respuesta",
+                        "padre_pide_humano",
+                        "tema_sensible",
+                        "fuera_de_ambito",
+                        "queja_o_problema",
+                    ],
+                    "description": "Categoría del motivo de escalación.",
+                },
+                "resumen": {
+                    "type": "string",
+                    "description": (
+                        "Resumen breve para el admin: qué preguntó el padre, "
+                        "qué intentaste resolver, qué debería hacer el admin."
+                    ),
+                },
+            },
+            "required": ["motivo", "resumen"],
+        },
+    },
+]

@@ -6,22 +6,34 @@ import logging
 
 from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
 from agent.tools.escalacion import escalar_a_humano
-from agent.tools.disponibilidad import consultar_disponibilidad
+from agent.tools.disponibilidad import consultar_disponibilidad, consultar_agendados
 from agent.tools.llamada import programar_llamada
+from agent.tools.agenda import agendar_clase, cancelar_reserva
+from agent.tools.registro import registrar_familia, registrar_hijo
 
 logger = logging.getLogger("agentkit")
 
 # Registro de tools: nombre → función async
 _TOOLS = {
+    # Ivan
     "reagendar_clase": reagendar_clase,
     "confirmar_reserva": confirmar_reserva_prueba,
     "escalar_a_humano": escalar_a_humano,
     "consultar_disponibilidad": consultar_disponibilidad,
     "programar_llamada": programar_llamada,
+    # Aurora
+    "agendar_clase": agendar_clase,
+    "cancelar_reserva": cancelar_reserva,
+    "consultar_agendados": consultar_agendados,
+    "registrar_familia": registrar_familia,
+    "registrar_hijo": registrar_hijo,
 }
 
 # Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
 _TOOLS_CON_TELEFONO = {*_TOOLS.keys()}  # todas necesitan teléfono
+
+# Tools que necesitan familia_id (Aurora: operaciones sobre familias inscriptas)
+_TOOLS_CON_FAMILIA = {"agendar_clase", "cancelar_reserva", "registrar_hijo", "registrar_familia", "consultar_agendados"}
 
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:
@@ -51,6 +63,21 @@ async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:
 
     if nombre in _TOOLS_CON_TELEFONO:
         params["telefono"] = telefono
+
+    # Resolver familia_id para tools de Aurora que lo necesitan
+    if nombre in _TOOLS_CON_FAMILIA and "familia_id" not in params:
+        try:
+            from agent.ab_test import obtener_familia_id
+            from agent.airtable_client import buscar_familia_por_telefono
+            fam_id = await obtener_familia_id(telefono)
+            if not fam_id:
+                fam = await buscar_familia_por_telefono(telefono)
+                if fam:
+                    fam_id = fam["id"]
+            params["familia_id"] = fam_id  # puede ser None, la tool maneja el error
+        except Exception as e:
+            logger.warning(f"[TOOL] Error resolviendo familia_id para {nombre}: {e}")
+            params["familia_id"] = None
 
     try:
         resultado = await fn(**params)

@@ -62,7 +62,7 @@ from agent.tools.detectores import (
     padre_pregunta_devolucion, padre_pregunta_efectivo, padre_dice_ya_transfiri,
     padre_pregunta_alias,
 )
-from agent.tool_definitions import TOOLS_IVAN
+from agent.tool_definitions import TOOLS_IVAN, TOOLS_AURORA
 from agent.tool_executor import ejecutar_tool
 
 # Feature flag: Tool Use (Fase 3 migración)
@@ -3487,14 +3487,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Generar respuesta con Claude (solo si no fue interceptado) ────
         _tool_acciones = []  # inicializar para guards de regex más abajo
         if not _interceptado:
-            if _USE_TOOL_USE and agent_actual == "ivan":
-                # Flujo nuevo: Claude con Tool Use — decide qué acción tomar
+            if _USE_TOOL_USE and agent_actual in ("ivan", "aurora"):
+                # Flujo con Tool Use — Ivan y Aurora usan tools distintas
+                _tools_lista = TOOLS_AURORA if agent_actual == "aurora" else TOOLS_IVAN
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,
                     historial=historial,
                     agent_actual=agent_actual,
                     contexto_extra=contexto_extra,
-                    tools=TOOLS_IVAN,
+                    tools=_tools_lista,
                     tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
                     context={"telefono": telefono, "agent_actual": agent_actual},
                 )
@@ -3672,8 +3673,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[LEAD DATA] Error actualizando datos lead {telefono}: {e}")
 
+        # ── Guards: si un tool ya manejó la acción, no duplicar con regex ──
+        _tool_names_used = {ta["tool"] for ta in _tool_acciones} if _tool_acciones else set()
+
         # ── Detectar registro de nombre del padre/madre por Aurora ─────
-        if agent_actual == "aurora" and "REGISTRO PADRE:" in respuesta:
+        if agent_actual == "aurora" and "REGISTRO PADRE:" in respuesta and "registrar_familia" not in _tool_names_used:
             try:
                 reg_padre = re.search(r'REGISTRO PADRE:\s*(.+?)(?:\n|$)', respuesta)
                 if reg_padre:
@@ -3718,7 +3722,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[REGISTRO] Error actualizando nombre padre/madre: {e}")
 
         # ── Detectar registro de hijos por Aurora ─────────────────────────
-        if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta:
+        if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta and "registrar_hijo" not in _tool_names_used:
             try:
                 familia = await buscar_familia_por_telefono(telefono)
                 if familia:
@@ -3754,7 +3758,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[AURORA] Error creando niño: {e}")
 
         # ── Detectar cancelación de reserva por Aurora ─────────────────────
-        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower():
+        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower() and "cancelar_reserva" not in _tool_names_used:
             try:
                 # Extraer fecha de "cancelé la reserva de X del sábado 2 de mayo a las 11:00h"
                 _m_cancel = re.search(
@@ -3789,7 +3793,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Guard: para Ivan, solo procesar si el lead YA pagó (comprobante recibido).
         # Sin esto, frases pre-pago como "tiene su lugar el sábado X" disparan
         # notificación de agenda + PAGO en Airtable antes de que el lead pague.
-        confirmaciones = _detectar_confirmacion_aurora(respuesta)
+        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "agendar_clase" not in _tool_names_used and "confirmar_reserva" not in _tool_names_used else []
         if confirmaciones and agent_actual == "ivan":
             _hist_reciente = await obtener_historial(telefono, limite=10)
             _pago_en_historial = any(
@@ -3804,7 +3808,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _procesar_confirmacion_reserva(telefono, confirmacion, respuesta, agent_actual)
 
         # ── Detectar llamada programada ("te llamo a las X") ──────────────
-        _tool_names_used = {ta["tool"] for ta in _tool_acciones} if _tool_acciones else set()
         if agent_actual == "ivan" and "programar_llamada" not in _tool_names_used:
             _m_llamada = re.search(
                 r'te llamo (?:a las?\s+)?(\d{1,2}(?:[:.]\d{2})?(?:\s*(?:hs?|pm|am))?)',
