@@ -237,12 +237,16 @@ async def generar_respuesta(
                                 "input": block.input,
                                 "result": resultado,
                             })
-                            tool_results.append({
+                            tool_result_entry = {
                                 "type": "tool_result",
                                 "tool_use_id": block.id,
                                 "content": json.dumps(resultado, ensure_ascii=False),
-                            })
-                            logger.info(f"[TOOL] {block.name}({block.input}) → ejecutado")
+                            }
+                            # Informar a Claude si la tool falló (Anthropic best practice)
+                            if resultado.get("error"):
+                                tool_result_entry["is_error"] = True
+                            tool_results.append(tool_result_entry)
+                            logger.info(f"[TOOL] {block.name}({block.input}) → error={resultado.get('error', False)}")
 
                     mensajes.append({"role": "user", "content": tool_results})
                     # Continuar loop → Claude ve el resultado y decide

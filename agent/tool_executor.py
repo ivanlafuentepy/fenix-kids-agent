@@ -1,46 +1,102 @@
 # agent/tool_executor.py — Dispatcher de tools para Claude API
-# Solo tools de ACCIÓN (reagendar, confirmar reserva, etc.)
+# Solo tools de ACCIÓN (reagendar, confirmar reserva, escalar, etc.)
 # FAQ simples se manejan con interceptores regex (gratis, sin API).
 
 import logging
 
-from agent.tools.reservas import reagendar_clase
+from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
+from agent.tools.escalacion import escalar_a_humano
 
 logger = logging.getLogger("agentkit")
 
 # Registro de tools: nombre → función async
 _TOOLS = {
     "reagendar_clase": reagendar_clase,
+    "confirmar_reserva": confirmar_reserva_prueba,
+    "escalar_a_humano": escalar_a_humano,
 }
 
-# Tools que necesitan el teléfono del padre (acceden a Airtable)
-_TOOLS_CON_TELEFONO = {"reagendar_clase"}
+# Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
+_TOOLS_CON_TELEFONO = {"reagendar_clase", "confirmar_reserva", "escalar_a_humano"}
 
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:
     """
-    Ejecuta un tool y retorna el resultado como dict.
+    Ejecuta un tool y retorna el resultado como dict con errores estructurados.
 
-    Args:
-        nombre: Nombre del tool (debe coincidir con tool_definitions.py)
-        params: Parámetros que Claude envió en el tool_use
-        telefono: Teléfono del padre (se inyecta para tools que lo necesitan)
-
-    Returns:
-        Dict con al menos "texto" (str) + metadata opcional
+    Errores siguen el formato Anthropic:
+    {
+        "error": True,
+        "error_category": "transient" | "validation" | "business",
+        "is_retryable": bool,
+        "message": str,
+        "attempted_query": str,
+    }
     """
     fn = _TOOLS.get(nombre)
     if not fn:
         logger.warning(f"[TOOL] Tool desconocido: {nombre}")
-        return {"texto": f"Tool {nombre} no disponible.", "error": True}
+        return {
+            "texto": f"Tool '{nombre}' no existe. Tools disponibles: {', '.join(_TOOLS.keys())}.",
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": f"Tool '{nombre}' no registrado.",
+            "attempted_query": f"{nombre}({params})",
+        }
 
     if nombre in _TOOLS_CON_TELEFONO:
         params["telefono"] = telefono
 
     try:
         resultado = await fn(**params)
+        if "error" not in resultado:
+            resultado["error"] = False
         logger.info(f"[TOOL] {nombre}({params}) → {list(resultado.keys())}")
         return resultado
+
+    except (TimeoutError, ConnectionError, OSError) as e:
+        logger.error(f"[TOOL] Error transitorio en {nombre}: {e}")
+        return {
+            "texto": "El servicio está temporalmente no disponible. Intentá de nuevo en unos segundos.",
+            "error": True,
+            "error_category": "transient",
+            "is_retryable": True,
+            "message": f"Error transitorio en {nombre}: {type(e).__name__}",
+            "attempted_query": f"{nombre}({params})",
+        }
+
+    except (ValueError, TypeError, KeyError) as e:
+        logger.error(f"[TOOL] Error de validación en {nombre}: {e}")
+        return {
+            "texto": f"Datos inválidos: {e}",
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": f"Error de validación en {nombre}: {e}",
+            "attempted_query": f"{nombre}({params})",
+        }
+
     except Exception as e:
-        logger.error(f"[TOOL] Error ejecutando {nombre}: {e}")
-        return {"texto": "Hubo un error procesando tu solicitud.", "error": True}
+        error_msg = str(e).lower()
+        # Detectar errores transitorios por contenido del mensaje
+        if any(k in error_msg for k in ("timeout", "connect", "overloaded", "rate", "429", "503")):
+            logger.error(f"[TOOL] Error transitorio (detectado) en {nombre}: {e}")
+            return {
+                "texto": "El servicio está temporalmente no disponible.",
+                "error": True,
+                "error_category": "transient",
+                "is_retryable": True,
+                "message": f"Error transitorio en {nombre}: {e}",
+                "attempted_query": f"{nombre}({params})",
+            }
+
+        logger.error(f"[TOOL] Error interno en {nombre}: {e}")
+        return {
+            "texto": f"Error interno procesando {nombre}.",
+            "error": True,
+            "error_category": "internal",
+            "is_retryable": False,
+            "message": f"Error en {nombre}: {str(e)[:200]}",
+            "attempted_query": f"{nombre}({params})",
+        }
