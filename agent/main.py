@@ -3519,7 +3519,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     or "cambiar de fecha" in _ultimo_assistant
                 )
                 _msg_es_accion = bool(
-                    re.search(r"\b(agend|reserv|cancel|reagen|cambiar|11[:\s]?00|15[:\s]?30)\b", _texto_lower, re.IGNORECASE)
+                    re.search(r"\b(agend|reserv|cancel|reagen|cambiar|11[:\s]?00|15[:\s]?30)", _texto_lower, re.IGNORECASE)
                     or re.search(r"\b\d{1,2}\s*(de\s+)?(mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b", _texto_lower)
                     or (_contexto_accion and re.search(r"\b(\d{1,2}[h:]|\d{1,2}\s*de\s)", _texto_lower))
                 )
