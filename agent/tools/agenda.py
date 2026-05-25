@@ -63,11 +63,9 @@ async def agendar_clase(
             "message": f"No pude crear el horario {fecha} {hora} en Airtable.",
         }
 
-    # Limpiar reservas futuras existentes antes de crear
-    # Esto evita duplicados — si ya tiene reserva, la borra y crea la nueva
-    from datetime import date as _date_cls
+    # Borrar reservas del MISMO DÍA (evita duplicados al reagendar)
+    # NO toca reservas de otros días
     from agent.airtable_client import _delete
-    _hoy = _date_cls.today().isoformat()
     reservas_existentes = await _get_records(
         _RESERVAS,
         formula=f"FIND('{familia_id}', ARRAYJOIN({{FAMILIAS}}))",
@@ -76,16 +74,18 @@ async def agendar_clase(
     _borradas = 0
     for _rex in reservas_existentes:
         _rf = _rex.get("fields", {})
-        # FECHA puede ser lookup (lista) o texto
         _fecha_res = _rf.get("FECHA", "")
         if isinstance(_fecha_res, list):
             _fecha_res = _fecha_res[0] if _fecha_res else ""
-        if _fecha_res and _fecha_res >= _hoy:
+        if _fecha_res == fecha:
             await _delete(_RESERVAS, _rex["id"])
             _borradas += 1
-            logger.info(f"[AGENDA] Reserva vieja borrada: {_rex['id']} ({_fecha_res})")
+            _hora_vieja = _rf.get("HORA", "")
+            if isinstance(_hora_vieja, list):
+                _hora_vieja = _hora_vieja[0] if _hora_vieja else ""
+            logger.info(f"[AGENDA] Reserva del mismo día borrada: {_rex['id']} ({_fecha_res} {_hora_vieja})")
     if _borradas:
-        logger.info(f"[AGENDA] {_borradas} reserva(s) vieja(s) borradas para familia {familia_id}")
+        logger.info(f"[AGENDA] {_borradas} reserva(s) del {fecha} borradas antes de crear nueva")
 
     # Crear reserva nueva para cada hijo
     reservados = []
