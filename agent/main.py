@@ -587,7 +587,7 @@ async def checkin(record_id: str):
         f"<h1 style='color:#27ae60'>✅ {nombre}</h1>"
         f"<p style='font-size:1.3em'>Presente{f' — {hora}h' if hora else ''}</p>"
         f"<p style='color:#888'>Check-in: {ahora.strftime('%H:%M')}</p>"
-        "<p style='margin-top:20px'>Bienvenido al Parque Fenix! 🌳</p>"
+        "<p style='margin-top:20px'>Bienvenido a Fenix Kids Academy! 🌳</p>"
         "</body></html>"
     )
 
@@ -3614,7 +3614,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 _qr_bytes = generar_qr(_rid)
                                 await proveedor.enviar_imagen_bytes(
                                     telefono, _qr_bytes, "image/png",
-                                    caption="Mostrá este QR cuando llegues al Parque Fenix 📱"
+                                    caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
                                 )
                             logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
                         except Exception as _qr_err:

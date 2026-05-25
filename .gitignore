@@ -32,6 +32,9 @@ Thumbs.db
 
 # Marketing (imágenes y videos pesados — no van al repo)
 marketing/
+# Excepto el logo (lo necesita agent/qr.py en producción)
+!marketing/logos/
+!marketing/logos/LOGO FENIX TRANSPARENTE OFICIAL.png
 
 # Claude Code (configuración local — nunca subir)
 .claude/
