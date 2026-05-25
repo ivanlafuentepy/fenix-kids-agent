@@ -2278,7 +2278,8 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     if not hijos_info:
         contexto += "  (sin hijos registrados)\n"
 
-    # Reservas activas de esta familia (solo futuras)
+    # Reservas activas de esta familia (solo futuras) — se retorna por separado
+    _reservas_texto = ""
     try:
         from agent.airtable_client import _get_records, _RESERVAS
         from datetime import datetime as _dt_cls
@@ -2304,7 +2305,7 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
             if _fecha >= _hoy_str:
                 reservas_futuras.append({"nombre_nino": _nombre, "fecha": _fecha, "hora": _hora})
         if reservas_futuras:
-            contexto += "\nRESERVAS ACTIVAS DE ESTA FAMILIA:\n"
+            _reservas_texto = "RESERVAS ACTIVAS DE ESTA FAMILIA:\n"
             for r in sorted(reservas_futuras, key=lambda x: x.get("fecha", "")):
                 _nombre = r.get("nombre_nino", "?")
                 _fecha = r.get("fecha", "?")
@@ -2314,9 +2315,9 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                     _fecha_label = f"Sábado {_fd.day}/{_fd.month}"
                 except Exception:
                     _fecha_label = _fecha
-                contexto += f"  📅 {_nombre}: {_fecha_label} a las {_hora}h\n"
+                _reservas_texto += f"📅 {_nombre}: {_fecha_label} a las {_hora}h\n"
         else:
-            contexto += "\nRESERVAS ACTIVAS: ninguna\n"
+            _reservas_texto = "RESERVAS ACTIVAS: ninguna"
     except Exception as e:
         logger.error(f"[AURORA] Error cargando reservas familia: {e}")
 
@@ -2368,7 +2369,7 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     except Exception as e:
         logger.error(f"[AURORA] Error cargando redes: {e}")
 
-    return contexto
+    return contexto, _reservas_texto
 
 
 async def _procesar_mensaje_webhook(msg):
@@ -3402,6 +3403,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
+        _reservas_airtable = None
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
             # Primero buscar por familia_id guardada (modo padre admin)
             familia_existente = None
@@ -3414,7 +3416,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if not familia_existente:
                 familia_existente = await buscar_familia_por_telefono(telefono)
             if familia_existente:
-                contexto_extra = await _build_contexto_aurora(familia_existente, telefono)
+                contexto_extra, _reservas_airtable = await _build_contexto_aurora(familia_existente, telefono)
 
         # ── Sin delays artificiales — Claude responde directo ────────────
                 # El flujo continúa abajo con la llamada normal a generar_respuesta()
@@ -3582,6 +3584,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     historial=historial,
                     agent_actual=agent_actual,
                     contexto_extra=contexto_extra,
+                    reservas_airtable=_reservas_airtable,
                     tools=_tools_lista,
                     tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
                     context={"telefono": telefono, "agent_actual": agent_actual},
@@ -3624,6 +3627,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     historial=historial,
                     agent_actual=agent_actual,
                     contexto_extra=contexto_extra,
+                    reservas_airtable=_reservas_airtable,
                 )
 
         # ── Limpiar comandos internos [SISTEMA:...] que Claude genera ─────

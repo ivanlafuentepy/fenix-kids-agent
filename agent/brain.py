@@ -147,6 +147,7 @@ async def generar_respuesta(
     historial: list[dict],
     agent_actual: str = "ivan",
     contexto_extra: str | None = None,
+    reservas_airtable: str | None = None,
     tools: list[dict] | None = None,
     tool_executor: Callable | None = None,
     context: dict | None = None,
@@ -176,32 +177,13 @@ async def generar_respuesta(
 
     system_prompt = cargar_prompt_agente(agent_actual)
 
-    # Contexto de Airtable va en el system prompt
-    # PERO las reservas activas van como inyección en el mensaje del usuario
-    # para que Haiku las priorice sobre el historial de conversación
-    _contexto_reservas = ""
     if contexto_extra:
-        # Separar reservas activas del resto del contexto
-        _lineas = contexto_extra.split("\n")
-        _ctx_normal = []
-        _en_reservas = False
-        for _l in _lineas:
-            if "RESERVAS ACTIVAS" in _l:
-                _en_reservas = True
-                _contexto_reservas += _l + "\n"
-            elif _en_reservas and _l.startswith("  "):
-                _contexto_reservas += _l + "\n"
-            else:
-                _en_reservas = False
-                _ctx_normal.append(_l)
-        _ctx_resto = "\n".join(_ctx_normal).strip()
-        if _ctx_resto:
-            system_prompt += f"\n\n{_ctx_resto}"
+        system_prompt += f"\n\n{contexto_extra}"
 
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
-    # Inyectar reservas activas junto al mensaje del usuario (última posición = máxima prioridad)
-    if _contexto_reservas:
-        mensajes.append({"role": "user", "content": f"[DATOS AIRTABLE EN TIEMPO REAL — prioridad sobre el historial]\n{_contexto_reservas.strip()}\n\nMensaje del padre: {mensaje}"})
+    # Reservas de Airtable van en el mensaje del usuario (máxima prioridad para Haiku)
+    if reservas_airtable:
+        mensajes.append({"role": "user", "content": f"[DATOS AIRTABLE EN TIEMPO REAL]\n{reservas_airtable}\n\nMensaje del padre: {mensaje}"})
     else:
         mensajes.append({"role": "user", "content": mensaje})
 
