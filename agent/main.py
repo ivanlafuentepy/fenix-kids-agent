@@ -269,12 +269,64 @@ async def health_check():
 
 # ── QR Check-in ──────────────────────────────────────────────────────────────
 
+def _render_checkin_html(nombre: str, edad: str, hora: str, foto_url: str, estado: str, checkin_hora: str = "") -> str:
+    """Genera HTML de ficha/credencial del niño para la página de check-in QR."""
+    if estado == "ok":
+        badge_color, badge_icon, badge_text = "#27ae60", "✅", "Check-in confirmado"
+        if checkin_hora:
+            badge_text += f" — {checkin_hora}"
+    elif estado == "ya_presente":
+        badge_color, badge_icon, badge_text = "#f39c12", "⚠️", "Ya registrado"
+    else:
+        badge_color, badge_icon, badge_text = "#e74c3c", "❌", "Reserva no encontrada"
+
+    foto_html = ""
+    if foto_url:
+        foto_html = f'<img src="{foto_url}" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:4px solid {badge_color};margin-bottom:16px" />'
+    else:
+        iniciales = "".join(p[0] for p in nombre.split()[:2] if p).upper() or "?"
+        foto_html = f'<div style="width:120px;height:120px;border-radius:50%;background:{badge_color};display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:48px;color:white;font-weight:bold;border:4px solid {badge_color}">{iniciales}</div>'
+
+    detalles = []
+    if edad:
+        detalles.append(f'<span style="background:#f0f0f0;padding:6px 14px;border-radius:20px;font-size:14px">🎂 {edad}</span>')
+    if hora:
+        detalles.append(f'<span style="background:#f0f0f0;padding:6px 14px;border-radius:20px;font-size:14px">🕐 {hora}h</span>')
+    detalles_html = f'<div style="display:flex;gap:8px;justify-content:center;margin:12px 0">{"".join(detalles)}</div>' if detalles else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fenix Kids — {nombre}</title>
+</head>
+<body style="margin:0;padding:20px;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#e8f5e9 0%,#fff8e1 100%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<div style="background:white;border-radius:20px;padding:32px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.12)">
+  <div style="font-size:28px;margin-bottom:20px">🌳</div>
+  <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#888;margin-bottom:20px">Fenix Kids Academy</div>
+  {foto_html}
+  <h1 style="margin:0 0 4px;font-size:24px;color:#333">{nombre}</h1>
+  {detalles_html}
+  <div style="margin:20px 0;padding:12px 20px;background:{badge_color};color:white;border-radius:12px;font-size:18px;font-weight:600">
+    {badge_icon} {badge_text}
+  </div>
+  <p style="color:#aaa;font-size:12px;margin:16px 0 0">Maestras Paraguayas 2056 — Asuncion</p>
+</div>
+</body>
+</html>"""
+
+
 @app.get("/checkin/{record_id}")
 async def checkin(record_id: str):
-    """Marca PRESENTE en Airtable al escanear QR. Busca en RESERVAS FENIX y PRUEBA FENIX."""
-    from agent.airtable_client import _get_records, _patch, _RESERVAS, _PRUEBAS
+    """Marca PRESENTE en Airtable al escanear QR. Muestra ficha del niño."""
+    from agent.airtable_client import _get_records, _patch, _RESERVAS, _PRUEBAS, _NINOS
 
     formula = f"RECORD_ID()='{record_id}'"
+    nombre = "Alumno"
+    edad = ""
+    hora = ""
+    foto_url = ""
 
     # Buscar en RESERVAS FENIX (inscriptos)
     records = await _get_records(_RESERVAS, formula=formula, max_records=1)
@@ -285,6 +337,24 @@ async def checkin(record_id: str):
         nombre = nombre_list[0] if nombre_list else "Alumno"
         hora_list = fields.get("HORA", [])
         hora = hora_list[0] if hora_list else ""
+        # Buscar foto y edad del niño vinculado
+        nino_ids = fields.get("NINO", [])
+        if nino_ids:
+            try:
+                nino_recs = await _get_records(_NINOS, formula=f"RECORD_ID()='{nino_ids[0]}'", max_records=1)
+                if nino_recs:
+                    nf = nino_recs[0].get("fields", {})
+                    fotos = nf.get("FOTO", [])
+                    if fotos and isinstance(fotos, list):
+                        foto_url = fotos[0].get("url", "")
+                    fn = nf.get("FECHA NACIMIENTO", "")
+                    if fn:
+                        from datetime import date
+                        nac = date.fromisoformat(fn)
+                        hoy = date.today()
+                        edad = f"{hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))} años"
+            except Exception:
+                pass
     else:
         # Buscar en PRUEBA FENIX (leads)
         records = await _get_records(_PRUEBAS, formula=formula, max_records=1)
@@ -292,24 +362,22 @@ async def checkin(record_id: str):
         if records:
             fields = records[0].get("fields", {})
             nombre = fields.get("NOMBRE HIJO", "Alumno")
+            apellido = fields.get("APELLIDO HIJO", "")
+            if apellido:
+                nombre = f"{nombre} {apellido}"
             hora = fields.get("HORA", "")
+            edad_raw = fields.get("EDAD HIJO", "")
+            if edad_raw:
+                edad = f"{edad_raw} años" if "año" not in str(edad_raw) else str(edad_raw)
+            fotos = fields.get("FOTO", [])
+            if fotos and isinstance(fotos, list):
+                foto_url = fotos[0].get("url", "")
 
     if not records:
-        return HTMLResponse(
-            "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
-            "<h1 style='color:#e74c3c'>Reserva no encontrada</h1>"
-            "<p>Este QR ya no es valido. La reserva fue cancelada o reagendada.</p>"
-            "</body></html>",
-            status_code=404,
-        )
+        return HTMLResponse(_render_checkin_html("", "", "", "", "no_encontrado"), status_code=404)
 
     if fields.get("PRESENTE"):
-        return HTMLResponse(
-            "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
-            f"<h1 style='color:#f39c12'>⚠️ {nombre}</h1>"
-            f"<p>Ya esta marcado como presente{f' ({hora}h)' if hora else ''}</p>"
-            "</body></html>"
-        )
+        return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ya_presente"))
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -319,14 +387,7 @@ async def checkin(record_id: str):
         "HORA_CHECKIN": ahora.isoformat(),
     })
 
-    return HTMLResponse(
-        "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
-        f"<h1 style='color:#27ae60'>✅ {nombre}</h1>"
-        f"<p style='font-size:1.3em'>Presente{f' — {hora}h' if hora else ''}</p>"
-        f"<p style='color:#888'>Check-in: {ahora.strftime('%H:%M')}</p>"
-        "<p style='margin-top:20px'>Bienvenido a Fenix Kids Academy! 🌳</p>"
-        "</body></html>"
-    )
+    return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ok", ahora.strftime("%H:%M")))
 
 
 @app.get("/fu/{nombre_archivo}")
