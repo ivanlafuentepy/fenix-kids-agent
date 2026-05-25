@@ -19,11 +19,9 @@ logger = logging.getLogger("agentkit")
 # ── Datos bancarios ──────────────────────────────────────────────────────────
 
 DATOS_BANCARIOS = (
-    "Ivan Lafuente\n"
-    "Itaú\n"
-    "Cta cte 1074574\n"
-    "CI/Alias: 1604338\n"
-    "Cell 0982790407"
+    "ALIAS: 1604338\n"
+    "Banco: Itaú\n"
+    "Ivan Lafuente"
 )
 
 # Marcador para detectar si Ivan ya mostró los datos bancarios en el historial

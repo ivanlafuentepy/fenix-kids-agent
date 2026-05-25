@@ -90,15 +90,9 @@ async def enviar_datos_bancarios(**kwargs) -> dict:
     """Retorna datos bancarios para transferencia."""
     return {
         "texto": (
-            "➡️Transferencia Bancaria.\n"
-            "✅ALIAS CI (1604338)\n"
-            "⬇️⬇️⬇️\n"
-            "Ivan Lafuente\n"
-            "Itaú\n"
-            "Cta cte 1074574\n"
-            "Ci 1604338\n"
-            "Cell 0982790407\n\n"
-            "🙏Muchas Gracias 🙏\n\n"
+            "ALIAS: 1604338\n"
+            "Banco: Itaú\n"
+            "Ivan Lafuente\n\n"
             "Mandame la foto del comprobante cuando hagas la transferencia 📸"
         ),
     }
