@@ -11,7 +11,43 @@ logger = logging.getLogger("agentkit")
 _HORARIOS_VALIDOS = {"11:00", "15:30"}
 
 
-async def reagendar_clase(telefono: str, hora_nueva: str | None = None, **kwargs) -> dict:
+async def gestionar_prueba(
+    telefono: str,
+    accion: str,
+    fecha: str | None = None,
+    hora: str | None = None,
+    **kwargs,
+) -> dict:
+    """
+    Tool unificada para confirmar y reagendar clases de prueba.
+    - confirmar: confirma prueba con fecha y hora
+    - reagendar: busca prueba actual en Airtable, cambia fecha/hora
+    """
+    accion = accion.lower().strip()
+
+    if accion == "confirmar":
+        if not fecha or not hora:
+            return {
+                "error": True,
+                "error_category": "validation",
+                "is_retryable": True,
+                "message": "Necesito fecha y hora para confirmar la prueba.",
+            }
+        return await confirmar_reserva_prueba(telefono, fecha, hora)
+
+    elif accion == "reagendar":
+        return await reagendar_clase(telefono, hora_nueva=hora, fecha_nueva=fecha)
+
+    else:
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": f"Acción '{accion}' no válida. Usar: confirmar, reagendar.",
+        }
+
+
+async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nueva: str | None = None, **kwargs) -> dict:
     """
     Reagenda clase de prueba. Busca registros en PRUEBA FENIX por teléfono.
 
@@ -67,11 +103,23 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, **kwargs
         }
 
     # Actualizar TODOS los registros en Airtable
+    campos_update = {}
+    if hora_nueva:
+        campos_update["HORA"] = hora_nueva
+    if fecha_nueva:
+        fecha_iso = _parsear_fecha(fecha_nueva)
+        if fecha_iso:
+            campos_update["FECHA RESERVA"] = fecha_iso
+    if not campos_update:
+        return {"texto": "No se especificó nueva fecha ni hora.", "reagendado": False}
+
     hijos_reagendados = []
+    prueba_ids = []
     for r in reservas_info:
-        await _patch(_PRUEBAS, r["record_id"], {"HORA": hora_nueva})
+        await _patch(_PRUEBAS, r["record_id"], campos_update)
         hijos_reagendados.append(r["hijo"])
-        logger.info(f"[REAGENDAR-TOOL] {r['hijo']} ({telefono}): {r['hora']} → {hora_nueva}")
+        prueba_ids.append(r["record_id"])
+        logger.info(f"[REAGENDAR-TOOL] {r['hijo']} ({telefono}): {r['fecha']} {r['hora']} → {fecha_nueva or r['fecha']} {hora_nueva or r['hora']}")
 
     hijos_txt = ", ".join(hijos_reagendados)
 
@@ -91,11 +139,12 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, **kwargs
     }
 
     return {
-        "texto": f"Listo! Cambié a las {hora_nueva}h ✅ — {hijos_txt}",
+        "texto": f"Listo! Cambié a las {hora_nueva or r['hora']}h ✅ — {hijos_txt}",
         "reagendado": True,
         "hora_anterior": hora_actual,
         "hora_nueva": hora_nueva,
         "hijos": hijos_txt,
+        "prueba_ids": prueba_ids,
         **notificacion_admin,
     }
 

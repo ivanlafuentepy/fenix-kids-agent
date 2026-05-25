@@ -60,8 +60,8 @@ async def ejecutar_post_hooks(tool_name: str, params: dict, result: dict, contex
 # ══════════════════════════════════════════════════════════════════
 
 _TOOLS_CON_HORA = {
-    "confirmar_reserva", "gestionar_reserva",
-    "consultar_disponibilidad", "consultar_agendados", "reagendar_clase",
+    "gestionar_prueba", "gestionar_reserva",
+    "consultar_disponibilidad", "consultar_agendados",
 }
 
 
@@ -163,7 +163,7 @@ async def notificar_telegram(tool_name: str, params: dict, result: dict, context
     if result.get("error"):
         return result
 
-    if tool_name in ("gestionar_reserva", "confirmar_reserva"):
+    if tool_name in ("gestionar_reserva", "gestionar_prueba"):
         try:
             from agent.telegram_bridge import enviar_a_topic, obtener_o_crear_topic
             telefono = context.get("telefono", "")
@@ -194,7 +194,7 @@ async def enviar_capi_event(tool_name: str, params: dict, result: dict, context:
     if result.get("error"):
         return result
 
-    if tool_name == "confirmar_reserva" and result.get("confirmada"):
+    if tool_name == "gestionar_prueba" and result.get("confirmada"):
         try:
             from agent.meta_capi import enviar_lead_submitted
             telefono = context.get("telefono", "")

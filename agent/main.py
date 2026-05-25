@@ -3588,7 +3588,18 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _tools_lista = TOOLS_AURORA if agent_actual == "aurora" else TOOLS_IVAN
                 # Forzar gestionar_reserva cuando Aurora está en flujo de reservas
                 _tool_choice_override = None
-                if agent_actual == "aurora":
+                if agent_actual == "ivan":
+                    _texto_lower = texto.lower().strip()
+                    _es_reserva_ivan = any(k in _texto_lower for k in (
+                        "agendar", "reagendar", "cambiar",
+                        "11:00", "15:30", "11h", "15h",
+                    )) or (
+                        re.search(r'\d{1,2}[/\s]', _texto_lower) and re.search(r'1[15]', _texto_lower)
+                    )
+                    if _es_reserva_ivan:
+                        _tool_choice_override = {"type": "tool", "name": "gestionar_prueba"}
+                        logger.info(f"[IVAN] Forzando gestionar_prueba para: {texto[:50]}")
+                elif agent_actual == "aurora":
                     _texto_lower = texto.lower().strip()
                     _es_reserva = any(k in _texto_lower for k in (
                         "agendar", "reagendar", "cancelar", "cambiar",
@@ -3920,7 +3931,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Guard: para Ivan, solo procesar si el lead YA pagó (comprobante recibido).
         # Sin esto, frases pre-pago como "tiene su lugar el sábado X" disparan
         # notificación de agenda + PAGO en Airtable antes de que el lead pague.
-        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "gestionar_reserva" not in _tool_names_used and "confirmar_reserva" not in _tool_names_used else []
+        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "gestionar_reserva" not in _tool_names_used and "gestionar_prueba" not in _tool_names_used else []
         if confirmaciones and agent_actual == "ivan":
             _hist_reciente = await obtener_historial(telefono, limite=10)
             _pago_en_historial = any(

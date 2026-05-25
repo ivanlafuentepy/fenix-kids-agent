@@ -12,56 +12,33 @@ datos estructurados (Airtable, notificaciones, estado).
 
 TOOLS_IVAN = [
     {
-        "name": "reagendar_clase",
+        "name": "gestionar_prueba",
         "description": (
-            "Cambia la hora de una clase de prueba ya reservada en Airtable. "
-            "Si hora_nueva está vacío, retorna la reserva actual + horarios disponibles. "
-            "Si hora_nueva tiene valor, actualiza la reserva y notifica al admin. "
-            "Retorna: {reservas_actuales, horarios_disponibles, reagendado: bool}. "
-            "Usar cuando el padre quiere cambiar de hora, mover la clase, reagendar, "
-            "o dice que no puede ir a la hora que eligió. "
-            "NO usar para crear una reserva nueva (usar confirmar_reserva). "
-            "NO usar si el padre no tiene reserva previa."
+            "Gestiona reservas de clases de prueba para leads. "
+            "Acciones: confirmar (crear/actualizar reserva), reagendar (cambiar fecha/hora). "
+            "Para reagendar, la tool busca la reserva actual en Airtable automáticamente. "
+            "SIEMPRE usar esta tool cuando el padre quiere confirmar, reagendar o cambiar su clase de prueba. "
+            "NUNCA responder sobre reservas sin usar esta tool."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "hora_nueva": {
+                "accion": {
                     "type": "string",
-                    "enum": ["11:00", "15:30"],
-                    "description": "Nueva hora para la clase. Omitir si el padre aún no eligió hora.",
+                    "enum": ["confirmar", "reagendar"],
+                    "description": "Qué hacer: confirmar (nueva reserva), reagendar (cambiar existente).",
                 },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "confirmar_reserva",
-        "description": (
-            "Confirma una reserva de clase de prueba con fecha y hora en Airtable. "
-            "Actualiza el registro PRUEBA FENIX y notifica al admin. "
-            "Retorna: {confirmada: bool, fecha, hora, hijos}. "
-            "Usar cuando el padre acepta un sábado + horario y se le confirma la reserva. "
-            "NO usar si el padre no dijo fecha Y hora. "
-            "NO usar para cambiar una reserva existente (usar reagendar_clase)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
                 "fecha": {
                     "type": "string",
-                    "description": (
-                        "Fecha de la clase. Acepta formato ISO (2026-05-31) o texto "
-                        "('31 de mayo', 'sábado 31'). Se valida que sea sábado."
-                    ),
+                    "description": "Fecha del sábado (ISO o texto: '31 de mayo', '31/5'). Para reagendar es la fecha NUEVA.",
                 },
                 "hora": {
                     "type": "string",
                     "enum": ["11:00", "15:30"],
-                    "description": "Hora de la clase.",
+                    "description": "Hora del turno. Para reagendar es la hora NUEVA.",
                 },
             },
-            "required": ["fecha", "hora"],
+            "required": ["accion"],
         },
     },
     {

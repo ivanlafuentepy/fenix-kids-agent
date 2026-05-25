@@ -4,7 +4,7 @@
 
 import logging
 
-from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
+from agent.tools.reservas import gestionar_prueba
 from agent.tools.escalacion import escalar_a_humano
 from agent.tools.disponibilidad import consultar_disponibilidad
 from agent.tools.llamada import programar_llamada
@@ -16,8 +16,7 @@ logger = logging.getLogger("agentkit")
 # Registro de tools: nombre → función async
 _TOOLS = {
     # Ivan
-    "reagendar_clase": reagendar_clase,
-    "confirmar_reserva": confirmar_reserva_prueba,
+    "gestionar_prueba": gestionar_prueba,
     "escalar_a_humano": escalar_a_humano,
     "consultar_disponibilidad": consultar_disponibilidad,
     "programar_llamada": programar_llamada,
