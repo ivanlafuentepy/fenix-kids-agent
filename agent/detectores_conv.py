@@ -75,8 +75,11 @@ def _diagnostico_ya_enviado(historial: list[dict]) -> bool:
     for msg in historial:
         if msg.get("role") == "assistant":
             t = msg.get("content", "").lower()
-            # Ivan cierra con "qué te parece" + "pruebe/prueben" + "fenix"
+            # Ivan cierra con propuesta de probar/precios
             if "te parece" in t and "fenix" in t and ("prueb" in t or "parte de" in t):
+                return True
+            # Nueva PARTE 2: "aprovecho y te paso los precios?"
+            if "te paso los precios" in t:
                 return True
     return False
 
