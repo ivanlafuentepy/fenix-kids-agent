@@ -3501,32 +3501,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _USE_TOOL_USE and agent_actual in ("ivan", "aurora"):
                 # Flujo con Tool Use — Ivan y Aurora usan tools distintas
                 _tools_lista = TOOLS_AURORA if agent_actual == "aurora" else TOOLS_IVAN
-
-                # Detectar si el mensaje indica acción → forzar tool_choice: any
-                _tc = None
-                _texto_lower = texto.lower().strip()
-                # Patrones que indican acción concreta (debe usar tool, no solo texto)
-                _ultimo_assistant = ""
-                for _h in reversed(historial):
-                    if _h.get("role") == "assistant":
-                        _ultimo_assistant = _h.get("content", "").lower()
-                        break
-                _contexto_accion = (
-                    "qué fecha" in _ultimo_assistant
-                    or "qué horario" in _ultimo_assistant
-                    or "cuál preferís" in _ultimo_assistant
-                    or "qué querés hacer" in _ultimo_assistant
-                    or "cambiar de fecha" in _ultimo_assistant
-                )
-                _msg_es_accion = bool(
-                    re.search(r"\b(agend|reserv|cancel|reagen|cambiar|11[:\s]?00|15[:\s]?30)", _texto_lower, re.IGNORECASE)
-                    or re.search(r"\b\d{1,2}\s*(de\s+)?(mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b", _texto_lower)
-                    or (_contexto_accion and re.search(r"\b(\d{1,2}[h:]|\d{1,2}\s*de\s)", _texto_lower))
-                )
-                if _msg_es_accion:
-                    _tc = {"type": "any"}
-                    logger.info(f"[TOOL-CHOICE] {telefono}: forzando tool_choice=any")
-
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,
                     historial=historial,
@@ -3535,7 +3509,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     tools=_tools_lista,
                     tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
                     context={"telefono": telefono, "agent_actual": agent_actual},
-                    tool_choice=_tc,
                 )
                 # Procesar acciones de tools
                 for _ta in _tool_acciones:
