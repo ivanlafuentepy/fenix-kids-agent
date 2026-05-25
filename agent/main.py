@@ -2941,36 +2941,49 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # El flujo continúa abajo con la llamada normal a generar_respuesta()
 
         # ── Inyectar instrucción de pitch si tenemos nombre+edad y padre pidió precios ──
+        # PERO: si el padre ya dijo SÍ al precio, NO repetir pitch → ir a FASE 3 (cobrar)
+        _padre_ya_acepto = False
         if agent_actual == "ivan" and _padre_ya_pidio_precios(historial):
-            # Buscar si ya tenemos nombre hijo y edad en Airtable
-            _tiene_nombre_edad = False
-            try:
-                from agent.airtable_client import _get_records, _LEADS
-                _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                if _lr:
-                    _f = _lr[0].get("fields", {})
-                    _tiene_nombre_edad = bool(_f.get("NOMBRE NIÑO")) and bool(_f.get("EDAD"))
-            except Exception:
-                pass
-            if not _tiene_nombre_edad:
-                # Fallback: buscar en historial
-                _nh = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
-                _tiene_nombre_h = _nh and _nh != "no mencionó"
-                _tiene_edad_h = any(
-                    re.search(r'\b\d{1,2}\b', m.get("content", ""))
-                    for m in historial + [{"role": "user", "content": texto}]
-                    if m.get("role") == "user"
-                ) if _tiene_nombre_h else False
-                _tiene_nombre_edad = _tiene_nombre_h and _tiene_edad_h
-            if _tiene_nombre_edad:
-                contexto_extra = (contexto_extra or "") + (
-                    "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
-                    "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
-                    "(naturaleza, trepar, sol, desafíos reales). "
-                    "Cerrá con: '¿Qué te parece la idea? ¿Te gustaría regalarte un sábado diferente en el Parque Fenix? 🌳' "
-                    "NO des precio todavía. NO preguntes nombre del padre. NO vuelvas al rompehielos. "
-                    "NO preguntes qué quiere reforzar.]"
-                )
+            # Detectar si el padre ya aceptó (dijo "si/dale/ok" DESPUÉS del afiche)
+            _vio_afiche = False
+            for _m_hist in historial:
+                if _m_hist.get("role") == "assistant" and "te paso un afiche" in _m_hist.get("content", "").lower():
+                    _vio_afiche = True
+                elif _vio_afiche and _m_hist.get("role") == "user":
+                    _resp_padre = _m_hist.get("content", "").strip().lower().rstrip("!.,")
+                    if _resp_padre in ("si", "sí", "dale", "ok", "bueno", "va", "vamos", "quiero", "me interesa", "claro"):
+                        _padre_ya_acepto = True
+                        break
+
+            if not _padre_ya_acepto:
+                # Solo inyectar pitch si el padre NO aceptó todavía
+                _tiene_nombre_edad = False
+                try:
+                    from agent.airtable_client import _get_records, _LEADS
+                    _lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                    if _lr:
+                        _f = _lr[0].get("fields", {})
+                        _tiene_nombre_edad = bool(_f.get("NOMBRE NIÑO")) and bool(_f.get("EDAD"))
+                except Exception:
+                    pass
+                if not _tiene_nombre_edad:
+                    _nh = _extraer_nombre_hijo_historial(historial + [{"role": "user", "content": texto}])
+                    _tiene_nombre_h = _nh and _nh != "no mencionó"
+                    _tiene_edad_h = any(
+                        re.search(r'\b\d{1,2}\b', m.get("content", ""))
+                        for m in historial + [{"role": "user", "content": texto}]
+                        if m.get("role") == "user"
+                    ) if _tiene_nombre_h else False
+                    _tiene_nombre_edad = _tiene_nombre_h and _tiene_edad_h
+                if _tiene_nombre_edad:
+                    contexto_extra = (contexto_extra or "") + (
+                        "\n[SISTEMA: Ya tenés nombre del hijo y edad. El padre ya pidió precios. "
+                        "Hacé el PITCH CORTO ahora: mencioná nombre 2x, edad 2x, conectá con FENIX "
+                        "(naturaleza, trepar, sol, desafíos reales). "
+                        "Cerrá con: '¿Qué te parece la idea? ¿Te gustaría regalarte un sábado diferente en el Parque Fenix? 🌳' "
+                        "NO des precio todavía. NO preguntes nombre del padre. NO vuelvas al rompehielos. "
+                        "NO preguntes qué quiere reforzar.]"
+                    )
 
         # ── FASE 1: mensaje de apertura fijo para leads nuevos de Ivan ─────
         # No llamamos a Claude — el mensaje está hardcodeado y es siempre igual.
