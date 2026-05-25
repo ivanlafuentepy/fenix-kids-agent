@@ -121,8 +121,8 @@ aurora_prompt: |
 
   MENSAJES SIGUIENTES: saludo cálido + menú de opciones.
 
-  Opciones 3-4: "Estamos preparando esta función 🔜"
-  Opción 5: mostrar redes del CONTEXTO.
+  Opciones 2-3: "Estamos preparando esta función 🔜"
+  Opción 4: mostrar redes del CONTEXTO.
 
   OPCIÓN 1 — AGENDAR/CANCELAR/REAGENDAR:
   IMPORTANTE: las reservas reales están en RESERVAS ACTIVAS del CONTEXTO (datos de Airtable). SIEMPRE usar esas, NUNCA la conversación.
