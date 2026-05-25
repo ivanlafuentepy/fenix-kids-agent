@@ -11,7 +11,7 @@ from agent.airtable_client import (
     crear_reserva,
     cancelar_reservas_familia_fecha,
     _get_records,
-    _patch,
+    _delete,
     _RESERVAS,
 )
 
@@ -63,49 +63,41 @@ async def agendar_clase(
             "message": f"No pude crear el horario {fecha} {hora} en Airtable.",
         }
 
-    # Crear o actualizar reserva para cada hijo
+    # Limpiar reservas futuras existentes antes de crear
+    # Esto evita duplicados — si ya tiene reserva, la borra y crea la nueva
+    from datetime import date as _date_cls
+    from agent.airtable_client import _delete
+    _hoy = _date_cls.today().isoformat()
+    reservas_existentes = await _get_records(
+        _RESERVAS,
+        formula=f"FIND('{familia_id}', ARRAYJOIN({{FAMILIAS}}))",
+        max_records=50,
+    )
+    _borradas = 0
+    for _rex in reservas_existentes:
+        _rf = _rex.get("fields", {})
+        # FECHA puede ser lookup (lista) o texto
+        _fecha_res = _rf.get("FECHA", "")
+        if isinstance(_fecha_res, list):
+            _fecha_res = _fecha_res[0] if _fecha_res else ""
+        if _fecha_res and _fecha_res >= _hoy:
+            await _delete(_RESERVAS, _rex["id"])
+            _borradas += 1
+            logger.info(f"[AGENDA] Reserva vieja borrada: {_rex['id']} ({_fecha_res})")
+    if _borradas:
+        logger.info(f"[AGENDA] {_borradas} reserva(s) vieja(s) borradas para familia {familia_id}")
+
+    # Crear reserva nueva para cada hijo
     reservados = []
-    reagendados = []
     for nino in ninos:
         nino_id = nino["id"]
         nombre = nino.get("nombre_completo") or nino.get("nombre") or "?"
+        rid = await crear_reserva(nino_id, horario_id, familia_id)
+        if rid:
+            reservados.append(nombre)
+            logger.info(f"[AGENDA] Reserva creada: {nombre} → {rid}")
 
-        # Buscar reserva existente del mismo niño (cualquier fecha futura)
-        reserva_existente = None
-        try:
-            from datetime import date as _date_cls
-            _hoy = _date_cls.today().isoformat()
-            reservas_nino = await _get_records(
-                _RESERVAS,
-                formula=f"AND(FIND('{nino_id}', ARRAYJOIN({{NINO}})), IS_AFTER({{FECHA}}, '{_hoy}'))",
-                max_records=5,
-            )
-            if reservas_nino:
-                reserva_existente = reservas_nino[0]
-        except Exception:
-            pass
-
-        if reserva_existente:
-            # Actualizar reserva existente (reagendar)
-            rid = reserva_existente["id"]
-            old_fields = reserva_existente.get("fields", {})
-            old_fecha = old_fields.get("FECHA", "?")
-            old_hora = old_fields.get("HORA", "?")
-            ok = await _patch(_RESERVAS, rid, {"HORARIOS": [horario_id]})
-            if ok:
-                reagendados.append(nombre)
-                logger.info(f"[AGENDA] Reserva REAGENDADA: {nombre} {old_fecha} {old_hora} → {fecha} {hora} ({rid})")
-            else:
-                logger.error(f"[AGENDA] Error reagendando {nombre}: {rid}")
-        else:
-            # Crear reserva nueva
-            rid = await crear_reserva(nino_id, horario_id, familia_id)
-            if rid:
-                reservados.append(nombre)
-                logger.info(f"[AGENDA] Reserva creada: {nombre} → {rid}")
-
-    todos = reservados + reagendados
-    if not todos:
+    if not reservados:
         return {
             "error": True,
             "error_category": "transient",
@@ -113,20 +105,19 @@ async def agendar_clase(
             "message": "No pude crear las reservas en Airtable.",
         }
 
-    hijos_str = " y ".join(todos)
-    if reagendados:
+    hijos_str = " y ".join(reservados)
+    if _borradas:
         texto = f"Reserva reagendada para {hijos_str} al sábado {fecha} a las {hora}h."
     else:
         texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
 
     # Notificar al admin si fue reagendamiento
-    enviar_admin = False
+    enviar_admin = bool(_borradas)
     mensaje_admin = ""
-    if reagendados:
-        enviar_admin = True
+    if _borradas:
         mensaje_admin = (
             f"🔄 REAGENDAMIENTO\n"
-            f"{', '.join(reagendados)} → {fecha} {hora}h\n"
+            f"{hijos_str} → {fecha} {hora}h\n"
             f"📱 https://wa.me/{telefono}"
         )
 
