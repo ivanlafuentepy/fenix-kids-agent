@@ -2344,7 +2344,31 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _texto_admin = texto.strip().lower().replace(" ", "")
             if _texto_admin == "modosecre":
                 _admin_modo_padre.discard(telefono)
-                await proveedor.enviar_mensaje(telefono, "Modo secre ✅\nSolo comandos admin.")
+                msg_secre = (
+                    "Modo secre ✅\n\n"
+                    "📊 *Resúmenes:*\n"
+                    "1. `resumen reservas` — sábado próximo\n"
+                    "2. `resumen anuncios` — métricas Meta\n"
+                    "3. `resumen flias` — familias + wa.me\n"
+                    "4. `resumen asis` — quién vino\n"
+                    "5. `resumen prueba` — dashboard pruebas\n"
+                    "6. `resumen seguimiento` — mensajes post-clase\n"
+                    "7. `resumen telegram` — reservas + links TG\n"
+                    "8. `resumen followup` — mapa FU\n\n"
+                    "✅ *Asistencia:*\n"
+                    "9. `asis 11` / `asis 15.30` — pasar lista\n"
+                    "10. `PRESENTE nombre` — marcar presente\n\n"
+                    "👨‍👩‍👧 *Inscripción:*\n"
+                    "11. `cargar familia [nombre]`\n\n"
+                    "📸 *Fotos:*\n"
+                    "12. `fotos 11` / `fotos 15:30`\n"
+                    "13. `registrar cara [nombre]`\n\n"
+                    "🔄 *Modos:*\n"
+                    "14. `modo padre` — simular lead nuevo\n"
+                    "15. `modo alumno` — simular inscripto\n\n"
+                    "📋 `comandos` — lista completa"
+                )
+                await proveedor.enviar_mensaje(telefono, msg_secre)
                 return
             if telefono not in _admin_modo_padre:
                 # Guardar mensaje y espejear en Telegram, pero no responder
