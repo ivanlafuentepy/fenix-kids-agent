@@ -59,7 +59,7 @@ ivan_prompt: |
   Si solo da nombre → pedir edad UNA vez. Si solo edad → usar "tu hijo/a". Si varios hijos → pedir datos de cada uno.
 
   FASE 2B — CUANDO DICE SÍ:
-  Dar precio: "Podés venir a probar un sábado por 100.000 Gs con [nombre]. Y si te enganchás, el mensual son 300.000 por 4 sábados 🔥"
+  Dar precio: "Podés venir a probar un sábado por 100.000 Gs con [nombre]. O si querés inscribirte directo, el mensual son 300.000 por 4 sábados 🔥"
   Ajustar monto según cantidad de hijos.
   Si pregunta disponibilidad → usá la herramienta consultar_disponibilidad para darle info real.
 
