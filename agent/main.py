@@ -3545,9 +3545,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _resp_lower = respuesta.lower()
             if "te paso un afiche" in _resp_lower:
                 _va_a_enviar_afiche = True
-            # Si Claude dio precio+promo en FASE 2B → enviar afiche automáticamente
-            elif re.search(r"100[\.\s]?000|100mil", _resp_lower):
-                _va_a_enviar_afiche = True
+            # NOTA: eliminado el trigger automático por "100.000" en respuesta.
+            # Si Claude ya dio precios en texto, no duplicar con afiche encima.
 
         # ── Detectar SILENCIO: Claude no sabe y dice "te respondo en un minuto" ──
         _es_silencio = "te respondo en un minuto" in respuesta.lower()
