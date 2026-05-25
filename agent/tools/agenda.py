@@ -11,6 +11,7 @@ from agent.airtable_client import (
     crear_reserva,
     cancelar_reservas_familia_fecha,
     _get_records,
+    _patch,
     _RESERVAS,
 )
 
@@ -62,32 +63,49 @@ async def agendar_clase(
             "message": f"No pude crear el horario {fecha} {hora} en Airtable.",
         }
 
-    # Crear reserva para cada hijo
+    # Crear o actualizar reserva para cada hijo
     reservados = []
-    doble_reserva = []
+    reagendados = []
     for nino in ninos:
         nino_id = nino["id"]
         nombre = nino.get("nombre_completo") or nino.get("nombre") or "?"
 
-        # Detectar reserva doble (mismo niño, mismo día)
+        # Buscar reserva existente del mismo niño (cualquier fecha futura)
+        reserva_existente = None
         try:
-            reservas_dia = await _get_records(
+            from datetime import date as _date_cls
+            _hoy = _date_cls.today().isoformat()
+            reservas_nino = await _get_records(
                 _RESERVAS,
-                formula=f"AND(FIND('{nino_id}', ARRAYJOIN({{NINO}})), DATESTR({{FECHA}})='{fecha}')",
+                formula=f"AND(FIND('{nino_id}', ARRAYJOIN({{NINO}})), IS_AFTER({{FECHA}}, '{_hoy}'))",
                 max_records=5,
             )
-            if reservas_dia:
-                doble_reserva.append(nombre)
-                logger.warning(f"[AGENDA] Reserva doble: {nombre} ya tiene reserva el {fecha}")
+            if reservas_nino:
+                reserva_existente = reservas_nino[0]
         except Exception:
             pass
 
-        rid = await crear_reserva(nino_id, horario_id, familia_id)
-        if rid:
-            reservados.append(nombre)
-            logger.info(f"[AGENDA] Reserva creada: {nombre} → {rid}")
+        if reserva_existente:
+            # Actualizar reserva existente (reagendar)
+            rid = reserva_existente["id"]
+            old_fields = reserva_existente.get("fields", {})
+            old_fecha = old_fields.get("FECHA", "?")
+            old_hora = old_fields.get("HORA", "?")
+            ok = await _patch(_RESERVAS, rid, {"HORARIOS": [horario_id]})
+            if ok:
+                reagendados.append(nombre)
+                logger.info(f"[AGENDA] Reserva REAGENDADA: {nombre} {old_fecha} {old_hora} → {fecha} {hora} ({rid})")
+            else:
+                logger.error(f"[AGENDA] Error reagendando {nombre}: {rid}")
+        else:
+            # Crear reserva nueva
+            rid = await crear_reserva(nino_id, horario_id, familia_id)
+            if rid:
+                reservados.append(nombre)
+                logger.info(f"[AGENDA] Reserva creada: {nombre} → {rid}")
 
-    if not reservados:
+    todos = reservados + reagendados
+    if not todos:
         return {
             "error": True,
             "error_category": "transient",
@@ -95,18 +113,20 @@ async def agendar_clase(
             "message": "No pude crear las reservas en Airtable.",
         }
 
-    hijos_str = " y ".join(reservados)
-    texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
+    hijos_str = " y ".join(todos)
+    if reagendados:
+        texto = f"Reserva reagendada para {hijos_str} al sábado {fecha} a las {hora}h."
+    else:
+        texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
 
-    # Alerta doble reserva al admin
+    # Notificar al admin si fue reagendamiento
     enviar_admin = False
     mensaje_admin = ""
-    if doble_reserva:
+    if reagendados:
         enviar_admin = True
         mensaje_admin = (
-            f"⚠️ RESERVA DOBLE\n"
-            f"{', '.join(doble_reserva)} ya tenían reserva el {fecha}.\n"
-            f"Se agregó nueva reserva a las {hora}h.\n"
+            f"🔄 REAGENDAMIENTO\n"
+            f"{', '.join(reagendados)} → {fecha} {hora}h\n"
             f"📱 https://wa.me/{telefono}"
         )
 
