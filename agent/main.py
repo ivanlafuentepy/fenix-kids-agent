@@ -2219,14 +2219,28 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     if not hijos_info:
         contexto += "  (sin hijos registrados)\n"
 
-    # Reservas activas de esta familia
+    # Reservas activas de esta familia (solo futuras)
     try:
-        from agent.airtable_client import buscar_reservas_familia
+        from agent.airtable_client import _get_records, _RESERVAS
         from datetime import date as _hoy_cls
-        reservas_fam = await buscar_reservas_familia(familia["id"])
-        # Filtrar solo futuras (desde hoy)
         _hoy_str = _hoy_cls.today().isoformat()
-        reservas_futuras = [r for r in reservas_fam if r.get("fecha", "") >= _hoy_str]
+        # Filtrar en Airtable: solo reservas con fecha >= hoy
+        _formula = f"AND(FIND('{familia['id']}', ARRAYJOIN({{FAMILIAS}})), IS_AFTER({{FECHA}}, '{_hoy_str}'))"
+        _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=50)
+        reservas_futuras = []
+        for _rr in _reservas_raw:
+            _rf = _rr.get("fields", {})
+            _fecha = _rf.get("FECHA", "")
+            if isinstance(_fecha, list):
+                _fecha = _fecha[0] if _fecha else ""
+            _hora = _rf.get("HORA", "")
+            if isinstance(_hora, list):
+                _hora = _hora[0] if _hora else ""
+            _nombre = _rf.get("NOMBRE COMPLETO", "")
+            if isinstance(_nombre, list):
+                _nombre = _nombre[0] if _nombre else ""
+            if _fecha >= _hoy_str:
+                reservas_futuras.append({"nombre_nino": _nombre, "fecha": _fecha, "hora": _hora})
         if reservas_futuras:
             contexto += "\nRESERVAS ACTIVAS DE ESTA FAMILIA:\n"
             for r in sorted(reservas_futuras, key=lambda x: x.get("fecha", "")):
