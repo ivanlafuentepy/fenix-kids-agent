@@ -4200,6 +4200,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     await enviar_evento_agenda(telefono)
                     await enviar_evento_pago(telefono)
                     logger.info(f"[PRUEBA FENIX] Creado post-formulario para {telefono}")
+                    # QR Check-in: buscar todos los registros PRUEBA del teléfono y enviar QR
+                    try:
+                        from agent.qr import generar_qr
+                        from agent.airtable_client import _get_records, _PRUEBAS
+                        _pruebas_qr = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+                        for _pq in _pruebas_qr:
+                            _qr_bytes = generar_qr(_pq["id"])
+                            await proveedor.enviar_imagen_bytes(
+                                telefono, _qr_bytes, "image/png",
+                                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+                            )
+                        logger.info(f"[QR] Enviado {len(_pruebas_qr)} QR(s) post-formulario a {telefono}")
+                    except Exception as _qr_err:
+                        logger.error(f"[QR] Error enviando QR post-formulario: {_qr_err}")
                 except Exception as e:
                     logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
                     # Alertar a Ivan en Telegram para que no se pierda
