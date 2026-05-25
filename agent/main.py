@@ -3608,9 +3608,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     or re.match(r'^\d{1,2}$', _texto_lower)
                 )
 
-                if agent_actual == "ivan" and (_keywords_reserva or _responde_horario):
-                    _tool_choice_override = {"type": "tool", "name": "gestionar_prueba"}
-                    logger.info(f"[IVAN] Forzando gestionar_prueba para: {texto[:50]}")
+                # Ivan: forzar solo cuando modo_agenda está activo (post-pago)
+                if agent_actual == "ivan":
+                    _flags_ivan = await obtener_estado_flags(telefono)
+                    if _flags_ivan.get("modo_agenda"):
+                        _tool_choice_override = {"type": "tool", "name": "gestionar_prueba"}
+                        logger.info(f"[IVAN] modo_agenda activo — forzando gestionar_prueba para: {texto[:50]}")
+                # Aurora: forzar cuando hay keywords o respuesta a horarios
                 elif agent_actual == "aurora" and (_keywords_reserva or _responde_horario):
                     _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
                     logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
@@ -3655,6 +3659,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
                         except Exception as _qr_err:
                             logger.error(f"[QR] Error enviando QR a {telefono}: {_qr_err}")
+                        # Limpiar modo_agenda después de confirmar
+                        if _ta_result.get("confirmada"):
+                            await actualizar_estado_flags(telefono, modo_agenda=False)
+                            logger.info(f"[AGENDA] modo_agenda desactivado para {telefono}")
                 logger.info(f"[TOOL-USE] {telefono}: {len(_tool_acciones)} tools, interceptado={_interceptado}")
             else:
                 # Flujo original: Claude sin tools
@@ -6814,6 +6822,51 @@ async def _enviar_afiche_horarios(telefono: str, topic_id: int | None, tg_group:
 # Detectores de intención del padre → movidos a agent/tools/detectores.py
 
 
+async def _armar_mensaje_agenda_post_pago() -> str:
+    """Arma mensaje determinístico con sábados disponibles para agendar post-pago."""
+    from agent.airtable_client import obtener_horarios_disponibles
+    from datetime import date
+
+    horarios = await obtener_horarios_disponibles(max_horarios=8)
+
+    # Agrupar por fecha
+    fechas = {}
+    for h in horarios:
+        fecha = h.get("fecha", "")
+        hora = h.get("hora", "")
+        if fecha and hora:
+            if fecha not in fechas:
+                fechas[fecha] = []
+            fechas[fecha].append(hora)
+
+    if not fechas:
+        return (
+            "¡Pago recibido ✅ Gracias!\n\n"
+            "Para agendar tu clase de prueba, escribime qué sábado y horario te viene mejor 🌳\n\n"
+            "Horarios: 11:00h | 15:30h"
+        )
+
+    lineas = []
+    meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    for fecha_iso in sorted(fechas.keys()):
+        try:
+            d = date.fromisoformat(fecha_iso)
+            label = f"Sábado {d.day} de {meses[d.month - 1]}"
+            horas = " | ".join(f"{h}h" for h in sorted(fechas[fecha_iso]))
+            lineas.append(f"• {label} — {horas}")
+        except (ValueError, IndexError):
+            pass
+
+    sabados_txt = "\n".join(lineas)
+    return (
+        f"¡Pago recibido ✅ Gracias!\n\n"
+        f"Ahora agendamos tu clase de prueba 🌳\n\n"
+        f"📅 Sábados disponibles:\n{sabados_txt}\n\n"
+        f"¿Qué día y horario te viene mejor?"
+    )
+
+
 async def _armar_followup_afiche(telefono: str) -> str:
     """Arma el follow-up del afiche con nombre del hijo desde Airtable o historial."""
     nombre_hijo = ""
@@ -7057,42 +7110,18 @@ async def _procesar_comprobante(
 
     logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo}")
 
-    # ── Ivan confirma reserva (solo si ya eligió horario antes) ─────────
+    # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
     try:
-        await asyncio.sleep(3)  # pausa natural
-        historial_post = await obtener_historial(telefono, limite=40)
-        agent_pago, _ = await obtener_agent_actual(telefono)
-        respuesta_ivan = await generar_respuesta(
-            mensaje=(
-                "[SISTEMA: pago confirmado. Si el padre YA eligió sábado+horario antes de pagar, "
-                "decí 'Reserva confirmada ✅ [NOMBRE] tiene su lugar el sábado [FECHA] a las [HORA]h' "
-                "y agradecé la transferencia. NADA MÁS, no pidas datos, no mandes formulario. "
-                "Si NO eligió horario todavía, ofrecé los sábados disponibles.]"
-            ),
-            historial=historial_post,
-            agent_actual=agent_pago or "ivan",
-        )
-        await guardar_mensaje(telefono, "assistant", respuesta_ivan)
-        await _delay_humano(respuesta_ivan)
-        await proveedor.enviar_mensaje(telefono, respuesta_ivan)
+        await asyncio.sleep(3)
+        msg_agenda = await _armar_mensaje_agenda_post_pago()
+        await guardar_mensaje(telefono, "assistant", msg_agenda)
+        await proveedor.enviar_mensaje(telefono, msg_agenda)
+        await actualizar_estado_flags(telefono, modo_agenda=True)
         if topic_id:
-            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=telefono, group_override=group_override)
-
-        # ── Formulario SEPARADO (solo si confirmó reserva) ─────────
-        if "reserva confirmada" in respuesta_ivan.lower() or "tiene su lugar" in respuesta_ivan.lower():
-            await asyncio.sleep(5)  # pausa entre mensajes
-            msg_formulario = (
-                "Ahora sí, para completar la reserva pasame estos datos 📋\n\n"
-                "• Nombre completo tuyo (papá/mamá que acompaña)\n"
-                "• Nombre completo de tu hijo/a\n"
-                "• Fecha de nacimiento de tu hijo/a"
-            )
-            await guardar_mensaje(telefono, "assistant", msg_formulario)
-            await proveedor.enviar_mensaje(telefono, msg_formulario)
-            if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_formulario}", telefono=telefono, group_override=group_override)
+            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
+        logger.info(f"[PAGOS] Modo agenda activado para {telefono}")
     except Exception as e:
-        logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
+        logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
 
 
 async def _procesar_boton_pago(btn_titulo: str):
@@ -7153,22 +7182,18 @@ async def _procesar_boton_pago(btn_titulo: str):
 
         logger.info(f"[PAGOS] Pago CONFIRMADO para {tel_lead}")
 
-        # ── Ivan sigue automáticamente: pregunta sábado y horario ─────────
+        # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
         try:
-            await asyncio.sleep(3)  # pausa natural
-            historial_post = await obtener_historial(tel_lead, limite=40)
-            respuesta_ivan = await generar_respuesta(
-                mensaje="[SISTEMA: pago confirmado, continuar con agendamiento]",
-                historial=historial_post,
-                agent_actual="ivan",
-            )
-            await guardar_mensaje(tel_lead, "assistant", respuesta_ivan)
-            await _delay_humano(respuesta_ivan)
-            await proveedor.enviar_mensaje(tel_lead, respuesta_ivan)
+            await asyncio.sleep(3)
+            msg_agenda = await _armar_mensaje_agenda_post_pago()
+            await guardar_mensaje(tel_lead, "assistant", msg_agenda)
+            await proveedor.enviar_mensaje(tel_lead, msg_agenda)
+            await actualizar_estado_flags(tel_lead, modo_agenda=True)
             if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {respuesta_ivan}", telefono=tel_lead, group_override=_grp_pago)
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=tel_lead, group_override=_grp_pago)
+            logger.info(f"[PAGOS] Modo agenda activado para {tel_lead}")
         except Exception as e:
-            logger.error(f"[PAGOS] Error generando follow-up post-pago: {e}")
+            logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
 
     elif "rechazar" in btn_titulo:
         # ── Rechazar pago ─────────────────────────────────────────────────
