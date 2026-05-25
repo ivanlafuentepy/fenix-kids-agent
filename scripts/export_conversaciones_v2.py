@@ -21,9 +21,9 @@ OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "IVAN VAULT", "FENIX KIDS", "
 PHONES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "all_phones.txt")
 PY_OFFSET = timedelta(hours=-3)
 
-# Default: exportar del 8 al 10 de mayo (lo que falta)
-FECHA_INICIO = sys.argv[1] if len(sys.argv) > 1 else "2026-05-08"
-FECHA_FIN = sys.argv[2] if len(sys.argv) > 2 else "2026-05-10"
+# Default: exportar del 13 al 25 de mayo (última ejecución)
+FECHA_INICIO = sys.argv[1] if len(sys.argv) > 1 else "2026-05-13"
+FECHA_FIN = sys.argv[2] if len(sys.argv) > 2 else "2026-05-25"
 
 
 def ts_to_py(ts_str):
