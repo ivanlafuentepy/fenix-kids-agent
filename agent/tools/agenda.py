@@ -65,12 +65,14 @@ async def agendar_clase(
 
     # Crear reserva nueva para cada hijo
     reservados = []
+    reserva_ids = []
     for nino in ninos:
         nino_id = nino["id"]
         nombre = nino.get("nombre_completo") or nino.get("nombre") or "?"
         rid = await crear_reserva(nino_id, horario_id, familia_id)
         if rid:
             reservados.append(nombre)
+            reserva_ids.append(rid)
             logger.info(f"[AGENDA] Reserva creada: {nombre} → {rid}")
 
     if not reservados:
@@ -94,6 +96,7 @@ async def agendar_clase(
         "hora": hora,
         "hijos": hijos_str,
         "cantidad": len(reservados),
+        "reserva_ids": reserva_ids,
         "enviar_admin": enviar_admin,
         "mensaje_admin": mensaje_admin,
     }
@@ -182,6 +185,7 @@ async def reagendar_clase_aurora(
         "fecha_nueva": fecha_nueva,
         "hora_nueva": hora_nueva,
         "hijos": hijos,
+        "reserva_ids": result_agendar.get("reserva_ids", []),
         "enviar_admin": True,
         "mensaje_admin": (
             f"🔄 REAGENDAMIENTO\n"

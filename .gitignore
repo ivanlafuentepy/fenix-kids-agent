@@ -30,6 +30,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Marketing (imágenes y videos pesados — no van al repo)
+marketing/
+
 # Claude Code (configuración local — nunca subir)
 .claude/
 CLAUDE.local.md

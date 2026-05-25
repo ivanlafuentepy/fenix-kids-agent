@@ -19,7 +19,7 @@ import logging
 # OrderedDict eliminado — ya no se usa cache de dedup en memoria
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
@@ -531,6 +531,65 @@ async def _require_admin(x_admin_key: str | None = Header(default=None, alias="X
 @app.get("/")
 async def health_check():
     return {"status": "ok", "service": "fenix-kids-agent"}
+
+
+# ── QR Check-in ──────────────────────────────────────────────────────────────
+
+@app.get("/checkin/{record_id}")
+async def checkin(record_id: str):
+    """Marca PRESENTE en Airtable al escanear QR de reserva."""
+    from agent.airtable_client import _get_records, _patch, _RESERVAS
+
+    # Buscar reserva por record_id
+    formula = f"RECORD_ID()='{record_id}'"
+    records = await _get_records(_RESERVAS, formula=formula, max_records=1)
+
+    if not records:
+        return HTMLResponse(
+            "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
+            "<h1 style='color:#e74c3c'>Reserva no encontrada</h1>"
+            "<p>Este QR ya no es valido. La reserva fue cancelada o reagendada.</p>"
+            "</body></html>",
+            status_code=404,
+        )
+
+    reserva = records[0]
+    fields = reserva.get("fields", {})
+
+    # Nombre del nino (lookup desde NINOS vinculados)
+    nombre_list = fields.get("NOMBRE COMPLETO", [])
+    nombre = nombre_list[0] if nombre_list else "Alumno"
+
+    # Hora (lookup desde HORARIOS)
+    hora_list = fields.get("HORA", [])
+    hora = hora_list[0] if hora_list else ""
+
+    # Si ya esta presente
+    if fields.get("PRESENTE"):
+        return HTMLResponse(
+            "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
+            f"<h1 style='color:#f39c12'>⚠️ {nombre}</h1>"
+            f"<p>Ya esta marcado como presente{f' ({hora}h)' if hora else ''}</p>"
+            "</body></html>"
+        )
+
+    # Marcar presente + hora de check-in
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ahora = datetime.now(ZoneInfo("America/Asuncion"))
+    await _patch(_RESERVAS, record_id, {
+        "PRESENTE": True,
+        "HORA_CHECKIN": ahora.isoformat(),
+    })
+
+    return HTMLResponse(
+        "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
+        f"<h1 style='color:#27ae60'>✅ {nombre}</h1>"
+        f"<p style='font-size:1.3em'>Presente{f' — {hora}h' if hora else ''}</p>"
+        f"<p style='color:#888'>Check-in: {ahora.strftime('%H:%M')}</p>"
+        "<p style='margin-top:20px'>Bienvenido al Parque Fenix! 🌳</p>"
+        "</body></html>"
+    )
 
 
 @app.get("/fu/{nombre_archivo}")
@@ -3543,6 +3602,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _admin_phone_tool = os.getenv("ADMIN_PHONE", "595982790407")
                         if telefono != _admin_phone_tool:
                             await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
+                    # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva
+                    _reserva_ids = _ta_result.get("reserva_ids", [])
+                    if _reserva_ids and (_ta_result.get("agendada") or _ta_result.get("reagendada")):
+                        try:
+                            from agent.qr import generar_qr
+                            for _rid in _reserva_ids:
+                                _qr_bytes = generar_qr(_rid)
+                                await proveedor.enviar_imagen_bytes(
+                                    telefono, _qr_bytes, "image/png",
+                                    caption="Mostrá este QR cuando llegues al Parque Fenix 📱"
+                                )
+                            logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
+                        except Exception as _qr_err:
+                            logger.error(f"[QR] Error enviando QR a {telefono}: {_qr_err}")
                 logger.info(f"[TOOL-USE] {telefono}: {len(_tool_acciones)} tools, interceptado={_interceptado}")
             else:
                 # Flujo original: Claude sin tools
