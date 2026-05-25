@@ -176,11 +176,34 @@ async def generar_respuesta(
 
     system_prompt = cargar_prompt_agente(agent_actual)
 
+    # Contexto de Airtable va en el system prompt
+    # PERO las reservas activas van como inyección en el mensaje del usuario
+    # para que Haiku las priorice sobre el historial de conversación
+    _contexto_reservas = ""
     if contexto_extra:
-        system_prompt += f"\n\n{contexto_extra}"
+        # Separar reservas activas del resto del contexto
+        _lineas = contexto_extra.split("\n")
+        _ctx_normal = []
+        _en_reservas = False
+        for _l in _lineas:
+            if "RESERVAS ACTIVAS" in _l:
+                _en_reservas = True
+                _contexto_reservas += _l + "\n"
+            elif _en_reservas and _l.startswith("  "):
+                _contexto_reservas += _l + "\n"
+            else:
+                _en_reservas = False
+                _ctx_normal.append(_l)
+        _ctx_resto = "\n".join(_ctx_normal).strip()
+        if _ctx_resto:
+            system_prompt += f"\n\n{_ctx_resto}"
 
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
-    mensajes.append({"role": "user", "content": mensaje})
+    # Inyectar reservas activas junto al mensaje del usuario (última posición = máxima prioridad)
+    if _contexto_reservas:
+        mensajes.append({"role": "user", "content": f"[DATOS AIRTABLE EN TIEMPO REAL — prioridad sobre el historial]\n{_contexto_reservas.strip()}\n\nMensaje del padre: {mensaje}"})
+    else:
+        mensajes.append({"role": "user", "content": mensaje})
 
     acciones = []  # tools ejecutados en esta llamada
     _MAX_TOOL_ROUNDS = 3
