@@ -1926,8 +1926,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if texto == "[audio]":
                 logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
 
-        # ── Comando "comandos" (solo admin) — lista de comandos disponibles ──
+        # ── Admin phone + atajo numérico del menú secre ──
         admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        if telefono == admin_phone and telefono not in _admin_modo_padre:
+            _MENU_SECRE = {
+                "1": "resumen reservas", "2": "resumen anuncios", "3": "resumen flias",
+                "4": "resumen asis", "5": "resumen prueba", "6": "resumen seguimiento",
+                "7": "resumen telegram", "8": "resumen followup",
+                "12": "modo padre", "13": "modo alumno",
+            }
+            _num = texto.strip()
+            if _num in _MENU_SECRE:
+                texto = _MENU_SECRE[_num]
+
+        # ── Comando "comandos" (solo admin) — lista de comandos disponibles ──
         if texto.lower().strip() == "comandos" and telefono == admin_phone:
             msg_comandos = (
                 "⚙️ *COMANDOS ADMIN*\n\n"
@@ -2408,26 +2420,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 msg_secre = (
                     "Modo secre ✅\n\n"
                     "📊 *Resúmenes:*\n"
-                    "1. `resumen reservas` — sábado próximo\n"
-                    "2. `resumen anuncios` — métricas Meta\n"
-                    "3. `resumen flias` — familias + wa.me\n"
-                    "4. `resumen asis` — quién vino\n"
-                    "5. `resumen prueba` — dashboard pruebas\n"
-                    "6. `resumen seguimiento` — mensajes post-clase\n"
-                    "7. `resumen telegram` — reservas + links TG\n"
-                    "8. `resumen followup` — mapa FU\n\n"
-                    "✅ *Asistencia:*\n"
-                    "9. `asis 11` / `asis 15.30` — pasar lista\n"
-                    "10. `PRESENTE nombre` — marcar presente\n\n"
+                    "1. Reservas — sábado próximo\n"
+                    "2. Anuncios — métricas Meta\n"
+                    "3. Familias — nombre + wa.me\n"
+                    "4. Asistencia — quién vino\n"
+                    "5. Pruebas — dashboard completo\n"
+                    "6. Seguimiento — mensajes post-clase\n"
+                    "7. Telegram — reservas + links TG\n"
+                    "8. Follow-up — mapa FU\n\n"
                     "👨‍👩‍👧 *Inscripción:*\n"
-                    "11. `cargar familia [nombre]`\n\n"
+                    "9. `cargar familia [nombre]`\n\n"
                     "📸 *Fotos:*\n"
-                    "12. `fotos 11` / `fotos 15:30`\n"
-                    "13. `registrar cara [nombre]`\n\n"
+                    "10. `fotos 11` / `fotos 15:30`\n"
+                    "11. `registrar cara [nombre]`\n\n"
                     "🔄 *Modos:*\n"
-                    "14. `modo padre` — simular lead nuevo\n"
-                    "15. `modo alumno` — simular inscripto\n\n"
-                    "📋 `comandos` — lista completa"
+                    "12. Modo padre — simular lead nuevo\n"
+                    "13. Modo alumno — simular inscripto\n\n"
+                    "📋 `comandos` — lista completa\n"
+                    "Respondé con el número para ejecutar."
                 )
                 await proveedor.enviar_mensaje(telefono, msg_secre)
                 return
