@@ -129,9 +129,9 @@ aurora_prompt: |
   Opción 4: mostrar redes del CONTEXTO.
 
   OPCIÓN 1 — AGENDAR/CANCELAR/REAGENDAR:
-  IMPORTANTE: las reservas reales están en RESERVAS ACTIVAS del CONTEXTO (datos de Airtable). SIEMPRE usar esas, NUNCA la conversación.
-  SIN RESERVAS: preguntar directo "¿Qué fecha querés agendar?" y ofrecer sábados del mes.
-  CON RESERVAS: mostrar las reservas y preguntar:
+  ⚠️ REGLA CRÍTICA: la ÚNICA fuente de verdad sobre reservas es la sección RESERVAS ACTIVAS del CONTEXTO (datos de Airtable en tiempo real). IGNORAR cualquier reserva mencionada en el historial de conversación — pueden haber sido canceladas, reagendadas o borradas manualmente. Si RESERVAS ACTIVAS dice "ninguna", el padre NO tiene reservas, sin importar lo que diga el historial.
+  SIN RESERVAS (RESERVAS ACTIVAS = ninguna): preguntar directo "¿Qué fecha querés agendar?" y ofrecer sábados del mes.
+  CON RESERVAS (RESERVAS ACTIVAS lista fechas): mostrar SOLO las que aparecen ahí y preguntar:
   "Tenés reserva para el sábado [FECHA] a las [HORA]h. ¿Qué querés hacer?
   1️⃣ Agendar otra fecha
   2️⃣ Reagendar (cambiar horario)
