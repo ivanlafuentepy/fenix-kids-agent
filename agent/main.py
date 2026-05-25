@@ -2279,6 +2279,7 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         contexto += "  (sin hijos registrados)\n"
 
     # Reservas activas de esta familia (solo futuras) — se retorna por separado
+    # FAMILIA es un lookup (texto), no record link — FIND funciona con ARRAYJOIN({FAMILIA})
     _reservas_texto = ""
     try:
         from agent.airtable_client import _get_records, _RESERVAS
@@ -2286,9 +2287,12 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         from zoneinfo import ZoneInfo
         _hoy_py = _dt_cls.now(ZoneInfo("America/Asuncion")).date()
         _hoy_str = _hoy_py.isoformat()
-        # IS_AFTER es estricto (no incluye hoy), así que usamos el día anterior
-        _ayer_str = (_hoy_py - __import__('datetime').timedelta(days=1)).isoformat()
-        _formula = f"AND(FIND('{familia['id']}', ARRAYJOIN({{FAMILIAS}})), IS_AFTER({{FECHA}}, '{_ayer_str}'))"
+        _nombre_familia = campos.get("FAMILIA", "")
+        if not _nombre_familia:
+            _ap_padre = campos.get("APELLIDO PADRE", "")
+            _ap_madre = campos.get("APELLIDO MADRE", "")
+            _nombre_familia = f"FAMILIA {_ap_padre} {_ap_madre}".strip()
+        _formula = f"FIND('{_nombre_familia}', ARRAYJOIN({{FAMILIA}}))"
         _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=50)
         reservas_futuras = []
         for _rr in _reservas_raw:
