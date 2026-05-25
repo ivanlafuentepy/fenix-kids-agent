@@ -60,7 +60,7 @@ async def ejecutar_post_hooks(tool_name: str, params: dict, result: dict, contex
 # ══════════════════════════════════════════════════════════════════
 
 _TOOLS_CON_HORA = {
-    "confirmar_reserva", "agendar_clase", "cancelar_reserva",
+    "confirmar_reserva", "gestionar_reserva",
     "consultar_disponibilidad", "consultar_agendados", "reagendar_clase",
 }
 
@@ -163,11 +163,12 @@ async def notificar_telegram(tool_name: str, params: dict, result: dict, context
     if result.get("error"):
         return result
 
-    if tool_name in ("agendar_clase", "cancelar_reserva", "confirmar_reserva"):
+    if tool_name in ("gestionar_reserva", "confirmar_reserva"):
         try:
             from agent.telegram_bridge import notificar_llamada_urgente
             telefono = context.get("telefono", "")
-            accion = "RESERVA" if tool_name in ("agendar_clase", "confirmar_reserva") else "CANCELACIÓN"
+            _accion_result = result.get("cancelada")
+            accion = "CANCELACIÓN" if _accion_result else "RESERVA"
             fecha = result.get("fecha", result.get("fecha_display", ""))
             hora = result.get("hora", "")
             hijos = result.get("hijos", "")

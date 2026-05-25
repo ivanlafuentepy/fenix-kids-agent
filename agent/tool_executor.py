@@ -8,7 +8,7 @@ from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
 from agent.tools.escalacion import escalar_a_humano
 from agent.tools.disponibilidad import consultar_disponibilidad
 from agent.tools.llamada import programar_llamada
-from agent.tools.agenda import agendar_clase, cancelar_reserva, reagendar_clase_aurora
+from agent.tools.agenda import gestionar_reserva
 # registrar_familia y registrar_hijo se manejan en onboarding, no como tools de Aurora
 
 logger = logging.getLogger("agentkit")
@@ -22,16 +22,14 @@ _TOOLS = {
     "consultar_disponibilidad": consultar_disponibilidad,
     "programar_llamada": programar_llamada,
     # Aurora
-    "agendar_clase": agendar_clase,
-    "cancelar_reserva": cancelar_reserva,
-    "reagendar_reserva": reagendar_clase_aurora,
+    "gestionar_reserva": gestionar_reserva,
 }
 
 # Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
 _TOOLS_CON_TELEFONO = {*_TOOLS.keys()}  # todas necesitan teléfono
 
 # Tools que necesitan familia_id (Aurora: operaciones sobre familias inscriptas)
-_TOOLS_CON_FAMILIA = {"agendar_clase", "cancelar_reserva", "reagendar_reserva"}
+_TOOLS_CON_FAMILIA = {"gestionar_reserva"}
 
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:

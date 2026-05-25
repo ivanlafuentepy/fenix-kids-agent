@@ -3583,6 +3583,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if _USE_TOOL_USE and agent_actual in ("ivan", "aurora"):
                 # Flujo con Tool Use — Ivan y Aurora usan tools distintas
                 _tools_lista = TOOLS_AURORA if agent_actual == "aurora" else TOOLS_IVAN
+                # Forzar gestionar_reserva cuando Aurora está en flujo de reservas
+                _tool_choice_override = None
+                if agent_actual == "aurora":
+                    _texto_lower = texto.lower().strip()
+                    _es_reserva = any(k in _texto_lower for k in (
+                        "agendar", "reagendar", "cancelar", "cambiar",
+                        "11:00", "15:30", "11h", "15h", "/5", "/6", "/7",
+                    )) or (
+                        # Fecha + hora: "sab 30 11h", "6/6 15:30", etc.
+                        re.search(r'\d{1,2}[/\s]', _texto_lower) and re.search(r'1[15]', _texto_lower)
+                    )
+                    if _es_reserva:
+                        _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
+                        logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,
                     historial=historial,
@@ -3592,6 +3606,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     tools=_tools_lista,
                     tool_executor=lambda n, p: ejecutar_tool(n, p, telefono),
                     context={"telefono": telefono, "agent_actual": agent_actual},
+                    tool_choice=_tool_choice_override,
                 )
                 # Procesar acciones de tools
                 for _ta in _tool_acciones:
@@ -3867,7 +3882,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.error(f"[AURORA] Error creando niño: {e}")
 
         # ── Detectar cancelación de reserva por Aurora ─────────────────────
-        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower() and "cancelar_reserva" not in _tool_names_used:
+        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower() and "gestionar_reserva" not in _tool_names_used:
             try:
                 # Extraer fecha de "cancelé la reserva de X del sábado 2 de mayo a las 11:00h"
                 _m_cancel = re.search(
@@ -3902,7 +3917,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Guard: para Ivan, solo procesar si el lead YA pagó (comprobante recibido).
         # Sin esto, frases pre-pago como "tiene su lugar el sábado X" disparan
         # notificación de agenda + PAGO en Airtable antes de que el lead pague.
-        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "agendar_clase" not in _tool_names_used and "confirmar_reserva" not in _tool_names_used else []
+        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "gestionar_reserva" not in _tool_names_used and "confirmar_reserva" not in _tool_names_used else []
         if confirmaciones and agent_actual == "ivan":
             _hist_reciente = await obtener_historial(telefono, limite=10)
             _pago_en_historial = any(

@@ -1,5 +1,5 @@
-# agent/tools/agenda.py — Agendar y cancelar clases para familias inscriptas
-# Solo Aurora. Reemplaza la detección regex de "tiene su lugar" y "cancelé la reserva".
+# agent/tools/agenda.py — Gestión de reservas para familias inscriptas
+# Solo Aurora. Una sola tool unificada: gestionar_reserva.
 
 import os
 import logging
@@ -18,18 +18,29 @@ from agent.airtable_client import (
 logger = logging.getLogger("agentkit")
 
 
-async def agendar_clase(
+async def gestionar_reserva(
     telefono: str,
-    fecha: str,
-    hora: str,
+    accion: str,
+    fecha: str | None = None,
+    hora: str | None = None,
     familia_id: str | None = None,
 ) -> dict:
     """
-    Crea RESERVA para TODOS los hijos de la familia inscripta.
-    Multi-hijo por defecto: si la familia tiene 3 hijos, los 3 quedan agendados.
-
-    Requiere familia_id (inyectado por executor) o lo resuelve por teléfono.
+    Tool unificada para agendar, reagendar y cancelar reservas.
+    - agendar: crea reserva nueva para todos los hijos
+    - reagendar: busca reserva actual en Airtable, cancela, crea nueva
+    - cancelar: cancela reservas de la fecha/hora indicada
     """
+    accion = accion.lower().strip()
+
+    if accion not in ("agendar", "reagendar", "cancelar"):
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": f"Acción '{accion}' no válida. Usar: agendar, reagendar, cancelar.",
+        }
+
     # Resolver familia
     if not familia_id:
         fam = await buscar_familia_por_telefono(telefono)
@@ -40,20 +51,36 @@ async def agendar_clase(
             "error": True,
             "error_category": "business",
             "is_retryable": False,
-            "message": "No encontré una familia registrada para este número. Primero hay que registrar la familia.",
+            "message": "No encontré una familia registrada para este número.",
         }
 
-    # Obtener hijos
+    if accion == "agendar":
+        return await _agendar(telefono, fecha, hora, familia_id)
+    elif accion == "reagendar":
+        return await _reagendar(telefono, fecha, hora, familia_id)
+    elif accion == "cancelar":
+        return await _cancelar(telefono, fecha, hora, familia_id)
+
+
+async def _agendar(telefono: str, fecha: str, hora: str, familia_id: str) -> dict:
+    """Crea RESERVA para TODOS los hijos de la familia."""
+    if not fecha or not hora:
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": True,
+            "message": "Necesito fecha y hora para agendar.",
+        }
+
     ninos = await obtener_ninos_de_familia(familia_id)
     if not ninos:
         return {
             "error": True,
             "error_category": "business",
             "is_retryable": False,
-            "message": "La familia no tiene hijos registrados. Primero hay que registrar al menos un hijo.",
+            "message": "La familia no tiene hijos registrados.",
         }
 
-    # Obtener o crear horario
     horario_id = await obtener_o_crear_horario(fecha, hora)
     if not horario_id:
         return {
@@ -63,7 +90,6 @@ async def agendar_clase(
             "message": f"No pude crear el horario {fecha} {hora} en Airtable.",
         }
 
-    # Crear reserva nueva para cada hijo
     reservados = []
     reserva_ids = []
     for nino in ninos:
@@ -84,45 +110,107 @@ async def agendar_clase(
         }
 
     hijos_str = " y ".join(reservados)
-    texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
-
-    enviar_admin = False
-    mensaje_admin = ""
-
     return {
-        "texto": texto,
+        "texto": f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h.",
         "agendada": True,
         "fecha": fecha,
         "hora": hora,
         "hijos": hijos_str,
         "cantidad": len(reservados),
         "reserva_ids": reserva_ids,
-        "enviar_admin": enviar_admin,
-        "mensaje_admin": mensaje_admin,
+        "enviar_admin": False,
+        "mensaje_admin": "",
     }
 
 
-async def cancelar_reserva(
-    telefono: str,
-    fecha: str,
-    hora: str | None = None,
-    familia_id: str | None = None,
-) -> dict:
-    """
-    Cancela reservas de la familia para un sábado (+ hora opcional).
-    Si no se especifica hora, cancela todos los turnos de ese día.
-    """
-    # Resolver familia
-    if not familia_id:
-        fam = await buscar_familia_por_telefono(telefono)
-        if fam:
-            familia_id = fam["id"]
-    if not familia_id:
+async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_id: str) -> dict:
+    """Busca reserva actual en Airtable, cancela, crea nueva."""
+    if not fecha_nueva or not hora_nueva:
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": True,
+            "message": "Necesito la nueva fecha y hora para reagendar.",
+        }
+
+    # Buscar reserva actual en Airtable (por familia)
+    from agent.airtable_client import _get_records, _RESERVAS
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    _hoy = datetime.now(ZoneInfo("America/Asuncion")).date()
+
+    # Buscar familia por nombre (lookup texto, no record link)
+    fam_record = await _get_records("FAMILIAS FENIX", formula=f"RECORD_ID()='{familia_id}'", max_records=1)
+    if not fam_record:
+        return {"error": True, "error_category": "business", "is_retryable": False, "message": "Familia no encontrada."}
+
+    nombre_familia = fam_record[0].get("fields", {}).get("FAMILIA", "")
+    if not nombre_familia:
+        campos = fam_record[0].get("fields", {})
+        nombre_familia = f"FAMILIA {campos.get('APELLIDO PADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
+
+    reservas = await _get_records(_RESERVAS, formula=f"FIND('{nombre_familia}', ARRAYJOIN({{FAMILIA}}))", max_records=50)
+
+    # Filtrar solo futuras
+    reservas_futuras = []
+    for r in reservas:
+        f = r.get("fields", {})
+        _fecha = f.get("FECHA", "")
+        if isinstance(_fecha, list):
+            _fecha = _fecha[0] if _fecha else ""
+        if _fecha >= _hoy.isoformat():
+            _hora = f.get("HORA", "")
+            if isinstance(_hora, list):
+                _hora = _hora[0] if _hora else ""
+            reservas_futuras.append({"id": r["id"], "fecha": _fecha, "hora": _hora})
+
+    if not reservas_futuras:
         return {
             "error": True,
             "error_category": "business",
             "is_retryable": False,
-            "message": "No encontré una familia registrada para este número.",
+            "message": "No hay reservas activas para reagendar. Usar agendar en su lugar.",
+        }
+
+    # Cancelar todas las reservas futuras actuales
+    fecha_actual = reservas_futuras[0]["fecha"]
+    hora_actual = reservas_futuras[0]["hora"]
+    for r in reservas_futuras:
+        await _delete(_RESERVAS, r["id"])
+        logger.info(f"[REAGENDAR] Borrada reserva {r['id']} ({r['fecha']} {r['hora']})")
+
+    # Crear nueva
+    result = await _agendar(telefono, fecha_nueva, hora_nueva, familia_id)
+    if result.get("error"):
+        return result
+
+    hijos = result.get("hijos", "?")
+    return {
+        "texto": f"Reserva reagendada para {hijos}: del {fecha_actual} {hora_actual}h al {fecha_nueva} {hora_nueva}h.",
+        "reagendada": True,
+        "agendada": True,
+        "fecha": fecha_nueva,
+        "hora": hora_nueva,
+        "hijos": hijos,
+        "reserva_ids": result.get("reserva_ids", []),
+        "enviar_admin": True,
+        "mensaje_admin": (
+            f"🔄 REAGENDAMIENTO\n"
+            f"{hijos}: {fecha_actual} {hora_actual} → {fecha_nueva} {hora_nueva}\n"
+            f"📱 https://wa.me/{telefono}"
+        ),
+    }
+
+
+async def _cancelar(telefono: str, fecha: str, hora: str | None, familia_id: str) -> dict:
+    """Cancela reservas de la familia para una fecha/hora."""
+    if not fecha:
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": True,
+            "message": "Necesito la fecha para cancelar.",
         }
 
     try:
@@ -152,44 +240,3 @@ async def cancelar_reserva(
             "is_retryable": True,
             "message": f"Error cancelando reservas: {e}",
         }
-
-
-async def reagendar_clase_aurora(
-    telefono: str,
-    fecha_actual: str,
-    hora_actual: str,
-    fecha_nueva: str,
-    hora_nueva: str,
-    familia_id: str | None = None,
-) -> dict:
-    """
-    Reagenda una clase inscripta: cancela la reserva vieja y crea la nueva.
-    Una sola tool, una sola llamada. Sin duplicados.
-    """
-    # Cancelar la vieja
-    result_cancel = await cancelar_reserva(telefono, fecha_actual, hora_actual, familia_id)
-    if result_cancel.get("error"):
-        return result_cancel
-
-    # Crear la nueva
-    result_agendar = await agendar_clase(telefono, fecha_nueva, hora_nueva, familia_id)
-    if result_agendar.get("error"):
-        return result_agendar
-
-    hijos = result_agendar.get("hijos", "?")
-    return {
-        "texto": f"Reserva reagendada para {hijos}: del {fecha_actual} {hora_actual}h al {fecha_nueva} {hora_nueva}h.",
-        "reagendada": True,
-        "fecha_anterior": fecha_actual,
-        "hora_anterior": hora_actual,
-        "fecha_nueva": fecha_nueva,
-        "hora_nueva": hora_nueva,
-        "hijos": hijos,
-        "reserva_ids": result_agendar.get("reserva_ids", []),
-        "enviar_admin": True,
-        "mensaje_admin": (
-            f"🔄 REAGENDAMIENTO\n"
-            f"{hijos}: {fecha_actual} {hora_actual} → {fecha_nueva} {hora_nueva}\n"
-            f"📱 https://wa.me/{telefono}"
-        ),
-    }

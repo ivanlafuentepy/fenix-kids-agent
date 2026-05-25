@@ -154,58 +154,33 @@ TOOLS_IVAN = [
 
 TOOLS_AURORA = [
     {
-        "name": "agendar_clase",
+        "name": "gestionar_reserva",
         "description": (
-            "Crea RESERVA para todos los hijos de la familia inscripta en un sábado y horario. "
-            "Por defecto reserva a TODOS los hijos. Si el padre dice solo un nombre, mencionar "
-            "que se reservó para todos y confirmar si quiere cambiar algo. "
-            "Retorna: {agendada: bool, fecha, hora, hijos, cantidad}. "
-            "Usar cuando el padre dice que quiere ir, quiere agendar, reservar o confirmar asistencia. "
-            "NO usar para leads (solo familias inscriptas). "
-            "NO usar sin fecha Y hora confirmadas por el padre."
+            "Gestiona reservas de clases para familias inscriptas. "
+            "Acciones: agendar (crear reserva nueva), reagendar (cambiar fecha/hora), cancelar. "
+            "Para reagendar, la tool busca la reserva actual en Airtable automáticamente. "
+            "SIEMPRE usar esta tool cuando el padre quiere agendar, reagendar o cancelar. "
+            "NUNCA responder sobre reservas sin usar esta tool."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "accion": {
+                    "type": "string",
+                    "enum": ["agendar", "reagendar", "cancelar"],
+                    "description": "Qué hacer: agendar (nueva), reagendar (cambiar existente), cancelar.",
+                },
                 "fecha": {
                     "type": "string",
-                    "description": (
-                        "Fecha del sábado (ISO o texto: '31 de mayo', 'sábado 31', '31/5'). "
-                        "Se valida que sea sábado."
-                    ),
+                    "description": "Fecha del sábado (ISO o texto: '31 de mayo', '31/5', '6/6'). Para reagendar es la fecha NUEVA.",
                 },
                 "hora": {
                     "type": "string",
                     "enum": ["11:00", "15:30"],
-                    "description": "Hora del turno.",
+                    "description": "Hora del turno. Para reagendar es la hora NUEVA.",
                 },
             },
-            "required": ["fecha", "hora"],
-        },
-    },
-    {
-        "name": "cancelar_reserva",
-        "description": (
-            "Cancela las reservas de la familia para un sábado. "
-            "Si se indica hora, cancela solo ese turno. Si no, cancela todos los turnos del día. "
-            "Retorna: {cancelada: bool, cantidad_borradas: int}. "
-            "Usar cuando el padre dice que no puede ir, quiere cancelar, o no va a asistir. "
-            "NO usar para reagendar (usar reagendar_clase)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "fecha": {
-                    "type": "string",
-                    "description": "Fecha del sábado a cancelar.",
-                },
-                "hora": {
-                    "type": "string",
-                    "enum": ["11:00", "15:30"],
-                    "description": "Hora del turno a cancelar. Omitir para cancelar todo el día.",
-                },
-            },
-            "required": ["fecha"],
+            "required": ["accion"],
         },
     },
     {
@@ -213,11 +188,9 @@ TOOLS_AURORA = [
         "description": (
             "Transfiere la conversación al Profe Ivan real (humano). "
             "El agente se silencia y el admin recibe alerta con resumen en WhatsApp y Telegram. "
-            "Retorna: {escalado: bool, texto: mensaje para el padre}. "
             "Usar cuando: no sabés la respuesta, el padre pide hablar con una persona, "
             "el tema es sensible, o la pregunta está fuera del ámbito. "
-            "NO usar para preguntas operativas que podés resolver con las otras herramientas. "
-            "Después de escalar, NO seguir respondiendo — esperar a que el humano retome."
+            "Después de escalar, NO seguir respondiendo."
         ),
         "input_schema": {
             "type": "object",
@@ -235,49 +208,10 @@ TOOLS_AURORA = [
                 },
                 "resumen": {
                     "type": "string",
-                    "description": (
-                        "Resumen breve para el admin: qué preguntó el padre, "
-                        "qué intentaste resolver, qué debería hacer el admin."
-                    ),
+                    "description": "Resumen breve para el admin.",
                 },
             },
             "required": ["motivo", "resumen"],
-        },
-    },
-    {
-        "name": "reagendar_reserva",
-        "description": (
-            "Reagenda una clase inscripta: cancela la reserva vieja y crea la nueva en una sola operación. "
-            "Requiere los 4 datos: fecha/hora actual (la que se va a cancelar) y fecha/hora nueva. "
-            "Retorna: {reagendada: bool, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, hijos}. "
-            "Usar cuando el padre quiere CAMBIAR una reserva existente a otra fecha u horario. "
-            "Aurora ya le mostró la reserva actual, así que tiene fecha_actual y hora_actual. "
-            "NO usar para crear reserva nueva sin tener una existente (usar agendar_clase). "
-            "NO usar para cancelar sin reagendar (usar cancelar_reserva)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "fecha_actual": {
-                    "type": "string",
-                    "description": "Fecha de la reserva que se cancela (ISO o texto).",
-                },
-                "hora_actual": {
-                    "type": "string",
-                    "enum": ["11:00", "15:30"],
-                    "description": "Hora de la reserva que se cancela.",
-                },
-                "fecha_nueva": {
-                    "type": "string",
-                    "description": "Fecha nueva para la clase (ISO o texto).",
-                },
-                "hora_nueva": {
-                    "type": "string",
-                    "enum": ["11:00", "15:30"],
-                    "description": "Hora nueva para la clase.",
-                },
-            },
-            "required": ["fecha_actual", "hora_actual", "fecha_nueva", "hora_nueva"],
         },
     },
 ]
