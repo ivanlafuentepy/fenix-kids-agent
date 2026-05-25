@@ -119,16 +119,15 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"¿Te gustaría inscribirte de una o agendar una prueba por 100mil para {nombre_hijo}?\n\n"
+            f"Por solo 100mil gs ya podés traerle a {nombre_hijo} a probar, o podés inscribirte de una. ¿Cuál te interesa más? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo un rato "
-            "así te explico todo 😊"
+            "así te explico todo 🤝"
         )
     else:
-        # Sin nombre del hijo → CTA genérico sin preguntar nombre de nuevo
         return (
-            "¿Te gustaría inscribirte de una o agendar una prueba por 100mil?\n\n"
+            "Por solo 100mil gs ya podés venir a probar, o podés inscribirte de una. ¿Cuál te interesa más? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo "
-            "un rato así te explico todo 😊"
+            "un rato así te explico todo 🤝"
         )
 
 
@@ -147,15 +146,16 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
         await asyncio.sleep(3)
 
         msg_hermanos = (
-            "👦👦 *Hermanos (+50mil c/u extra):*\n\n"
-            "*Prueba:*\n"
+            "👦👦 *Hermanos:*\n\n"
+            "*Prueba (+50mil c/u extra):*\n"
             "1 hijo: 100.000 Gs\n"
             "2 hermanos: 150.000 Gs\n"
             "3 hermanos: 200.000 Gs\n\n"
-            "*Mensual:*\n"
-            "1 hijo: 300.000 Gs\n"
-            "2 hermanos: 350.000 Gs\n"
-            "3 hermanos: 400.000 Gs"
+            "*Mensual (+100mil c/u extra):*\n"
+            "1 hijo: 230.000 Gs\n"
+            "2 hermanos: 330.000 Gs\n"
+            "3 hermanos: 430.000 Gs\n\n"
+            "📋 *Matrícula anual:* 100.000 Gs (una sola vez por familia)"
         )
         await proveedor.enviar_mensaje(telefono, msg_hermanos)
         await guardar_mensaje(telefono, "assistant", msg_hermanos)
@@ -198,9 +198,10 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         msg_precios = (
             "🌳 *Probá FENIX (padres entran gratis):*\n\n"
             "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
-            "📅 *Mensual:* 300.000 Gs (4 sábados)\n\n"
-            "+50.000 por cada hijo extra\n\n"
-            "¿Te gustaría inscribirte de una o agendar una prueba por 100mil?"
+            "📅 *Mensual:* 230.000 Gs (4 sábados)\n"
+            "📋 *Matrícula anual:* 100.000 Gs (una vez por familia)\n\n"
+            "+50mil por hermano en prueba | +100mil por hermano en mensual\n\n"
+            "¿Querés venir a probar o inscribirte de una?"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)

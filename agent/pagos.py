@@ -33,9 +33,9 @@ PRECIOS = {
     "prueba": {"cuota": 100_000, "matricula": 0, "total": 100_000, "label": "PRUEBA 100K (1 hijo)"},
     "prueba_2": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (2 hermanos)"},
     "prueba_3": {"cuota": 200_000, "matricula": 0, "total": 200_000, "label": "PRUEBA 200K (3 hermanos)"},
-    "mensual": {"cuota": 300_000, "matricula": 0, "total": 300_000, "label": "MENSUAL 300K (1 hijo)"},
-    "mensual_2": {"cuota": 350_000, "matricula": 0, "total": 350_000, "label": "MENSUAL 350K (2 hermanos)"},
-    "mensual_3": {"cuota": 400_000, "matricula": 0, "total": 400_000, "label": "MENSUAL 400K (3 hermanos)"},
+    "mensual": {"cuota": 230_000, "matricula": 100_000, "total": 330_000, "label": "MENSUAL 230K + MATRÍCULA 100K (1 hijo)"},
+    "mensual_2": {"cuota": 330_000, "matricula": 100_000, "total": 430_000, "label": "MENSUAL 330K + MATRÍCULA 100K (2 hermanos)"},
+    "mensual_3": {"cuota": 430_000, "matricula": 100_000, "total": 530_000, "label": "MENSUAL 430K + MATRÍCULA 100K (3 hermanos)"},
 }
 
 
