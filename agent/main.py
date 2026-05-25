@@ -6660,6 +6660,8 @@ async def _enviar_afiche_horarios(telefono: str, topic_id: int | None, tg_group:
         ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
         if ok:
             logger.info(f"[AFICHE HORARIOS] Imagen enviada a {telefono}")
+            await asyncio.sleep(3)
+            await proveedor.enviar_mensaje(telefono, "¿Te gustaría agendar un sábado? 🌳")
         else:
             logger.error(f"[AFICHE HORARIOS] Error enviando imagen a {telefono}")
 
