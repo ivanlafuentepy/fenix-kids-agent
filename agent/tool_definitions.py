@@ -190,7 +190,7 @@ TOOLS_AURORA = [
             "Si se indica hora, cancela solo ese turno. Si no, cancela todos los turnos del día. "
             "Retorna: {cancelada: bool, cantidad_borradas: int}. "
             "Usar cuando el padre dice que no puede ir, quiere cancelar, o no va a asistir. "
-            "NO usar para reagendar (primero cancelar, luego agendar)."
+            "NO usar para reagendar (usar reagendar_clase)."
         ),
         "input_schema": {
             "type": "object",
@@ -327,6 +327,42 @@ TOOLS_AURORA = [
                 },
             },
             "required": ["motivo", "resumen"],
+        },
+    },
+    {
+        "name": "reagendar_reserva",
+        "description": (
+            "Reagenda una clase inscripta: cancela la reserva vieja y crea la nueva en una sola operación. "
+            "Requiere los 4 datos: fecha/hora actual (la que se va a cancelar) y fecha/hora nueva. "
+            "Retorna: {reagendada: bool, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, hijos}. "
+            "Usar cuando el padre quiere CAMBIAR una reserva existente a otra fecha u horario. "
+            "Aurora ya le mostró la reserva actual, así que tiene fecha_actual y hora_actual. "
+            "NO usar para crear reserva nueva sin tener una existente (usar agendar_clase). "
+            "NO usar para cancelar sin reagendar (usar cancelar_reserva)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fecha_actual": {
+                    "type": "string",
+                    "description": "Fecha de la reserva que se cancela (ISO o texto).",
+                },
+                "hora_actual": {
+                    "type": "string",
+                    "enum": ["11:00", "15:30"],
+                    "description": "Hora de la reserva que se cancela.",
+                },
+                "fecha_nueva": {
+                    "type": "string",
+                    "description": "Fecha nueva para la clase (ISO o texto).",
+                },
+                "hora_nueva": {
+                    "type": "string",
+                    "enum": ["11:00", "15:30"],
+                    "description": "Hora nueva para la clase.",
+                },
+            },
+            "required": ["fecha_actual", "hora_actual", "fecha_nueva", "hora_nueva"],
         },
     },
 ]

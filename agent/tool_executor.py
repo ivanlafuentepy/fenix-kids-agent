@@ -8,7 +8,7 @@ from agent.tools.reservas import reagendar_clase, confirmar_reserva_prueba
 from agent.tools.escalacion import escalar_a_humano
 from agent.tools.disponibilidad import consultar_disponibilidad, consultar_agendados
 from agent.tools.llamada import programar_llamada
-from agent.tools.agenda import agendar_clase, cancelar_reserva
+from agent.tools.agenda import agendar_clase, cancelar_reserva, reagendar_clase_aurora
 from agent.tools.registro import registrar_familia, registrar_hijo
 
 logger = logging.getLogger("agentkit")
@@ -24,6 +24,7 @@ _TOOLS = {
     # Aurora
     "agendar_clase": agendar_clase,
     "cancelar_reserva": cancelar_reserva,
+    "reagendar_reserva": reagendar_clase_aurora,
     "consultar_agendados": consultar_agendados,
     "registrar_familia": registrar_familia,
     "registrar_hijo": registrar_hijo,
@@ -33,7 +34,7 @@ _TOOLS = {
 _TOOLS_CON_TELEFONO = {*_TOOLS.keys()}  # todas necesitan teléfono
 
 # Tools que necesitan familia_id (Aurora: operaciones sobre familias inscriptas)
-_TOOLS_CON_FAMILIA = {"agendar_clase", "cancelar_reserva", "registrar_hijo", "registrar_familia", "consultar_agendados"}
+_TOOLS_CON_FAMILIA = {"agendar_clase", "cancelar_reserva", "reagendar_reserva", "registrar_hijo", "registrar_familia", "consultar_agendados"}
 
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:

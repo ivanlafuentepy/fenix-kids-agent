@@ -63,30 +63,6 @@ async def agendar_clase(
             "message": f"No pude crear el horario {fecha} {hora} en Airtable.",
         }
 
-    # Borrar reservas del MISMO DÍA (evita duplicados al reagendar)
-    # NO toca reservas de otros días
-    from agent.airtable_client import _delete
-    reservas_existentes = await _get_records(
-        _RESERVAS,
-        formula=f"FIND('{familia_id}', ARRAYJOIN({{FAMILIAS}}))",
-        max_records=50,
-    )
-    _borradas = 0
-    for _rex in reservas_existentes:
-        _rf = _rex.get("fields", {})
-        _fecha_res = _rf.get("FECHA", "")
-        if isinstance(_fecha_res, list):
-            _fecha_res = _fecha_res[0] if _fecha_res else ""
-        if _fecha_res == fecha:
-            await _delete(_RESERVAS, _rex["id"])
-            _borradas += 1
-            _hora_vieja = _rf.get("HORA", "")
-            if isinstance(_hora_vieja, list):
-                _hora_vieja = _hora_vieja[0] if _hora_vieja else ""
-            logger.info(f"[AGENDA] Reserva del mismo día borrada: {_rex['id']} ({_fecha_res} {_hora_vieja})")
-    if _borradas:
-        logger.info(f"[AGENDA] {_borradas} reserva(s) del {fecha} borradas antes de crear nueva")
-
     # Crear reserva nueva para cada hijo
     reservados = []
     for nino in ninos:
@@ -106,20 +82,10 @@ async def agendar_clase(
         }
 
     hijos_str = " y ".join(reservados)
-    if _borradas:
-        texto = f"Reserva reagendada para {hijos_str} al sábado {fecha} a las {hora}h."
-    else:
-        texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
+    texto = f"Reserva confirmada para {hijos_str} el sábado {fecha} a las {hora}h."
 
-    # Notificar al admin si fue reagendamiento
-    enviar_admin = bool(_borradas)
+    enviar_admin = False
     mensaje_admin = ""
-    if _borradas:
-        mensaje_admin = (
-            f"🔄 REAGENDAMIENTO\n"
-            f"{hijos_str} → {fecha} {hora}h\n"
-            f"📱 https://wa.me/{telefono}"
-        )
 
     return {
         "texto": texto,
@@ -183,3 +149,43 @@ async def cancelar_reserva(
             "is_retryable": True,
             "message": f"Error cancelando reservas: {e}",
         }
+
+
+async def reagendar_clase_aurora(
+    telefono: str,
+    fecha_actual: str,
+    hora_actual: str,
+    fecha_nueva: str,
+    hora_nueva: str,
+    familia_id: str | None = None,
+) -> dict:
+    """
+    Reagenda una clase inscripta: cancela la reserva vieja y crea la nueva.
+    Una sola tool, una sola llamada. Sin duplicados.
+    """
+    # Cancelar la vieja
+    result_cancel = await cancelar_reserva(telefono, fecha_actual, hora_actual, familia_id)
+    if result_cancel.get("error"):
+        return result_cancel
+
+    # Crear la nueva
+    result_agendar = await agendar_clase(telefono, fecha_nueva, hora_nueva, familia_id)
+    if result_agendar.get("error"):
+        return result_agendar
+
+    hijos = result_agendar.get("hijos", "?")
+    return {
+        "texto": f"Reserva reagendada para {hijos}: del {fecha_actual} {hora_actual}h al {fecha_nueva} {hora_nueva}h.",
+        "reagendada": True,
+        "fecha_anterior": fecha_actual,
+        "hora_anterior": hora_actual,
+        "fecha_nueva": fecha_nueva,
+        "hora_nueva": hora_nueva,
+        "hijos": hijos,
+        "enviar_admin": True,
+        "mensaje_admin": (
+            f"🔄 REAGENDAMIENTO\n"
+            f"{hijos}: {fecha_actual} {hora_actual} → {fecha_nueva} {hora_nueva}\n"
+            f"📱 https://wa.me/{telefono}"
+        ),
+    }
