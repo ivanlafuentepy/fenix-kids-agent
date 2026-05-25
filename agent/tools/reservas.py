@@ -224,10 +224,12 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
     fecha_display = f"sábado {d.day} de {meses_es[d.month - 1]}"
 
     hijos_confirmados = []
+    prueba_ids = []
     for pr in pruebas:
         f = pr.get("fields", {})
         await _patch(_PRUEBAS, pr["id"], {"FECHA RESERVA": fecha_iso, "HORA": hora})
         hijos_confirmados.append(f.get("NOMBRE HIJO", "?"))
+        prueba_ids.append(pr["id"])
         logger.info(f"[CONFIRMAR-TOOL] {f.get('NOMBRE HIJO', '?')} ({telefono}): {fecha_iso} {hora}")
 
     hijos_txt = ", ".join(hijos_confirmados)
@@ -253,5 +255,6 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
         "fecha_display": fecha_display,
         "hora": hora,
         "hijos": hijos_txt,
+        "prueba_ids": prueba_ids,
         **notificacion_admin,
     }

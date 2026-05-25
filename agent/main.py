@@ -537,12 +537,28 @@ async def health_check():
 
 @app.get("/checkin/{record_id}")
 async def checkin(record_id: str):
-    """Marca PRESENTE en Airtable al escanear QR de reserva."""
-    from agent.airtable_client import _get_records, _patch, _RESERVAS
+    """Marca PRESENTE en Airtable al escanear QR. Busca en RESERVAS FENIX y PRUEBA FENIX."""
+    from agent.airtable_client import _get_records, _patch, _RESERVAS, _PRUEBAS
 
-    # Buscar reserva por record_id
     formula = f"RECORD_ID()='{record_id}'"
+
+    # Buscar en RESERVAS FENIX (inscriptos)
     records = await _get_records(_RESERVAS, formula=formula, max_records=1)
+    tabla = _RESERVAS
+    if records:
+        fields = records[0].get("fields", {})
+        nombre_list = fields.get("NOMBRE COMPLETO", [])
+        nombre = nombre_list[0] if nombre_list else "Alumno"
+        hora_list = fields.get("HORA", [])
+        hora = hora_list[0] if hora_list else ""
+    else:
+        # Buscar en PRUEBA FENIX (leads)
+        records = await _get_records(_PRUEBAS, formula=formula, max_records=1)
+        tabla = _PRUEBAS
+        if records:
+            fields = records[0].get("fields", {})
+            nombre = fields.get("NOMBRE HIJO", "Alumno")
+            hora = fields.get("HORA", "")
 
     if not records:
         return HTMLResponse(
@@ -553,18 +569,6 @@ async def checkin(record_id: str):
             status_code=404,
         )
 
-    reserva = records[0]
-    fields = reserva.get("fields", {})
-
-    # Nombre del nino (lookup desde NINOS vinculados)
-    nombre_list = fields.get("NOMBRE COMPLETO", [])
-    nombre = nombre_list[0] if nombre_list else "Alumno"
-
-    # Hora (lookup desde HORARIOS)
-    hora_list = fields.get("HORA", [])
-    hora = hora_list[0] if hora_list else ""
-
-    # Si ya esta presente
     if fields.get("PRESENTE"):
         return HTMLResponse(
             "<html><body style='text-align:center;font-family:sans-serif;padding:40px'>"
@@ -573,11 +577,10 @@ async def checkin(record_id: str):
             "</body></html>"
         )
 
-    # Marcar presente + hora de check-in
     from datetime import datetime
     from zoneinfo import ZoneInfo
     ahora = datetime.now(ZoneInfo("America/Asuncion"))
-    await _patch(_RESERVAS, record_id, {
+    await _patch(tabla, record_id, {
         "PRESENTE": True,
         "HORA_CHECKIN": ahora.isoformat(),
     })
@@ -3625,8 +3628,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         if telefono != _admin_phone_tool:
                             await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
                     # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva
-                    _reserva_ids = _ta_result.get("reserva_ids", [])
-                    if _reserva_ids and (_ta_result.get("agendada") or _ta_result.get("reagendada")):
+                    _reserva_ids = _ta_result.get("reserva_ids", []) or _ta_result.get("prueba_ids", [])
+                    if _reserva_ids and (_ta_result.get("agendada") or _ta_result.get("reagendada") or _ta_result.get("confirmada")):
                         try:
                             from agent.qr import generar_qr
                             for _rid in _reserva_ids:
