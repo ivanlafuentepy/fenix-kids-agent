@@ -3588,29 +3588,32 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _tools_lista = TOOLS_AURORA if agent_actual == "aurora" else TOOLS_IVAN
                 # Forzar gestionar_reserva cuando Aurora está en flujo de reservas
                 _tool_choice_override = None
-                if agent_actual == "ivan":
-                    _texto_lower = texto.lower().strip()
-                    _es_reserva_ivan = any(k in _texto_lower for k in (
-                        "agendar", "reagendar", "cambiar",
-                        "11:00", "15:30", "11h", "15h",
-                    )) or (
-                        re.search(r'\d{1,2}[/\s]', _texto_lower) and re.search(r'1[15]', _texto_lower)
-                    )
-                    if _es_reserva_ivan:
-                        _tool_choice_override = {"type": "tool", "name": "gestionar_prueba"}
-                        logger.info(f"[IVAN] Forzando gestionar_prueba para: {texto[:50]}")
-                elif agent_actual == "aurora":
-                    _texto_lower = texto.lower().strip()
-                    _es_reserva = any(k in _texto_lower for k in (
-                        "agendar", "reagendar", "cancelar", "cambiar",
-                        "11:00", "15:30", "11h", "15h", "/5", "/6", "/7",
-                    )) or (
-                        # Fecha + hora: "sab 30 11h", "6/6 15:30", etc.
-                        re.search(r'\d{1,2}[/\s]', _texto_lower) and re.search(r'1[15]', _texto_lower)
-                    )
-                    if _es_reserva:
-                        _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
-                        logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
+                _texto_lower = texto.lower().strip()
+                # Detectar si el último mensaje del agente ofreció horarios
+                _ultimo_agente = ""
+                for _m in reversed(historial):
+                    if _m.get("role") == "assistant":
+                        _ultimo_agente = _m.get("content", "").lower()
+                        break
+                _agente_ofrecio_horarios = "11:00" in _ultimo_agente or "15:30" in _ultimo_agente
+                # Keywords explícitas de reservas
+                _keywords_reserva = any(k in _texto_lower for k in (
+                    "agendar", "reagendar", "cancelar", "cambiar", "reservar",
+                    "11:00", "15:30", "11h", "15h", "sab", "sábado",
+                ))
+                # Respuesta a oferta de horarios: "11", "15", "si", fecha, etc.
+                _responde_horario = _agente_ofrecio_horarios and (
+                    re.match(r'^(si|sí|dale|ok|va|11|15|sab)', _texto_lower)
+                    or re.search(r'\d{1,2}[/\s:h]', _texto_lower)
+                    or re.match(r'^\d{1,2}$', _texto_lower)
+                )
+
+                if agent_actual == "ivan" and (_keywords_reserva or _responde_horario):
+                    _tool_choice_override = {"type": "tool", "name": "gestionar_prueba"}
+                    logger.info(f"[IVAN] Forzando gestionar_prueba para: {texto[:50]}")
+                elif agent_actual == "aurora" and (_keywords_reserva or _responde_horario):
+                    _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
+                    logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,
                     historial=historial,
