@@ -150,6 +150,7 @@ async def generar_respuesta(
     tools: list[dict] | None = None,
     tool_executor: Callable | None = None,
     context: dict | None = None,
+    tool_choice: dict | None = None,
 ) -> str | tuple[str, list[dict]]:
     """
     Genera una respuesta usando Claude API. Soporta tool_use.
@@ -161,6 +162,7 @@ async def generar_respuesta(
         contexto_extra: Texto adicional inyectado al final del system prompt
         tools: Lista de tool schemas para Claude (opcional)
         tool_executor: Función async(nombre, params) → dict (requerida si tools)
+        tool_choice: Forzar uso de tools: {"type": "any"} o {"type": "tool", "name": "..."}
 
     Returns:
         Sin tools → str (retrocompatible)
@@ -205,6 +207,8 @@ async def generar_respuesta(
                 }
                 if _usa_tools:
                     api_kwargs["tools"] = tools
+                    if tool_choice and _round == 0:
+                        api_kwargs["tool_choice"] = tool_choice
 
                 async with asyncio.timeout(25):
                     response = await _client.messages.create(**api_kwargs)
