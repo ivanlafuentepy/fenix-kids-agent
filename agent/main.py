@@ -2224,9 +2224,11 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         from agent.airtable_client import _get_records, _RESERVAS
         from datetime import datetime as _dt_cls
         from zoneinfo import ZoneInfo
-        _hoy_str = _dt_cls.now(ZoneInfo("America/Asuncion")).date().isoformat()
-        # Filtrar en Airtable: solo reservas con fecha >= hoy
-        _formula = f"AND(FIND('{familia['id']}', ARRAYJOIN({{FAMILIAS}})), IS_AFTER({{FECHA}}, '{_hoy_str}'))"
+        _hoy_py = _dt_cls.now(ZoneInfo("America/Asuncion")).date()
+        _hoy_str = _hoy_py.isoformat()
+        # IS_AFTER es estricto (no incluye hoy), así que usamos el día anterior
+        _ayer_str = (_hoy_py - __import__('datetime').timedelta(days=1)).isoformat()
+        _formula = f"AND(FIND('{familia['id']}', ARRAYJOIN({{FAMILIAS}})), IS_AFTER({{FECHA}}, '{_ayer_str}'))"
         _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=50)
         reservas_futuras = []
         for _rr in _reservas_raw:
