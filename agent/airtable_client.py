@@ -338,7 +338,9 @@ async def actualizar_agent_lead(telefono: str, agent: str, modo_nixie: str | Non
     record_id = await obtener_lead_record_id(telefono)
     if not record_id:
         return False
-    campos: dict = {"AGENT_ACTUAL": agent.upper()}
+    # Airtable select tiene "IVAN" y "NIXIE" (no "AURORA")
+    _agent_airtable = "NIXIE" if agent.upper() == "AURORA" else agent.upper()
+    campos: dict = {"AGENT_ACTUAL": _agent_airtable}
     return await _patch(_LEADS, record_id, campos)
 
 
