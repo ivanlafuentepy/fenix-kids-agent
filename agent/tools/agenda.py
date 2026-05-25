@@ -194,12 +194,8 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
         "hora": hora_nueva,
         "hijos": hijos,
         "reserva_ids": result.get("reserva_ids", []),
-        "enviar_admin": True,
-        "mensaje_admin": (
-            f"🔄 REAGENDAMIENTO\n"
-            f"{hijos}: {fecha_actual} {hora_actual} → {fecha_nueva} {hora_nueva}\n"
-            f"📱 https://wa.me/{telefono}"
-        ),
+        "enviar_admin": False,
+        "mensaje_admin": "",
     }
 
 

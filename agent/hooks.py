@@ -165,15 +165,24 @@ async def notificar_telegram(tool_name: str, params: dict, result: dict, context
 
     if tool_name in ("gestionar_reserva", "confirmar_reserva"):
         try:
-            from agent.telegram_bridge import notificar_llamada_urgente
+            from agent.telegram_bridge import enviar_a_topic, obtener_o_crear_topic
             telefono = context.get("telefono", "")
-            _accion_result = result.get("cancelada")
-            accion = "CANCELACIÓN" if _accion_result else "RESERVA"
+            _es_cancelacion = result.get("cancelada")
+            _es_reagendada = result.get("reagendada")
+            if _es_cancelacion:
+                accion = "❌ CANCELACIÓN"
+            elif _es_reagendada:
+                accion = "🔄 REAGENDAMIENTO"
+            else:
+                accion = "✅ RESERVA"
             fecha = result.get("fecha", result.get("fecha_display", ""))
             hora = result.get("hora", "")
             hijos = result.get("hijos", "")
-            msg = f"📋 {accion}: {hijos} — {fecha} {hora}"
-            asyncio.create_task(notificar_llamada_urgente(telefono, msg, ""))
+            link = f"https://wa.me/{telefono}"
+            msg = f"📋 {accion}: {hijos} — {fecha} {hora}\n{link}"
+            topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
+            if topic_id:
+                asyncio.create_task(enviar_a_topic(topic_id, msg, telefono=telefono))
         except Exception as e:
             logger.error(f"[HOOK-POST] Error notificando Telegram: {e}")
 
