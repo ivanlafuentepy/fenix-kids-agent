@@ -3382,14 +3382,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if es_nuevo and agent_actual == "ivan" and len(historial) <= 1:
             _interceptado = True
             respuesta = (
-                "Hola! Te saluda el Profe Ivan de FENIX Kids Academy 🌳\n\n"
-                "Imaginate este sábado: tu hijo trepando árboles, corriendo al sol, "
-                "jugando frente al río, en una mansión de 3000m² rodeada de naturaleza 🔥\n\n"
-                "Eso es el PARQUE FENIX. Acá no hay pantallas, no hay paredes, no hay aburrimiento. "
-                "Hay tierra, árboles, desafíos reales y otros chicos como él.\n\n"
-                "Y la mejor parte: vos también entrenás con él. Tenemos un profe para los papás "
-                "en el mismo parque, al mismo tiempo. Van a salir los dos renovados 💪\n\n"
-                "¿Cómo se llama y qué edad tiene tu hijo? 🤝"
+                "Hola! Te saluda el profe Iván.\n\n"
+                "Te resumo rápido qué es Fenix Kids Academy.\n\n"
+                "Es tu hijo trepando árboles, enfrentando desafíos reales, aprendiendo a superar miedos "
+                "y desarrollando confianza a través de experiencias reales.\n\n"
+                "Todo esto sucede en nuestra mansión de más de 3.000 metros cuadrados, rodeada de naturaleza "
+                "y frente al río, en el barrio Itá Enramada de Asunción, a solo 10 minutos de la calle Palma.\n\n"
+                "Acá los chicos:\n"
+                "🌿 Trepan árboles\n"
+                "🔥 Superan obstáculos\n"
+                "💪 Fortalecen su cuerpo\n"
+                "🧠 Construyen autoestima y confianza real\n"
+                "⚡ Aprenden a adaptarse y resolver situaciones por sí mismos\n\n"
+                "Y sí... a veces van a temblar, frustrarse o sentir miedo. Porque el crecimiento real "
+                "ocurre cuando un niño enfrenta algo que parecía imposible... y descubre que sí puede.\n\n"
+                "Nuestro objetivo no es solamente entrenar chicos fuertes físicamente.\n"
+                "Es ayudar a formar niños y niñas más seguros, valientes e independientes.\n\n"
+                "Y todo eso mientras se divierten como nunca y construyen recuerdos que les quedan para "
+                "siempre... porque trepar una casa del árbol, saltar, ensuciarse y conquistar sus propios "
+                "miedos marca la infancia de verdad. 🌳✨\n\n"
+                "¿Cómo se llama tu hijo/a y cuántos años tiene?"
             )
             logger.info(f"[FASE1] {telefono}: mensaje de apertura fijo (sin Claude)")
 
@@ -3439,22 +3451,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("Tenemos un plan especial para familias 💪 Te paso el afiche de hermanos")
                 elif _pide_hermanos:
                     _partes.append(
-                        "👦👦 *Descuentos hermanos:*\n"
-                        "Paq 5 clases: 2do hijo 30% OFF (245mil), 3er hijo 50% OFF (175mil)\n"
-                        "Paq 12 clases: 2do hijo 40% OFF (450mil), 3er hijo GRATIS 🎁\n"
+                        "👦👦 *Hermanos (+50mil c/u extra):*\n"
+                        "Prueba: 1 hijo 100mil, 2 hermanos 150mil, 3 hermanos 200mil\n"
+                        "Mensual: 1 hijo 300mil, 2 hermanos 350mil, 3 hermanos 400mil\n"
                         "¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
                     )
                 elif _pide_precios and not _ya_envio_afiche:
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Prueba: 90mil (1 sábado). Promo hoy: 100mil por 2 sábados 🔥 Padres entran gratis. Solo transferencia 🌳")
+                    _partes.append("Prueba: 100mil (1 sábado). Mensual: 300mil (4 sábados). +50mil por cada hijo extra 🌳 Padres entran gratis")
 
                 if _pide_horarios and not _ya_envio_horarios:
                     _acciones_interceptadas.append("afiche_horarios")
                     _partes.append("Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios")
                 elif _pide_horarios:
-                    _partes.append("9:30h | 11:00h | 15:30h — ¿cuál te viene bien? 🤝")
+                    _partes.append("11:00h | 15:30h — ¿cuál te viene bien? 🤝")
 
                 if _pide_ubicacion:
                     _partes.append(
@@ -6720,19 +6732,15 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
         await asyncio.sleep(3)
 
         msg_hermanos = (
-            "👦👦 *Plan Hermanos FENIX — Crecen juntos, entrenan juntos* 💪\n\n"
-            "⭐ *Paquete 5 clases (c/hijo):*\n"
-            "1er hijo: 350.000\n"
-            "2do hijo: 245.000 (30% OFF)\n"
-            "3er hijo: 175.000 (50% OFF)\n"
-            "👉 Total 3 hijos: 770.000\n\n"
-            "🔥 *Paquete 12 clases (c/hijo) — EL MÁS ELEGIDO:*\n"
-            "1er hijo: 750.000\n"
-            "2do hijo: 450.000 (40% OFF)\n"
-            "3er hijo: GRATIS (3x2) 🎁\n"
-            "👉 Total 3 hijos: 1.200.000 (36 clases, 41mil por clase)\n\n"
-            "Sin matrícula, sin vencimiento ✅\n"
-            "¿Cuántos hijos tenés y qué edades tienen? Así te armo el combo exacto 🤝"
+            "👦👦 *Hermanos (+50mil c/u extra):*\n\n"
+            "*Prueba:*\n"
+            "1 hijo: 100.000 Gs\n"
+            "2 hermanos: 150.000 Gs\n"
+            "3 hermanos: 200.000 Gs\n\n"
+            "*Mensual:*\n"
+            "1 hijo: 300.000 Gs\n"
+            "2 hermanos: 350.000 Gs\n"
+            "3 hermanos: 400.000 Gs"
         )
         await proveedor.enviar_mensaje(telefono, msg_hermanos)
         await guardar_mensaje(telefono, "assistant", msg_hermanos)
@@ -6774,15 +6782,10 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         # Mensaje corto después del afiche
         msg_precios = (
             "🌳 *Probá FENIX (padres entran gratis):*\n\n"
-            "👦 *1 hijo:*\n"
-            "Prueba: 90.000 Gs (1 sábado)\n"
-            "🔥 *PROMO HOY:* 100.000 Gs por 2 sábados\n\n"
-            "👦👦 *2 hijos:*\n"
-            "Prueba: 120.000 Gs (1 sábado)\n"
-            "🔥 *PROMO HOY:* 150.000 Gs por 2 sábados\n\n"
-            "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
-            "5 clases: 350.000 Gs | 12 clases: 750.000 Gs\n\n"
-            "¿Te gustaría aprovechar la promo de hoy? 🤝"
+            "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
+            "📅 *Mensual:* 300.000 Gs (4 sábados)\n\n"
+            "+50.000 por cada hijo extra\n\n"
+            "¿Te gustaría agendar un sábado inolvidable para vos y tu hijo?"
         )
         await proveedor.enviar_mensaje(telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)

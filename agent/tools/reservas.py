@@ -8,7 +8,7 @@ from datetime import date
 
 logger = logging.getLogger("agentkit")
 
-_HORARIOS_VALIDOS = {"9:30", "11:00", "15:30"}
+_HORARIOS_VALIDOS = {"11:00", "15:30"}
 
 
 async def reagendar_clase(telefono: str, hora_nueva: str | None = None, **kwargs) -> dict:

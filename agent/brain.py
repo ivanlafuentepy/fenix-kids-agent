@@ -117,7 +117,7 @@ def _contexto_fechas() -> str:
         f"🚨 NUNCA calcules qué día es hoy, mañana o pasado. Usá EXACTAMENTE lo de arriba.\n\n"
         f"{bloque_actual}\n"
         f"Sábados del mes siguiente ({nombre_mes_sig}) — USAR SOLO SI el padre dice que no le queda bien ninguno del mes corriente:\n{sabados_siguiente_str}\n"
-        f"Horarios de cada sábado: 9:30h | 11:00h | 15:30h\n"
+        f"Horarios de cada sábado (invierno): 11:00h | 15:30h\n"
         f"REGLA CRÍTICA: Ofrecé PRIMERO solo los sábados del mes corriente. "
         f"Recién si el padre dice que no le queda bien ninguno, ofrecé los del mes siguiente. "
         f"NO tires todos los meses juntos."

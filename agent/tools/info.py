@@ -12,27 +12,28 @@ async def consultar_precios(tipo: str = "prueba", **kwargs) -> dict:
     if tipo == "hermanos":
         return {
             "texto": (
-                "👦👦 *Descuentos hermanos:*\n"
-                "Paq 5 clases: 2do hijo 30% OFF (245mil), 3er hijo 50% OFF (175mil)\n"
-                "Paq 12 clases: 2do hijo 40% OFF (450mil), 3er hijo GRATIS 🎁"
+                "👦👦 *Hermanos (cada hijo extra +50mil):*\n"
+                "Prueba: 1 hijo 100mil | 2 hermanos 150mil | 3 hermanos 200mil\n"
+                "Mensual: 1 hijo 300mil | 2 hermanos 350mil | 3 hermanos 400mil"
             ),
             "enviar_afiche": "hermanos",
         }
     elif tipo == "paquetes":
         return {
             "texto": (
-                "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
-                "5 clases: 350.000 Gs | 12 clases: 750.000 Gs"
+                "🌳 *Plan Invierno FENIX:*\n"
+                "Clase de prueba (1 sábado): 100.000 Gs\n"
+                "Mensual (4 sábados): 300.000 Gs\n"
+                "+50.000 por cada hijo extra"
             ),
         }
     else:
         return {
             "texto": (
                 "🌳 *Probá FENIX (padres entran gratis):*\n"
-                "👦 Prueba: 90.000 Gs (1 sábado)\n"
-                "🔥 *PROMO:* 100.000 Gs por 2 sábados\n\n"
-                "⭐ *Paquetes (sin matrícula, sin vencimiento):*\n"
-                "5 clases: 350.000 Gs | 12 clases: 750.000 Gs"
+                "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
+                "📅 *Mensual:* 300.000 Gs (4 sábados)\n"
+                "+50.000 por cada hijo extra"
             ),
             "enviar_afiche": "precios",
         }
@@ -41,7 +42,7 @@ async def consultar_precios(tipo: str = "prueba", **kwargs) -> dict:
 async def consultar_horarios(**kwargs) -> dict:
     """Retorna horarios disponibles."""
     return {
-        "texto": "Entrenamos todos los sábados 🌳\n\nHorarios: 9:30h | 11:00h | 15:30h",
+        "texto": "Entrenamos todos los sábados 🌳\n\nHorarios invierno: 11:00h | 15:30h",
         "enviar_afiche": "horarios",
     }
 

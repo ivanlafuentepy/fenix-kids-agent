@@ -32,18 +32,12 @@ CI_BANCARIO = "1604338"
 # ── Precios ──────────────────────────────────────────────────────────────────
 
 PRECIOS = {
-    "prueba": {"cuota": 90_000, "matricula": 0, "total": 90_000, "label": "PRUEBA 90K"},
-    "prueba_promo": {"cuota": 100_000, "matricula": 0, "total": 100_000, "label": "PRUEBA PROMO 100K (2 sábs)"},
-    "prueba_2": {"cuota": 120_000, "matricula": 0, "total": 120_000, "label": "PRUEBA 120K (2 hijos)"},
-    "prueba_promo_2": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA PROMO 150K (2 hijos, 2 sábs)"},
-    "prueba_3": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (3 hijos)"},
-    "prueba_promo_3": {"cuota": 180_000, "matricula": 0, "total": 180_000, "label": "PRUEBA PROMO 180K (3 hijos, 2 sábs)"},
-    "paquete_5": {"cuota": 350_000, "matricula": 0, "total": 350_000, "label": "PAQUETE 5 CLASES"},
-    "paquete_12": {"cuota": 750_000, "matricula": 0, "total": 750_000, "label": "PAQUETE 12 CLASES"},
-    "quincenal_mensual": {"cuota": 250_000, "matricula": 200_000, "total": 450_000, "label": "QUINCENAL MENSUAL"},
-    "quincenal_trimestral": {"cuota": 450_000, "matricula": 140_000, "total": 590_000, "label": "QUINCENAL TRIMESTRAL"},
-    "semanal_mensual": {"cuota": 350_000, "matricula": 200_000, "total": 550_000, "label": "SEMANAL MENSUAL"},
-    "semanal_trimestral": {"cuota": 690_000, "matricula": 140_000, "total": 830_000, "label": "SEMANAL TRIMESTRAL"},
+    "prueba": {"cuota": 100_000, "matricula": 0, "total": 100_000, "label": "PRUEBA 100K (1 hijo)"},
+    "prueba_2": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (2 hermanos)"},
+    "prueba_3": {"cuota": 200_000, "matricula": 0, "total": 200_000, "label": "PRUEBA 200K (3 hermanos)"},
+    "mensual": {"cuota": 300_000, "matricula": 0, "total": 300_000, "label": "MENSUAL 300K (1 hijo)"},
+    "mensual_2": {"cuota": 350_000, "matricula": 0, "total": 350_000, "label": "MENSUAL 350K (2 hermanos)"},
+    "mensual_3": {"cuota": 400_000, "matricula": 0, "total": 400_000, "label": "MENSUAL 400K (3 hermanos)"},
 }
 
 
@@ -51,7 +45,7 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
     """
     Extrae el monto de prueba que Ivan confirmó en la conversación.
     Busca el último mensaje de Ivan con "Transferencia: X Gs" o monto explícito
-    cerca de datos bancarios. Fallback: 90K.
+    cerca de datos bancarios. Fallback: 100K (Plan Invierno).
     """
     import re
     # Buscar en mensajes de Ivan (de más reciente a más antiguo)
@@ -100,8 +94,8 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
             match = re.search(r"\**(\d{2,3})[.\s](\d{3})\s*(?:[Gg]s)?\**", contenido)
             if match:
                 return int(match.group(1)) * 1000 + int(match.group(2))
-    # Fallback: 1 hijo = 90mil
-    return 90_000
+    # Fallback: 1 hijo = 100mil (Plan Invierno)
+    return 100_000
 
 # ── Detección de comprobante ─────────────────────────────────────────────────
 

@@ -35,14 +35,14 @@ _tareas_activas: dict[str, list[asyncio.Task]] = {}
 # Tareas de seguimiento inicial (rompehielos sin respuesta): {telefono: [Task, ...]}
 _tareas_seguimiento: dict[str, list[asyncio.Task]] = {}
 
-_HORARIOS_FENIX = "🕘 9:30h | 🕙 11:00h | 🕞 15:30h"
+_HORARIOS_FENIX = "🕙 11:00h | 🕞 15:30h"
 
 _MENSAJES_SEGUIMIENTO = {
     "A": [
         "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
             f"Te cuento los horarios para venir al parque con tu hijo:\n"
-            f"Sábados: {_HORARIOS_FENIX}\n90mil por hijo, padres entran gratis 🌳 ¿Te gustaría agendar un sábado inolvidable para vos y tu hijo?"
+            f"Sábados: {_HORARIOS_FENIX}\n100mil por hijo, padres entran gratis 🌳 ¿Te gustaría agendar un sábado inolvidable para vos y tu hijo?"
         ),
         "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
     ],

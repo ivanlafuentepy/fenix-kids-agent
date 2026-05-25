@@ -11,7 +11,7 @@ from typing import Callable, Awaitable
 logger = logging.getLogger("agentkit")
 
 _TZ_PY = ZoneInfo("America/Asuncion")
-_HORARIOS_VALIDOS = {"9:30", "11:00", "15:30"}
+_HORARIOS_VALIDOS = {"11:00", "15:30"}
 
 # ── Tipos ──────────────────────────────────────────────────────────
 # Pre:  async (tool_name, params, context) -> dict|None  (None=OK, dict con error=bloquear)

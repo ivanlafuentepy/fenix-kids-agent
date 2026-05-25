@@ -28,7 +28,7 @@ TOOLS_IVAN = [
             "properties": {
                 "hora_nueva": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Nueva hora para la clase. Omitir si el padre aún no eligió hora.",
                 },
             },
@@ -57,7 +57,7 @@ TOOLS_IVAN = [
                 },
                 "hora": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Hora de la clase.",
                 },
             },
@@ -122,7 +122,7 @@ TOOLS_IVAN = [
                 },
                 "hora": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Hora del turno. Omitir para ver los 3 turnos del día.",
                 },
             },
@@ -176,7 +176,7 @@ TOOLS_AURORA = [
                 },
                 "hora": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Hora del turno.",
                 },
             },
@@ -201,7 +201,7 @@ TOOLS_AURORA = [
                 },
                 "hora": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Hora del turno a cancelar. Omitir para cancelar todo el día.",
                 },
             },
@@ -225,7 +225,7 @@ TOOLS_AURORA = [
                 },
                 "hora": {
                     "type": "string",
-                    "enum": ["9:30", "11:00", "15:30"],
+                    "enum": ["11:00", "15:30"],
                     "description": "Hora del turno.",
                 },
             },

@@ -277,8 +277,8 @@ async def _enviar_recordatorio_viernes():
     if not familias:
         return
 
-    # Para cada horario (9:30, 11:00, 15:30) buscar niños reservados
-    horarios = ["9:30", "11:00", "15:30"]
+    # Para cada horario buscar niños reservados
+    horarios = ["11:00", "15:30"]
     # Mapear nino_id → (familia_telefono, nombre_padre, hora)
     notificaciones: dict[str, list[dict]] = {}  # telefono → [{hijo, hora}]
 

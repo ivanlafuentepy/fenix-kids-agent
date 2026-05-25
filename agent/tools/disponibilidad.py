@@ -13,7 +13,7 @@ from agent.airtable_client import (
 
 logger = logging.getLogger("agentkit")
 _TZ_PY = ZoneInfo("America/Asuncion")
-_HORARIOS = ["9:30", "11:00", "15:30"]
+_HORARIOS = ["11:00", "15:30"]
 
 
 async def consultar_disponibilidad(
