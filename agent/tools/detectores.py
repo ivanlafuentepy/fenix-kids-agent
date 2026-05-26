@@ -11,6 +11,7 @@ def padre_pregunta_horarios(texto: str) -> bool:
         "horario", "horarios", "a la semana", "por semana", "frecuencia",
         "cuando es", "cuándo es", "cuando son", "cuándo son",
         "que dia", "qué dia", "dias de clase", "días de clase",
+        "a que hora", "a qué hora", "que hora", "qué hora",
     ]
     return any(p in t for p in patrones)
 

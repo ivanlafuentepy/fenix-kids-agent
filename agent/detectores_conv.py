@@ -87,17 +87,31 @@ def _diagnostico_ya_enviado(historial: list[dict]) -> bool:
 def _padre_muestra_interes(texto: str) -> bool:
     """Detecta si el padre muestra interés después del diagnóstico."""
     t = texto.lower().strip()
-    # Respuestas afirmativas / preguntas de agenda
+    # Limpiar puntuación final para que "si!", "dale!", "ok." matcheen
+    t_limpio = re.sub(r'[!.,?¡¿]+$', '', t).strip()
+    # Respuestas afirmativas exactas (palabra sola o con puntuación)
+    afirmativos_exactos = {
+        'si', 'sí', 'dale', 'ok', 'bueno', 'va', 'vamos',
+        'genial', 'perfecto', 'claro', 'obvio', 'por supuesto',
+        'yes', 'sip', 'sep', 'oka', 'okey', 'okay',
+        'me encanta', 'listo',
+    }
+    if t_limpio in afirmativos_exactos:
+        return True
+    # Patrones que matchean en cualquier posición
     patrones = [
-        r'^s[ií]$', r'^dale$', r'^ok$', r'^bueno$', r'^va$', r'^vamos$',
-        r'^genial$', r'^perfecto$', r'^claro$', r'^obvio$', r'^por supuesto$',
+        r'\bs[ií]\b.*\bs[ií]\b',       # "si si", "sí sí"
+        r'\bsi+\b',                      # "sii", "siii"
+        r'\bdale\b', r'\bok\b', r'\bbueno\b', r'\bclaro\b', r'\bobvio\b',
         r'me interesa', r'quiero', r'quier[oa]', r'nos interesa',
         r'cuando', r'cuándo', r'cu[aá]ndo', r'horario', r'dias', r'días',
+        r'a qu[eé] hora',
         r'agendar', r'reservar', r'inscrib', r'anotar',
         r'cómo es', r'como es', r'cómo hago', r'como hago',
         r'cuánto', r'cuanto', r'precio', r'costo', r'sale',
         r'probamos', r'prueba', r'puede probar', r'le gustar',
         r'que necesito', r'qué necesito',
+        r'\bsi\b.*porfa', r'\bsi\b.*por favor',
     ]
     return any(re.search(p, t) for p in patrones)
 
