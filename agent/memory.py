@@ -42,7 +42,8 @@ engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 import logging as _logging
-_logging.getLogger("agentkit").info(
+logger = _logging.getLogger("agentkit")
+logger.info(
     f"[DB] {'PostgreSQL' if _es_postgres else 'SQLite'} — URL={'postgresql+asyncpg://***' if _es_postgres else DATABASE_URL}"
 )
 
