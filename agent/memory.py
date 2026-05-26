@@ -223,6 +223,8 @@ async def _migrar_columnas_nuevas():
         ("conversaciones_ab", "calendar_event_id",   "VARCHAR(200)"),
         ("conversaciones_ab", "noche_pendiente",     "BOOLEAN DEFAULT FALSE"),
         ("topics_telegram",   "group_id",             "BIGINT DEFAULT 0"),
+        ("topics_telegram",   "agente_silenciado",    "BOOLEAN DEFAULT FALSE"),
+        ("topics_telegram",   "ultimo_mensaje_ivan",  "TIMESTAMP"),
         ("conversaciones_ab", "ctwa_clid",             "VARCHAR(200)"),
         ("conversaciones_ab", "ad_source_id",          "VARCHAR(100)"),
         ("conversaciones_ab", "estado_json",            "TEXT"),
