@@ -56,6 +56,10 @@ from agent.telegram_bridge import (
     group_id_para_agente,
 )
 from agent.meta_capi import enviar_evento_agenda, enviar_evento_pago
+from agent.monitor import (
+    monitor_conversaciones_loop, monitor_salud_loop,
+    registrar_error_webhook, background_tasks as _monitor_bg_tasks,
+)
 from agent.tools.detectores import (
     padre_pregunta_precios, padre_pregunta_hermanos, padre_pregunta_horarios,
     padre_pregunta_ubicacion, padre_pregunta_duracion, padre_pregunta_que_llevar,
@@ -225,6 +229,20 @@ async def lifespan(app: FastAPI):
     # Asistencia automática: enviar lista al terminar cada turno (sábados)
     _asistencia_task = _fire_and_forget(_asistencia_auto_loop())
 
+    # Monitor de producción (Capa 1): conversaciones sin respuesta + salud del sistema
+    _monitor_conv_task = _fire_and_forget(monitor_conversaciones_loop())
+    _monitor_salud_task = _fire_and_forget(monitor_salud_loop())
+
+    # Registrar todos los background tasks para que el monitor los vigile
+    _monitor_bg_tasks.update({
+        "recordatorios": _recordatorios_task,
+        "noche": _noche_task,
+        "keepalive": _keepalive_task,
+        "asistencia": _asistencia_task,
+        "monitor_conv": _monitor_conv_task,
+        "monitor_salud": _monitor_salud_task,
+    })
+
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
     print(f"[STARTUP] Proveedor: {proveedor.__class__.__name__}", flush=True)
     print(
@@ -232,10 +250,13 @@ async def lifespan(app: FastAPI):
         f"GROUP_ID={tg_group if tg_group else '*** NO CONFIGURADO ***'}",
         flush=True,
     )
+    print("[STARTUP] Monitor de producción: conversaciones + salud activos", flush=True)
     yield
     _recordatorios_task.cancel()
     _noche_task.cancel()
     _keepalive_task.cancel()
+    _monitor_conv_task.cancel()
+    _monitor_salud_task.cancel()
 
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
@@ -1657,6 +1678,7 @@ async def webhook_handler(request: Request):
 
     except Exception as e:
         logger.error(f"Error en webhook: {e}", exc_info=True)
+        registrar_error_webhook("desconocido", str(e))
         return {"status": "error"}
 
 
@@ -3821,6 +3843,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
     except Exception as e:
         logger.error(f"[WEBHOOK] Error procesando {telefono}: {e}", exc_info=True)
+        registrar_error_webhook(telefono, str(e))
         # Borrar dedup para que si el padre reenvía, se procese
         if msg.mensaje_id:
             await borrar_mensaje_procesado(msg.mensaje_id)
