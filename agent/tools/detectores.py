@@ -33,13 +33,13 @@ def padre_pregunta_hermanos(texto: str) -> bool:
     t = texto.lower().strip()
     patrones = [
         "hermano", "hermanos", "hermana", "hermanas",
-        "combo", "descuento familiar", "plan familiar",
+        "combo", "descuento familiar",
         "plan hermano", "plan hermanos",
         "precio hermano", "precio hermanos",
         "2 hijos", "3 hijos", "dos hijos", "tres hijos",
         "dos nenes", "tres nenes", "dos nenas", "tres nenas",
         "varios hijos", "mas de un hijo", "más de un hijo",
-        "familia", "descuento por hermano",
+        "descuento por hermano",
     ]
     return any(p in t for p in patrones)
 
