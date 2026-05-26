@@ -36,7 +36,10 @@ marketing/
 !marketing/logos/
 !marketing/logos/LOGO FENIX TRANSPARENTE OFICIAL.png
 
-# Claude Code (configuración local — nunca subir)
-.claude/
+# Claude Code — solo excluir lo local/sensible
+.claude/settings.local.json
+.claude/handoff.md
+.claude/handoffs/
+.claude/plans/
 CLAUDE.local.md
 logs/
