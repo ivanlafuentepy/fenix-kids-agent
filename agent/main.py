@@ -1168,22 +1168,28 @@ async def test_envio(telefono: str, msg: str = "Test desde Railway", _: bool = D
 
 
 @app.get("/enviar-qr/{telefono}")
-async def enviar_qr_admin(telefono: str, _: bool = Depends(_require_admin)):
-    """Genera y envía QR de check-in al padre. Busca registros en PRUEBA FENIX."""
+async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_require_admin)):
+    """
+    Genera y envía QR de check-in. Busca registros en PRUEBA FENIX por {telefono}.
+    Si se pasa ?destino=XXXX, envía al número destino en vez de al lead (para preview).
+    """
     from agent.qr import generar_qr
     from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
     from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic, group_id_para_agente
     pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
     if not pruebas:
         return {"error": "No tiene registros en PRUEBA FENIX"}
+    enviar_a = destino or telefono
+    es_preview = bool(destino)
     enviados = 0
     for pq in pruebas:
         qr_bytes = generar_qr(pq["id"])
         await proveedor.enviar_imagen_bytes(
-            telefono, qr_bytes, "image/png",
+            enviar_a, qr_bytes, "image/png",
             caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
         )
-        await marcar_qr_enviado_prueba(pq["id"])
+        if not es_preview:
+            await marcar_qr_enviado_prueba(pq["id"])
         enviados += 1
     # Espejar en Telegram
     try:
