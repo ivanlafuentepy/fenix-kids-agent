@@ -9,6 +9,9 @@ config/google_credentials*.json
 *.sqlite
 *.sqlite3
 
+# Output de scripts (datos de leads)
+scripts/output/
+
 # Python
 __pycache__/
 *.py[cod]
