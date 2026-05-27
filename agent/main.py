@@ -3194,16 +3194,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         if telefono != _admin_phone_tool:
                             await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
                     # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva
-                    _reserva_ids = _ta_result.get("reserva_ids", []) or _ta_result.get("prueba_ids", [])
+                    _reserva_ids_raw = _ta_result.get("reserva_ids", [])
+                    _prueba_ids_raw = _ta_result.get("prueba_ids", [])
+                    _reserva_ids = _reserva_ids_raw or _prueba_ids_raw
+                    _es_reserva_qr = bool(_reserva_ids_raw)
                     if _reserva_ids and (_ta_result.get("agendada") or _ta_result.get("reagendada") or _ta_result.get("confirmada")):
                         try:
                             from agent.qr import generar_qr
+                            from agent.airtable_client import marcar_qr_enviado_reserva, marcar_qr_enviado_prueba
                             for _rid in _reserva_ids:
                                 _qr_bytes = generar_qr(_rid)
                                 await proveedor.enviar_imagen_bytes(
                                     telefono, _qr_bytes, "image/png",
                                     caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
                                 )
+                                if _es_reserva_qr:
+                                    await marcar_qr_enviado_reserva(_rid)
+                                else:
+                                    await marcar_qr_enviado_prueba(_rid)
                             logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
                         except Exception as _qr_err:
                             logger.error(f"[QR] Error enviando QR a {telefono}: {_qr_err}")
@@ -3646,9 +3654,41 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             from agent.airtable_client import _get_records as _get_r_form, _PRUEBAS as _PR_FORM
             _ya_existe_prueba = await _get_r_form(_PR_FORM, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
             if _ya_existe_prueba:
-                logger.info(f"[FORMULARIO] {telefono} ya tiene PRUEBA FENIX — no se crea duplicado")
+                logger.info(f"[FORMULARIO] {telefono} ya tiene PRUEBA FENIX — actualizar datos faltantes")
                 _es_formulario_completo = False
                 await actualizar_estado_flags(telefono, prueba_creada=True)
+                # Actualizar campos faltantes (nombre padre, apellido hijo, fecha nac)
+                try:
+                    from agent.airtable_client import actualizar_prueba_fenix
+                    _hist_upd = await obtener_historial(telefono, limite=40)
+                    _datos_upd = await extraer_datos_formulario(_hist_upd)
+                    _padre_upd = _datos_upd.get("padre") or {}
+                    _ninos_upd = _datos_upd.get("ninos", [])
+                    _n0 = _ninos_upd[0] if _ninos_upd else {}
+                    await actualizar_prueba_fenix(
+                        telefono=telefono,
+                        nombre_responsable=_padre_upd.get("nombre", ""),
+                        apellido_responsable=_padre_upd.get("apellido", ""),
+                        nombre_hijo=_n0.get("nombre", ""),
+                        apellido_hijo=_n0.get("apellido", ""),
+                        fecha_nacimiento=_n0.get("fecha_nacimiento", ""),
+                    )
+                    # Enviar QR (no se envió antes porque el guard abortaba)
+                    try:
+                        from agent.qr import generar_qr
+                        from agent.airtable_client import marcar_qr_enviado_prueba
+                        for _pq in _ya_existe_prueba:
+                            _qr_bytes = generar_qr(_pq["id"])
+                            await proveedor.enviar_imagen_bytes(
+                                telefono, _qr_bytes, "image/png",
+                                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+                            )
+                            await marcar_qr_enviado_prueba(_pq["id"])
+                        logger.info(f"[QR] Enviado {len(_ya_existe_prueba)} QR(s) post-actualización a {telefono}")
+                    except Exception as _qr_err:
+                        logger.error(f"[QR] Error enviando QR post-actualización: {_qr_err}")
+                except Exception as e:
+                    logger.error(f"[FORMULARIO] Error actualizando PRUEBA FENIX: {e}")
         if _es_formulario_completo:
             await actualizar_estado_flags(telefono, prueba_creada=True)
             try:
@@ -3750,7 +3790,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     # QR Check-in: buscar todos los registros PRUEBA del teléfono y enviar QR
                     try:
                         from agent.qr import generar_qr
-                        from agent.airtable_client import _get_records, _PRUEBAS
+                        from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
                         _pruebas_qr = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
                         for _pq in _pruebas_qr:
                             _qr_bytes = generar_qr(_pq["id"])
@@ -3758,6 +3798,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 telefono, _qr_bytes, "image/png",
                                 caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
                             )
+                            await marcar_qr_enviado_prueba(_pq["id"])
                         logger.info(f"[QR] Enviado {len(_pruebas_qr)} QR(s) post-formulario a {telefono}")
                     except Exception as _qr_err:
                         logger.error(f"[QR] Error enviando QR post-formulario: {_qr_err}")

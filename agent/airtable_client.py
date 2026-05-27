@@ -1037,6 +1037,68 @@ async def crear_prueba_fenix(
     return None
 
 
+async def actualizar_prueba_fenix(
+    telefono: str,
+    nombre_responsable: str = "",
+    apellido_responsable: str = "",
+    nombre_hijo: str = "",
+    apellido_hijo: str = "",
+    fecha_nacimiento: str = "",
+) -> bool:
+    """Actualiza campos faltantes en PRUEBA FENIX existente (post-formulario)."""
+    from datetime import datetime as _dt
+
+    records = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    if not records:
+        return False
+
+    campos: dict = {}
+    f = records[0].get("fields", {})
+
+    # Solo patchear campos que estén vacíos en el registro existente
+    if nombre_responsable and not f.get("NOMBRE", "").strip():
+        campos["NOMBRE"] = nombre_responsable
+    if apellido_responsable and not f.get("APELLIDO", "").strip():
+        campos["APELLIDO"] = apellido_responsable
+    if nombre_hijo and not f.get("NOMBRE HIJO", "").strip():
+        campos["NOMBRE HIJO"] = nombre_hijo
+    if apellido_hijo and not f.get("APELLIDO HIJO", "").strip():
+        campos["APELLIDO HIJO"] = apellido_hijo
+    if fecha_nacimiento and not f.get("FECHA NACIMIENTO", "").strip():
+        _fn = fecha_nacimiento.strip()
+        for _fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
+            try:
+                _fn = _dt.strptime(_fn, _fmt).strftime("%Y-%m-%d")
+                break
+            except ValueError:
+                continue
+        campos["FECHA NACIMIENTO"] = _fn
+
+    if not campos:
+        logger.info(f"[PRUEBA FENIX] {telefono} — sin campos nuevos que actualizar")
+        return True
+
+    ok = await _patch(_PRUEBAS, records[0]["id"], campos)
+    if ok:
+        logger.info(f"[PRUEBA FENIX] Actualizado {telefono}: {list(campos.keys())}")
+    return ok
+
+
+_CHECKIN_BASE = os.getenv("CHECKIN_BASE_URL", "https://fenix-kids-agent-production.up.railway.app")
+
+
+async def marcar_qr_enviado_prueba(record_id: str) -> bool:
+    """Marca QR ENVIADO=true y guarda la URL del QR en PRUEBA FENIX."""
+    url_qr = f"{_CHECKIN_BASE}/checkin/{record_id}"
+    return await _patch(_PRUEBAS, record_id, {"QR RESERVA": url_qr, "QR ENVIADO": True})
+
+
+async def marcar_qr_enviado_reserva(record_id: str) -> bool:
+    """Marca QR ENVIADO=true y guarda la URL del QR en RESERVAS FENIX."""
+    url_qr = f"{_CHECKIN_BASE}/checkin/{record_id}"
+    return await _patch(_RESERVAS, record_id, {"QR RESERVA": url_qr, "QR ENVIADO": True})
+
+
 # ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────
 
 async def obtener_contenido_no_notificado() -> list[dict]:
