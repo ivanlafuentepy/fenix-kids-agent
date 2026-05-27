@@ -1167,6 +1167,35 @@ async def test_envio(telefono: str, msg: str = "Test desde Railway", _: bool = D
     return {"enviado": ok, "telefono": telefono, "mensaje": msg}
 
 
+@app.get("/enviar-qr/{telefono}")
+async def enviar_qr_admin(telefono: str, _: bool = Depends(_require_admin)):
+    """Genera y envía QR de check-in al padre. Busca registros en PRUEBA FENIX."""
+    from agent.qr import generar_qr
+    from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
+    from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic, group_id_para_agente
+    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+    if not pruebas:
+        return {"error": "No tiene registros en PRUEBA FENIX"}
+    enviados = 0
+    for pq in pruebas:
+        qr_bytes = generar_qr(pq["id"])
+        await proveedor.enviar_imagen_bytes(
+            telefono, qr_bytes, "image/png",
+            caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+        )
+        await marcar_qr_enviado_prueba(pq["id"])
+        enviados += 1
+    # Espejar en Telegram
+    try:
+        _tg_group = group_id_para_agente("ivan")
+        topic_id = await obtener_o_crear_topic(telefono, group_override=_tg_group)
+        if topic_id:
+            await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({enviados})", telefono=telefono, group_override=_tg_group)
+    except Exception:
+        pass
+    return {"enviado": True, "telefono": telefono, "qrs": enviados}
+
+
 @app.get("/debug/{telefono}")
 async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     historial = await obtener_historial(telefono, limite=50)
@@ -3213,6 +3242,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 else:
                                     await marcar_qr_enviado_prueba(_rid)
                             logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
+                            if topic_id:
+                                await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({len(_reserva_ids)})", telefono=telefono, group_override=_tg_group)
                         except Exception as _qr_err:
                             logger.error(f"[QR] Error enviando QR a {telefono}: {_qr_err}")
                         # Limpiar modo_agenda después de confirmar
@@ -3685,6 +3716,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             )
                             await marcar_qr_enviado_prueba(_pq["id"])
                         logger.info(f"[QR] Enviado {len(_ya_existe_prueba)} QR(s) post-actualización a {telefono}")
+                        if topic_id:
+                            await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({len(_ya_existe_prueba)})", telefono=telefono, group_override=_tg_group)
                     except Exception as _qr_err:
                         logger.error(f"[QR] Error enviando QR post-actualización: {_qr_err}")
                 except Exception as e:
@@ -3800,6 +3833,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             )
                             await marcar_qr_enviado_prueba(_pq["id"])
                         logger.info(f"[QR] Enviado {len(_pruebas_qr)} QR(s) post-formulario a {telefono}")
+                        if topic_id:
+                            await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({len(_pruebas_qr)})", telefono=telefono, group_override=_tg_group)
                     except Exception as _qr_err:
                         logger.error(f"[QR] Error enviando QR post-formulario: {_qr_err}")
                 except Exception as e:
