@@ -6,6 +6,38 @@ Registro de cada sesión de trabajo: qué pidió Ivan, qué se hizo.
 
 ---
 
+## 2026-05-26 (sesión 4 — fix PRUEBA FENIX + QR + auditoría + docs)
+
+**Ivan:** endpoint 595985175667 — por qué no cargó el nombre del papá en Airtable cuando registró el pago?
+**Fenix:** Encontré el bug: _procesar_comprobante solo patcheaba CONVERSION=PAGO, nunca nombre/apellido. El guard "ya existe PRUEBA FENIX" abortaba sin actualizar datos. Fix: actualizar_prueba_fenix() patchea campos vacíos + envía QR.
+
+**Ivan:** tb tiene que actualizar apellido del hijo... y fecha de nacimiento... pero en la tabla PRUEBA FENIX
+**Fenix:** Agregado al fix. La función patchea NOMBRE, APELLIDO, NOMBRE HIJO, APELLIDO HIJO, FECHA NACIMIENTO solo si están vacíos.
+
+**Ivan:** el QR se envió?
+**Fenix:** No, el código de envío de QR estaba dentro del bloque que se abortaba. Arreglado.
+
+**Ivan:** quiero campos QR RESERVA y QR ENVIADO en PRUEBA FENIX y RESERVAS FENIX
+**Fenix:** Creados 4 campos por API de Airtable (url + checkbox en cada tabla). Código marca automáticamente al enviar QR.
+
+**Ivan:** enviale el QR a Víctor
+**Fenix:** Error: envié URL como texto sin preguntar. Después creé endpoint /enviar-qr/{telefono} con param ?destino= para preview. QR imagen enviado correctamente.
+
+**Ivan:** necesito un sub agente que audite todas las conversaciones
+**Fenix:** Investigué patrones CRM externos (BSWEN, Salesforce, KDnuggets). Creé scripts/auditoria_flujo.py con checks modulares. Primera ejecución: 64 leads, solo 1 completo.
+
+**Ivan:** las docs de Obsidian se pueden perder si pierdo la compu
+**Fenix:** Migré 28 docs de Obsidian a docs/ del repo. Se deja de usar Obsidian para este proyecto.
+
+### Commits
+- `b488492` fix(pagos): actualizar datos faltantes en PRUEBA FENIX post-formulario + tracking QR
+- `63c0ec6` feat(qr): endpoint /enviar-qr/ + espejo Telegram "QR Reserva enviado"
+- `cfd8619` fix(qr): agregar param ?destino= en /enviar-qr/ para preview
+- `5b0d867` feat(audit): script de auditoría de flujo de leads con datos bancarios
+- `b92f8ad` docs: migrar documentación de Obsidian a docs/ del repo
+
+---
+
 ## 2026-05-25 (sesión 4 — organización y sesiones)
 
 **Ivan:** yosoyfenix
