@@ -1194,7 +1194,7 @@ async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_r
     # Espejar en Telegram
     try:
         _tg_group = group_id_para_agente("ivan")
-        topic_id = await obtener_o_crear_topic(telefono, group_override=_tg_group)
+        topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_tg_group)
         if topic_id:
             await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({enviados})", telefono=telefono, group_override=_tg_group)
     except Exception:
