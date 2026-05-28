@@ -3,11 +3,11 @@ Ritual de cierre de sesión de FENIX KIDS AGENT.
 Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
 
 1. **Revisar qué cambió en esta sesión:**
-   - `git log` desde el último commit que tocó FENIX_RESUMEN.md
+   - `git log` desde el último commit que tocó docs/FENIX_RESUMEN.md
    - `git status` para ver si quedan cambios sin commitear
    - Repasar mentalmente la conversación: qué se hizo, qué se decidió, qué quedó a medio
 
-2. **Actualizar `FENIX_RESUMEN.md`:**
+2. **Actualizar `docs/FENIX_RESUMEN.md`:**
    - **Sección 10 (Variables de entorno):** marcar como ✅ las que ya están listas, ⏳ solo las que de verdad faltan
    - **Sección 11 (Pendientes para deploy):** tachar lo hecho, agregar pendientes nuevos descubiertos
    - **Sección 12 (Historial de cambios):** agregar UNA fila nueva con fecha de hoy y un resumen claro de lo que se hizo en esta sesión
@@ -31,7 +31,7 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
 5. **Commitear y pushear los cambios** del resumen y archivos relacionados:
    - Mensaje de commit en formato: `docs: cierre sesión YYYY-MM-DD — [resumen 5 palabras]`
    - NO incluir Co-Authored-By
-   - Hacer `git push` automático después del commit — así FENIX_RESUMEN.md siempre queda al día en el repo
+   - Hacer `git push` automático después del commit — así docs/FENIX_RESUMEN.md siempre queda al día en el repo
 
 6. **Nombrar la sesión:**
    - Preguntar: "¿Cómo le ponemos a esta sesión?"
