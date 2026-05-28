@@ -37,7 +37,7 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
    - Preguntar: "¿Cómo le ponemos a esta sesión?"
    - Sugerir 3 nombres cortos basados en lo que se trabajó (ej: "monitor + guardian", "fix conversacional", "precios invierno")
    - Esperar que Ivan elija o proponga otro
-   - Ejecutar `/name [nombre elegido]`
+   - Renombrar la sesión editando el JSON en ~/.claude/sessions/. Buscar el archivo que tiene el sessionId actual del proyecto, y agregar o actualizar el campo "name" con el nombre elegido. NUNCA pedirle al usuario que ejecute /rename manual.
 
 7. **Avisar al usuario** con este formato exacto:
    ```
