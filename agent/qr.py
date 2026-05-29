@@ -19,11 +19,25 @@ _CHECKIN_BASE = os.getenv("CHECKIN_BASE_URL", "https://fenix-kids-agent-producti
 def generar_qr(record_id: str) -> bytes:
     """
     Genera imagen QR con logo FENIX en el centro.
-    El QR apunta a /checkin/{record_id} para marcar PRESENTE.
+    El QR apunta a /checkin/{record_id} para marcar PRESENTE (un niño).
     Retorna bytes PNG.
     """
     url = f"{_CHECKIN_BASE}/checkin/{record_id}"
+    return _generar_qr_desde_url(url)
 
+
+def generar_qr_familia(familia_id: str) -> bytes:
+    """
+    Genera el QR fijo de una familia. Apunta a /checkin/familia/{familia_id},
+    la página que lista a todos los hijos para marcar asistencia individual.
+    Retorna bytes PNG.
+    """
+    url = f"{_CHECKIN_BASE}/checkin/familia/{familia_id}"
+    return _generar_qr_desde_url(url)
+
+
+def _generar_qr_desde_url(url: str) -> bytes:
+    """Genera el PNG del QR (con logo FENIX al centro) a partir de una URL."""
     # QR con correccion de errores alta (permite logo encima)
     qr = qrcode.QRCode(
         version=None,

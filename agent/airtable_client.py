@@ -47,6 +47,7 @@ _PRUEBAS   = "PRUEBA FENIX"
 _CONTENIDO = "CONTENIDO FENIX"
 _ANUNCIOS  = "ANUNCIOS FENIX"
 _REDES     = "REDES FENIX"
+_ASISTENCIA = "ASISTENCIA FENIX"
 
 
 # ── Deducción de género por nombre ────────────────────────────────────────────
@@ -1097,6 +1098,69 @@ async def marcar_qr_enviado_reserva(record_id: str) -> bool:
     """Marca QR ENVIADO=true y guarda la URL del QR en RESERVAS FENIX."""
     url_qr = f"{_CHECKIN_BASE}/checkin/{record_id}"
     return await _patch(_RESERVAS, record_id, {"QR RESERVA": url_qr, "QR ENVIADO": True})
+
+
+# ── ASISTENCIA FENIX (check-in por QR de familia) ────────────────────────────
+
+async def crear_asistencia(
+    nombre: str,
+    fecha_iso: str,
+    hora_checkin_iso: str,
+    nino_id: str = "",
+    prueba_id: str = "",
+    familia_id: str = "",
+    reserva_id: str = "",
+    turno: str = "",
+    telefono: str = "",
+    metodo: str = "QR",
+) -> str | None:
+    """
+    Crea una fila de asistencia en ASISTENCIA FENIX (una fila = un niño presente
+    en un sábado). Retorna el record_id creado o None.
+    """
+    campos: dict = {
+        "REGISTRO": nombre,
+        "FECHA": fecha_iso,
+        "HORA_CHECKIN": hora_checkin_iso,
+        "MÉTODO": metodo,
+    }
+    if nino_id:
+        campos["NIÑO"] = [nino_id]
+    if prueba_id:
+        campos["PRUEBA"] = [prueba_id]
+    if familia_id:
+        campos["FAMILIA"] = [familia_id]
+    if reserva_id:
+        campos["RESERVA"] = [reserva_id]
+    if turno:
+        campos["TURNO"] = turno
+    if telefono:
+        campos["TELEFONO"] = telefono
+    rec = await _post(_ASISTENCIA, campos)
+    return rec["id"] if rec else None
+
+
+async def borrar_asistencia(asistencia_id: str) -> bool:
+    """Borra una fila de asistencia (desmarcar presente — corregir un error)."""
+    return await _delete(_ASISTENCIA, asistencia_id)
+
+
+async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -> dict[str, str]:
+    """
+    Retorna un mapa {nino_id: asistencia_id} de las asistencias ya cargadas
+    para esos niños en esa fecha. Sirve para saber quién ya está presente hoy.
+    """
+    if not nino_ids:
+        return {}
+    formula = f"DATETIME_FORMAT({{FECHA}}, 'YYYY-MM-DD')='{fecha_iso}'"
+    registros = await _get_records(_ASISTENCIA, formula=formula, max_records=500)
+    nino_set = set(nino_ids)
+    mapa: dict[str, str] = {}
+    for r in registros:
+        for nid in r.get("fields", {}).get("NIÑO", []):
+            if nid in nino_set:
+                mapa[nid] = r["id"]
+    return mapa
 
 
 # ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────
