@@ -385,8 +385,7 @@ def _render_checkin_familia_html(familia_id: str, familia_nombre: str, ninos: li
 <body style="margin:0;padding:20px;min-height:100vh;background:linear-gradient(135deg,#e8f5e9 0%,#fff8e1 100%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 <div style="background:white;border-radius:20px;padding:28px 20px;max-width:420px;width:100%;margin:0 auto;box-shadow:0 8px 32px rgba(0,0,0,0.12)">
   <div style="text-align:center;margin-bottom:20px">
-    <div style="font-size:28px">🌳</div>
-    <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#888;margin:8px 0 4px">Fenix Kids Academy</div>
+    <img src="/static/logo-fenix.png" alt="Fenix Kids Academy" style="width:96px;height:auto;margin:0 auto 8px;display:block" />
     <h1 style="margin:4px 0;font-size:22px;color:#333">{familia_nombre}</h1>
     <div style="color:#27ae60;font-weight:600;font-size:15px">🗓️ Sábado {fecha_label}</div>
   </div>
