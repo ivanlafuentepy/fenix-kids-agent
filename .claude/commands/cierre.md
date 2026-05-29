@@ -37,7 +37,7 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
    - Preguntar: "¿Cómo le ponemos a esta sesión?"
    - Sugerir 3 nombres cortos basados en lo que se trabajó (ej: "monitor + guardian", "fix conversacional", "precios invierno")
    - Esperar que Ivan elija o proponga otro
-   - Renombrar la sesión editando el JSON en ~/.claude/sessions/. Buscar el archivo que tiene el sessionId actual del proyecto, y agregar o actualizar el campo "name" con el nombre elegido. NUNCA pedirle al usuario que ejecute /rename manual.
+   - Pasarle el nombre elegido al usuario para que lo aplique él (CC NO puede renombrar la sesión solo, ni editando `~/.claude/sessions/` ni el `.jsonl` — no funciona). En la extensión VS Code se renombra a mano con el lápiz ✏️ del panel de sesiones; en la terminal, con `/rename <nombre>` (la extensión VS Code no sincroniza ese comando).
 
 7. **Avisar al usuario** con este formato exacto:
    ```

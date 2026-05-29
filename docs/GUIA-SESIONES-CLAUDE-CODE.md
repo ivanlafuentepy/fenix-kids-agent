@@ -52,7 +52,7 @@ Ventajas:
 
 | Comando | Qué hace |
 |---|---|
-| `/rename nombre` | Le pone un nombre a la sesión actual (ej: `/rename fix precios`) |
+| `/rename nombre` | Nombra la sesión en la **terminal** (ej: `/rename fix precios`). En la extensión VS Code el panel se renombra con el lápiz ✏️, no por comando |
 | `/export` | Copia toda la conversación al clipboard para pegarla donde quieras |
 
 ---
