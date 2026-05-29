@@ -323,6 +323,23 @@ config/
 | PERFIL | URL | Link al perfil de FENIX Kids |
 | ICONO | Texto | Emoji identificador |
 
+### Tabla ASISTENCIA FENIX (`tblFZmAcw6X54kdGW`) — check-in por QR (desde sesión 6, 2026-05-28)
+Fuente única de asistencia. Una fila = un niño presente en un sábado. Separa "intención" (reserva) de "hecho" (vino). Reemplazará al campo PRESENTE de RESERVAS/PRUEBA (migración en Fase 3, todavía no apagado).
+| Campo | Tipo | Qué guarda |
+|---|---|---|
+| REGISTRO | Texto | Identificador legible: "Nombre niño — DD/MM" |
+| NIÑO | Link → NIÑOS FENIX | Si es inscripto |
+| PRUEBA | Link → PRUEBA FENIX | Si es lead en clase de prueba |
+| FAMILIA | Link → FAMILIAS FENIX | Familia inscripta |
+| FECHA | Date | El sábado de la clase |
+| HORA_CHECKIN | DateTime | Momento exacto del escaneo (TZ Asunción) |
+| TURNO | Select | 9:30 / 11:00 / 15:30 |
+| MÉTODO | Select | QR / MANUAL |
+| RESERVA | Link → RESERVAS FENIX | Trazabilidad (opcional) |
+| TELEFONO | Texto | Del padre/madre |
+
+**Páginas de check-in:** `/checkin/familia/{familia_id}` (inscriptos, lista NIÑOS de la familia) y `/checkin/prueba/{telefono}` (leads, agrupa hermanos en PRUEBA FENIX). Cada hijo con botón presente/ausente (toggle: marcar crea fila, desmarcar la borra). QR fijo por grupo. Endpoints admin: `/enviar-qr-familia/{tel}` y `/enviar-qr-prueba/{tel}`. El `/checkin/{record_id}` viejo (1 niño) sigue vivo.
+
 ---
 
 ## 7. Estados del Lead
@@ -620,6 +637,11 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 | 184 | Marcar 65 PRUEBA FENIX históricos como QR ENVIADO en Airtable | ✅ Hecho |
 | 185 | ARCHITECTURE.md + CHANGELOG.md + ADR (material para curso IA) | ⏳ Pendiente |
 | 186 | Limpieza Airtable: borrar horarios 9:30 + reservas duplicadas testing | ⏳ Pendiente |
+| 187 | QR familia/prueba: tabla ASISTENCIA FENIX + páginas check-in + toggle + logo | ✅ Hecho (sesión 6) |
+| 188 | QR Fase 2: comando "QR" — papá escribe "QR" → recibe su QR (tool, NO regex) | ⏳ Pendiente |
+| 189 | QR sub-fase: migrar envío automático (post-pago/reserva) a QR familia/prueba (1 solo, no por hijo) | ⏳ Pendiente |
+| 190 | QR Fase 3: apagar campo PRESENTE viejo en RESERVAS/PRUEBA + migrar histórico a ASISTENCIA FENIX | ⏳ Pendiente |
+| 191 | Deuda: endpoint /enviar-qr-familia devuelve enviado:true sin chequear envío real (el de prueba sí chequea) | ⏳ Pendiente |
 
 ---
 
@@ -666,3 +688,4 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 | 2026-05-26 (sesión 4) | **Fix PRUEBA FENIX + QR tracking + auditoría + migración docs — 5 commits.** (1) **Fix datos faltantes PRUEBA FENIX post-formulario**: cuando lead pagaba antes de llenar formulario, PRUEBA FENIX se creaba sin nombre padre/apellido hijo/fecha nac. El guard "ya existe" abortaba sin actualizar. Ahora extrae datos con Haiku y patchea campos vacíos. QR también se envía en este flujo (antes se perdía). (2) **Campos QR en Airtable**: `QR RESERVA` (url) + `QR ENVIADO` (checkbox) creados por API en PRUEBA FENIX y RESERVAS FENIX. Al enviar QR se marca automáticamente. (3) **Endpoint `/enviar-qr/{telefono}`**: genera y envía QR como imagen PNG. Param `?destino=` para preview sin marcar. Espejo Telegram "QR Reserva enviado" en los 3 puntos de envío. (4) **Script auditoría `scripts/auditoria_flujo.py`**: audita todos los leads con datos bancarios — checks modulares de flujo (datos→pago→agenda→formulario→QR) + completitud Airtable (12 campos). Output terminal + JSON. Primera ejecución: 64 leads, solo 1 completo (Víctor Meza). (5) **Migración docs Obsidian → repo git**: 28 docs movidos de IVAN VAULT a `docs/`. Se deja de usar Obsidian para este proyecto. Conversaciones (datos leads) a Google Drive. (6) **Guía profesional**: GUIA AUDITORIA WHATSAPP.md con arquitectura, patrones, referencia campos. |
 | 2026-05-28 | **Limpieza y organización del proyecto — 5 commits.** (1) **QR masivo**: 65 PRUEBA FENIX históricos marcados como QR ENVIADO en Airtable (script `scripts/marcar_qr_masivo.py`). (2) **Ordenar raíz**: docs sueltos movidos a `docs/` (CHECKLIST, MIGRACION TOTAL, SISTEMA_SEGUIMIENTOS, conversaciones_fenix). Datos a `data/` (phones, contactos) y `data/nombres/` (5 archivos). 9 JSONs de followup a `data/followup/`. 6 duplicados borrados (ya estaban en docs/). (3) **Archivos muertos del template borrados**: LICENSE (no era de Ivan), start.sh, Dockerfile, docker-compose.yml (deploy es Railway, no Docker). (4) **Referencias actualizadas**: /cierre apunta a `docs/FENIX_RESUMEN.md`, memorias checklist y yosoyfenix apuntan a `docs/`. (5) **.env.example actualizado**: de 14 a 21 variables, refleja el estado real (Telegram, AWS, Groq, etc.), borradas secciones Whapi/Twilio sin uso. (6) **Prompt START para curso IA**: creado `prompt-start-curso-ia.md` en cursos-ia/ — instalador de herramientas (Git, Python, Node, VS Code, Claude Code, LICENSE) que el alumno corre ANTES del prompt maestro. Raíz del proyecto queda solo con: CLAUDE.md, CLAUDE.local.md, README.md, requirements.txt, .env. |
 | 2026-05-25 (sesión 4) | **Sesión operacional — Airtable + export + organización Vault (0 commits código).** (1) **Correcciones Airtable manuales**: Maria Natalia Fernández (595983957781) reagendada 23→30 mayo. Max Lee (595992247697) segundo pago 90mil creado en PRUEBA FENIX + PAGOS para 23/5. Sixinio Acuna 3 hijos reagendados de 23→30 mayo 11:00h. Marcelo Saucedo (595994468797) hora cambiada de 11:00→15:30 para 23/5. (2) **Export conversaciones masivo**: descargadas 1165 conversaciones de Railway, generados 13 archivos .md (13-25 mayo) en CONVERSACIONES FENIX/. all_phones.txt actualizado a 1167 teléfonos. (3) **Organización Vault Obsidian**: 25 .md sueltos organizados en 5 carpetas (guias/, operaciones/, marketing/, estado/, sesiones/). MOC actualizado con links a nuevas rutas. (4) **Análisis de conversaciones 22-23 mayo**: identificados reagendamientos de Jacqueline (sin pago, pendiente) y Marcelo (actualizado). |
+| 2026-05-28 (sesión 6 — QR familia) | **QR fijo por familia + check-in de asistencia individual — 3 commits (`77ad368`, `ef0adc0`, `269096d`).** Rediseño del check-in: en vez de un QR por hijo (con hermanos llegaban 2-3 QR), ahora **un QR por grupo** que abre una página con todos los hijos y un botón presente/ausente por cada uno (toggle: marcar crea fila, desmarcar la borra — para corregir errores). **(0)** Nueva tabla **ASISTENCIA FENIX** (`tblFZmAcw6X54kdGW`): fuente única de asistencia, separa "intención" (reserva) de "hecho" (vino). Campos: REGISTRO, NIÑO→NIÑOS, PRUEBA→PRUEBA FENIX, FAMILIA, FECHA, HORA_CHECKIN, TURNO, MÉTODO (QR/MANUAL), RESERVA, TELEFONO. Una fila = un niño presente en un sábado. **(1)** Fase 1 inscriptos: `GET /checkin/familia/{familia_id}` + `POST .../toggle/{nino_id}`, `generar_qr_familia()`, `crear_asistencia`/`borrar_asistencia`/`obtener_asistencias_ninos_fecha` en airtable_client, endpoint admin `/enviar-qr-familia/{telefono}`. Validado en prod (1 y 2 hijos). **(2)** Logo FENIX en la página (servido desde `/static/logo-fenix.png`, optimizado a 52KB). **(3)** Cobertura leads en prueba: render generalizado (`_render_checkin_lista_html`), `GET /checkin/prueba/{telefono}` agrupa hermanos en PRUEBA FENIX, `obtener_asistencias_pruebas_fecha`, `generar_qr_prueba`, admin `/enviar-qr-prueba/{telefono}`. Validado en prod (2 hermanos). Todo aditivo: el `/checkin/{record_id}` viejo y el envío automático de QR siguen intactos. **Aprendizaje**: el envío a un número fuera de la ventana de 24h de Meta da `enviado:true` (status 200) pero no entrega — se confirmó abriendo la ventana. Pendiente Fase 2 (comando "QR"), sub-fase (migrar envío automático a QR nuevos), Fase 3 (apagar lo viejo + migrar histórico de PRESENTE). |
