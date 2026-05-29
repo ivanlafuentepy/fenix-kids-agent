@@ -1163,6 +1163,24 @@ async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -
     return mapa
 
 
+async def obtener_asistencias_pruebas_fecha(prueba_ids: list[str], fecha_iso: str) -> dict[str, str]:
+    """
+    Retorna {prueba_id: asistencia_id} de las asistencias cargadas para esos
+    registros de PRUEBA FENIX en esa fecha (leads en clase de prueba).
+    """
+    if not prueba_ids:
+        return {}
+    formula = f"DATETIME_FORMAT({{FECHA}}, 'YYYY-MM-DD')='{fecha_iso}'"
+    registros = await _get_records(_ASISTENCIA, formula=formula, max_records=500)
+    prueba_set = set(prueba_ids)
+    mapa: dict[str, str] = {}
+    for r in registros:
+        for pid in r.get("fields", {}).get("PRUEBA", []):
+            if pid in prueba_set:
+                mapa[pid] = r["id"]
+    return mapa
+
+
 # ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────
 
 async def obtener_contenido_no_notificado() -> list[dict]:

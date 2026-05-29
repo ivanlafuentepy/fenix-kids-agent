@@ -36,6 +36,16 @@ def generar_qr_familia(familia_id: str) -> bytes:
     return _generar_qr_desde_url(url)
 
 
+def generar_qr_prueba(telefono: str) -> bytes:
+    """
+    Genera el QR de check-in para un lead en clase de prueba. Apunta a
+    /checkin/prueba/{telefono}, que agrupa a los hermanos en PRUEBA FENIX.
+    Retorna bytes PNG.
+    """
+    url = f"{_CHECKIN_BASE}/checkin/prueba/{telefono}"
+    return _generar_qr_desde_url(url)
+
+
 def _generar_qr_desde_url(url: str) -> bytes:
     """Genera el PNG del QR (con logo FENIX al centro) a partir de una URL."""
     # QR con correccion de errores alta (permite logo encima)
