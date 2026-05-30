@@ -37,7 +37,13 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
    - Preguntar: "¿Cómo le ponemos a esta sesión?"
    - Sugerir 3 nombres cortos basados en lo que se trabajó (ej: "monitor + guardian", "fix conversacional", "precios invierno")
    - Esperar que Ivan elija o proponga otro
-   - Pasarle el nombre elegido al usuario para que lo aplique él (CC NO puede renombrar la sesión solo, ni editando `~/.claude/sessions/` ni el `.jsonl` — no funciona). En la extensión VS Code se renombra a mano con el lápiz ✏️ del panel de sesiones; en la terminal, con `/rename <nombre>` (la extensión VS Code no sincroniza ese comando).
+   - Registrar la sesión en el índice `memory/sesiones.md` (la extensión VS Code NO deja renombrar el panel: cachea los nombres y no relee archivos; `/rename` de la CLI tampoco se sincroniza). En vez de pelear con eso, llevamos un índice propio. Obtené el código de la sesión activa (el `.jsonl` más reciente del proyecto) y agregá una fila:
+     ```bash
+     DIR=$(ls -dt ~/.claude/projects/*fenix-kids-agent*/ | head -1)
+     SID=$(basename "$(ls -t "$DIR"*.jsonl | head -1)" .jsonl)
+     echo "$SID"
+     ```
+     Agregá a `memory/sesiones.md` una fila con: `Nombre elegido | código (SID) | fecha | resumen de 1 línea`. Si el archivo no existe, crealo con el encabezado. NUNCA edites `~/.claude/sessions/` (no funciona). Para retomar después: `claude --resume <SID>`.
 
 7. **Avisar al usuario** con este formato exacto:
    ```
