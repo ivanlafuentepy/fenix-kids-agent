@@ -1857,3 +1857,34 @@ ca2194f fix: QR se envía post-formulario, no post-agenda
 f2241b3 fix(detectores): ampliar detección de respuestas afirmativas y "a qué hora"
 4d522d1 fix(prompt): FASE 3 cierra con "Quedo atento." en vez de "¿Dale?"
 ```
+
+---
+
+## 2026-05-30 (sesión 7 — fix lluvia + carga pagos)
+
+**Ivan:** ¿qué hace nuestro comando endpoint?
+**Fenix:** explicó el flujo del skill /endpoint (resolver tel/nombre → 2 curls a prod /debug y /conversacion → leer cada mensaje crudo → reportar; solo lectura)
+
+**Ivan:** endpoint 595992287742 — esta mamá preguntó si se suspende por lluvia y FENIX respondió "3000m² bajo techo", y le dijo sábado 30 a las 9:30 cuando ya cambiamos los horarios; además en Telegram solo veo la conversación del 29
+**Fenix:** analizó. La clienta (Leticia Paredes) había PAGADO el 13/5 reserva 9:30, llegó hoy y la mandaron al centro → pidió reembolso. 3 bugs: (1) "3000m² bajo techo" sale del prompt línea 36; (2) el 9:30 venía de la reserva vieja huérfana (cambiaron horarios sin migrar reservas existentes); (3) Telegram probablemente cambió de grupo entre el 13 y el 29
+
+**Ivan:** ya le respondí a Leticia, le devolví su dinero y le regalé un mes gratis... arreglamos el prompt
+**Fenix:** corrió /pre-cambio, grep confirmó que "bajo techo" vive solo en prompts.yaml:36. Aclaró con Ivan: los 3000m² son el parque, la mansión (~300m²) es el refugio. Corrigió la línea a "si llueve, entrenan dentro de la mansión". Push (commit 5d1a572)
+
+**Ivan:** endpoint 595983047547 — pagó 230 por mensualidad, le pasé bien el precio, pero en Airtable cargó 100
+**Fenix:** causa raíz: `detectar_tipo_pago()` clasifica por keywords; "mensualidad" no está en la lista → cayó a "prueba" → monto 100mil. Cargó registro nuevo F.MENSUAL 230mil INSCRIPTO en PRUEBA FENIX + asiento en PAGOS, sin pisar la prueba de 100mil. Fix de fondo (por estado del lead) queda para el menú interactivo
+
+**Ivan:** César Mendez 595985296645 pagó 350mil x 5 clases concepto PAQUETE5, anotar en PRUEBA FENIX; este y el anterior van a PAGOS también
+**Fenix:** verificó tablas, creó César en PRUEBA FENIX (PAQUETE5 350mil INSCRIPTO) + 2 asientos en PAGOS (César PAQUETE5 350mil, Edith MENSUAL 230mil), vinculados a sus registros de PRUEBA FENIX
+
+**Ivan:** el papá de Max (Lee Jun Yob) pagó de nuevo 90mil prueba, me pagó personalmente; y cargar reserva+pago+formulario de Johanna Britez 595971580929
+**Fenix:** Johanna (2 hijos Gastón+Danna, prueba 120mil) nunca se procesó en el sistema → cargó 2 registros PRUEBA FENIX + PAGOS. Fecha nac de Gastón quedó vacía (el padre puso "2026"). Lee/Max (3era prueba) → registro PRUEBA FENIX + PAGOS (TRANSFER)
+
+**Ivan:** eliminamos el pago de Leticia del 13/5, le devolví su dinero
+**Fenix:** propuso no borrar (mantener rastro). Ivan eligió asiento -150.000 DEVOLUCION en PAGOS + las 2 pruebas marcadas CANCELADO. Creó concepto DEVOLUCION nuevo en PAGOS
+
+### Commits
+```
+5d1a572 fix(prompt): corregir info de lluvia — la mansion es el refugio, no 3000m2 bajo techo
+```
+(El resto de la sesión fue carga operacional en Airtable, sin commits de código.)
