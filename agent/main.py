@@ -4021,12 +4021,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     ninos_form = datos_form.get("ninos", [])
                     _monto = monto_prueba_por_hijos(historial_completo)
                     _n_hijos = len(ninos_form) if ninos_form else 1
-                    if _monto == 750_000:
-                        _concepto_prueba = "PAQUETE12"
-                    elif _monto == 350_000:
-                        _concepto_prueba = "PAQUETE5"
+                    if _monto in (750_000, 350_000):
+                        _concepto_prueba = "CLASE"
                     else:
-                        _concepto_prueba = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos, f"PRUEBA {_n_hijos}HIJOS")
+                        _concepto_prueba = "PRUEBA"
 
                     if ninos_form:
                         for i, n in enumerate(ninos_form):

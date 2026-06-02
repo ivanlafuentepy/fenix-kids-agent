@@ -25,16 +25,7 @@ _asistencia_pendiente: dict[str, list[dict]] = {}
 _DIAS_SEMANA = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
 _MESES_NOMBRE = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
                  7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
-_MONTOS_CONCEPTO = {
-    "F.PRUEBA 90MIL": 90_000,
-    "F.PRUEBA 100MIL": 100_000,
-    "F.PRUEBA 120MIL": 120_000,
-    "F.PRUEBA 150MIL": 150_000,
-    "F.PRUEBA 180MIL": 180_000,
-    "FENIXMAMA": 350_000,
-    "PAQUETE5": 350_000,
-    "PAQUETE12": 750_000,
-}
+# Montos viejos por concepto: eliminado. El campo MONTO de cada pago ya trae el valor real.
 
 
 def _parsear_filtro_fecha(texto_cmd: str) -> tuple[str, str | None, str | None]:
@@ -1457,7 +1448,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         f = rec.get("fields", {})
         fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
         concepto = f.get("CONCEPTO", "") or "s/concepto"
-        monto = f.get("MONTO", 0) or _MONTOS_CONCEPTO.get(concepto, 0)
+        monto = f.get("MONTO", 0)
         if monto > 0:
             por_fecha[fecha_raw]["cantidad"] += 1
             por_fecha[fecha_raw]["total_monto"] += monto
@@ -1529,7 +1520,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     _total_fenixmama = 0
     for rec in registros_filtrados:
         f = rec.get("fields", {})
-        monto = f.get("MONTO", 0) or _MONTOS_CONCEPTO.get(f.get("CONCEPTO", ""), 0)
+        monto = f.get("MONTO", 0)
         concepto = f.get("CONCEPTO", "")
         if monto > 0:
             if concepto == "FENIXMAMA":

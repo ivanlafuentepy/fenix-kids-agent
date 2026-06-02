@@ -325,12 +325,10 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         creados = 0
         _conversion_prueba = "GRATIS" if es_gratis else "PAGO"
         _n_hijos_pf = len(ninos_form) if ninos_form else 1
-        if monto == 750_000:
-            _concepto_pf = "PAQUETE12"
-        elif monto == 350_000:
-            _concepto_pf = "PAQUETE5"
+        if monto in (750_000, 350_000):
+            _concepto_pf = "CLASE"
         else:
-            _concepto_pf = {1: "PRUEBA 1HIJO", 2: "PRUEBA 2HIJOS", 3: "PRUEBA 3HIJOS"}.get(_n_hijos_pf, f"PRUEBA {_n_hijos_pf}HIJOS")
+            _concepto_pf = "PRUEBA"
         if ninos_form:
             for i, n in enumerate(ninos_form):
                 await crear_prueba_fenix(

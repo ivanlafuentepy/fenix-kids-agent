@@ -984,7 +984,7 @@ async def crear_prueba_fenix(
     fecha_nacimiento: str = "",
     conversion: str = "PAGO",
     monto: int = 0,
-    concepto: str = "PRUEBA 1HIJO",
+    concepto: str = "PRUEBA",
     diagnostico_ids: list[str] | None = None,
     lead_record_id: str | None = None,
     metodo_pago: str = "TRANSFER",

@@ -454,12 +454,12 @@ async def _ejecutar_inscripcion(
     metodo_pago_tabla = _metodo_pagos.get(metodo, "TRANSFER")
 
     _concepto_map = {
-        "QUINCENAL MENSUAL": "F.MENSUAL250",
-        "SEMANAL MENSUAL": "F.MENSUAL 350",
-        "QUINCENAL TRIMESTRAL": "F.TRI 450",
-        "SEMANAL TRIMESTRAL": "F.TRI 690",
+        "QUINCENAL MENSUAL": "MENSUAL",
+        "SEMANAL MENSUAL": "MENSUAL",
+        "QUINCENAL TRIMESTRAL": "TRIMESTRAL",
+        "SEMANAL TRIMESTRAL": "TRIMESTRAL",
     }
-    _matri_concepto = "F.140/MATRICULA" if matricula <= 140_000 else "F.200/MATRICULA"
+    _matri_concepto = "MATRICULA"
 
     if matricula > 0:
         pago_matri = await _post(_pagos_tabla, {
