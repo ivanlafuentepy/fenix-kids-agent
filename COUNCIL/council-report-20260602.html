@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Council — Rediseño de datos · Universo Iván Lafuente · 02/06/2026</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1c2230; --muted:#5b6472; --line:#e4e7ec;
+    --accent:#4f46e5; --green:#0f9d58; --amber:#d98300; --red:#c0392b; --blue:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;padding:32px 16px}
+  .wrap{max-width:860px;margin:0 auto}
+  header.top{margin-bottom:24px}
+  .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:26px;margin:6px 0 4px}
+  .sub{color:var(--muted);font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:16px 0;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .verdict{border-top:4px solid var(--accent)}
+  h2{font-size:19px;margin:2px 0 12px;display:flex;align-items:center;gap:8px}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--ink)}
+  p{margin:8px 0}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:5px 0}
+  .q{background:#eef2ff;border:1px solid #dfe3ff;border-radius:10px;padding:14px 18px;color:#33365a;font-size:14px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;color:#fff;vertical-align:middle}
+  .p-green{background:var(--green)} .p-amber{background:var(--amber)} .p-red{background:var(--red)}
+  .p-blue{background:var(--blue)} .p-grey{background:#7b8494}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+  th{background:#fafbfc;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  td.adv{font-weight:600;white-space:nowrap}
+  .lens{font-size:11px;color:var(--muted)}
+  details{border:1px solid var(--line);border-radius:10px;margin:10px 0;background:#fff;overflow:hidden}
+  details[open]{box-shadow:0 1px 2px rgba(16,24,40,.05)}
+  summary{cursor:pointer;padding:13px 16px;font-weight:600;font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary:hover{background:#fafbfc}
+  .tag{font-size:11px;font-weight:600;color:var(--muted)}
+  .body{padding:4px 18px 16px;font-size:14px;color:#2a313f}
+  .body p{margin:10px 0}
+  .recobox{background:#f0fdf4;border:1px solid #c6f0d4;border-radius:10px;padding:14px 18px;margin:12px 0}
+  .nobox{background:#fef3f2;border:1px solid #fbd5d1;border-radius:10px;padding:14px 18px;margin:12px 0}
+  .blind li{margin:8px 0}
+  .first{background:#1c2230;color:#fff;border-radius:14px;padding:22px 24px;margin:16px 0}
+  .first h2{color:#fff}
+  .first ol{padding-left:20px} .first li{margin:7px 0;color:#e7ebf3}
+  .first .warn{color:#ffd9a8;font-weight:600}
+  footer{color:var(--muted);font-size:12px;text-align:center;margin:28px 0 8px}
+  .legend{font-size:12px;color:var(--muted);margin-top:6px}
+  .legend .pill{margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">🏛️ LLM Council · Karpathy</div>
+    <h1>Rediseño de datos — Universo Iván Lafuente</h1>
+    <div class="sub">5 advisors aislados · peer review anonimizado · chairman synthesis · 11 sub-agentes · 02/06/2026</div>
+  </header>
+
+  <div class="card">
+    <div class="q"><strong>La pregunta:</strong> ¿Es correcto el modelo <em>Personas+Ventas+Pagos</em> para el holding (9 negocios)? ¿Airtable o Postgres? Y dado que el cuello de botella es el tiempo de Iván (solo, con Dorita en rebuild de 8-10 semanas) — ¿el alcance es solo Fénix+Pagos o el holding completo?</div>
+  </div>
+
+  <!-- VERDICT -->
+  <div class="card verdict">
+    <h2>⚖️ Veredicto del Chairman</h2>
+    <p><strong>Modelo Personas+Ventas+Pagos:</strong> <span class="pill p-green">SÍ</span> — pero como <em>destino del esquema</em>, no obra de esta semana. La identidad triplicada y el pago polimórfico son <strong>el mismo bug</strong>: falta la capa que homogeniza el <em>quién</em> y el <em>por qué</em>. La única concesión al futuro que se paga hoy es barata: nombrar bien las tablas.</p>
+    <p><strong>Herramienta:</strong> <span class="pill p-blue">AIRTABLE</span> sin discusión. Postgres es decisión de 2027. El techo de 50k records &gt; tu población real de clientes por años. El modelo bien hecho se exporta a Postgres casi 1:1 cuando haga falta.</p>
+    <p><strong>Alcance:</strong> <span class="pill p-amber">SOLO FÉNIX</span> — identidad + pagos. Quirúrgico. Pero con disciplina: VENTAS y Personas/Hogares se nombran como el núcleo futuro, así el fix que duele hoy <em>es</em> el prototipo validado del party model. Sin construir ni un radio más.</p>
+  </div>
+
+  <!-- POSITION MATRIX -->
+  <div class="card">
+    <h2>📊 Posición de cada advisor</h2>
+    <table>
+      <thead><tr><th>Advisor</th><th>Modelo</th><th>Herramienta</th><th>Alcance</th></tr></thead>
+      <tbody>
+        <tr><td class="adv">Contrarian</td><td><span class="pill p-amber">Correcto = trampa</span></td><td><span class="pill p-blue">Airtable, no cavar</span></td><td>Solo Fénix · <strong>nada</strong> de núcleo grande</td></tr>
+        <tr><td class="adv">First Principles</td><td><span class="pill p-green">Mínimo irreductible</span></td><td><span class="pill p-blue">Airtable (techo falso)</span></td><td>Núcleo con Fénix como único cliente</td></tr>
+        <tr><td class="adv">Expansionist</td><td><span class="pill p-green">Es un activo/producto</span></td><td><span class="pill p-grey">Postgres, pero no ya</span></td><td>Diseñar holding · implementar 1 radio</td></tr>
+        <tr><td class="adv">Outsider</td><td><span class="pill p-amber">Correcto ≠ oportuno</span></td><td><span class="pill p-blue">Airtable</span></td><td>Solo Fénix · sin party model</td></tr>
+        <tr><td class="adv">Executor</td><td><span class="pill p-green">Correcto en papel</span></td><td><span class="pill p-blue">Airtable (Postgres=2027)</span></td><td>Quirúrgico · acción del lunes</td></tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span class="pill p-green">consenso</span> técnicamente correcto ·
+      <span class="pill p-amber">cautela</span> correcto pero inoportuno ·
+      <span class="pill p-blue">unánime</span> quedarse en Airtable
+    </div>
+  </div>
+
+  <!-- AGREE -->
+  <div class="card">
+    <h2>🤝 Dónde coincide el Consejo</h2>
+    <ul>
+      <li><strong>El modelo es correcto</strong> (4/5) — la identidad triplicada y el PAGOS polimórfico son el mismo bug: falta la capa Persona + Venta.</li>
+      <li><strong>Quedarse en Airtable, no migrar a Postgres ahora</strong> (unánime). El techo de records es un problema falso a tu escala.</li>
+      <li><strong>El alcance NO es el holding completo</strong> (unánime). Retail/Casona/Uber no sangran — diseñarlos hoy es especulativo.</li>
+      <li><strong>El cuello de botella es tu tiempo.</strong> La tesis "plataforma para PyMEs latinas" fue marcada como punto ciego por las 5 reviews.</li>
+      <li><strong>Cada cambio de esquema toca a Dorita y Fénix Agent</strong>, que leen y escriben esa base en producción.</li>
+    </ul>
+  </div>
+
+  <!-- CLASH -->
+  <div class="card">
+    <h2>⚔️ Dónde choca el Consejo</h2>
+    <p>El único choque real: <strong>¿el fix de Fénix nace como el "núcleo" o como parche aislado?</strong></p>
+    <ul>
+      <li><strong>First Principles + Expansionist + Executor:</strong> instalá el núcleo (Personas+Ventas+Pagos) usando Fénix como primer cliente. El fix <em>es</em> el núcleo.</li>
+      <li><strong>Contrarian + Outsider:</strong> ni eso. Colapsá las 3 tablas y limpiá pagos, sin comprometerte al party model. <em>"La persona unificada cross-negocio es belleza que no paga renta."</em></li>
+    </ul>
+    <p><strong>Por qué chocan:</strong> falta el dato de volumen y de plata. Y eso se resuelve barato — por eso el primer paso disuelve el choque.</p>
+  </div>
+
+  <!-- BLIND SPOTS -->
+  <div class="card">
+    <h2>🔍 Puntos ciegos que destapó el peer review</h2>
+    <p class="sub">Ningún advisor los vio solo — emergieron del cruce. Son los más peligrosos.</p>
+    <ul class="blind">
+      <li>⚠️ <strong>La base SALSA SOUL APP.2 está VIVA y compartida con Salsa adultos.</strong> Tocar PAGOS/identidad "solo para Fénix" puede romper a Dorita. Nadie propuso <strong>staging</strong> antes de tocar producción.</li>
+      <li>⚠️ <strong>Corte de consistencia:</strong> con los agentes escribiendo en vivo, un pago a mitad de migración queda huérfano. Hay que <strong>congelar escrituras</strong>.</li>
+      <li>⚠️ <strong>El plan familiar es 1 Venta → N niños</strong> — el caso 1-a-muchos que justo revienta el modelo viejo.</li>
+      <li>⚠️ <strong>Conciliación fiscal con IVA (SET):</strong> un libro mayor que no cuadra es pasivo fiscal. Airtable no maneja decimales/multimoneda contablemente.</li>
+      <li>⚠️ <strong>Re-cableado de los call sites:</strong> "trivial de portar" es falso — cambiar PAGOS de 4 padres a Venta rompe cada lugar donde los agentes escriben un pago.</li>
+      <li>⚠️ <strong>Colisión de calendario:</strong> no existe el universo donde el rebuild de Dorita y este fix avanzan en paralelo con una sola persona. Uno para.</li>
+    </ul>
+  </div>
+
+  <!-- RECOMMENDATION -->
+  <div class="card">
+    <h2>✅ La Recomendación</h2>
+    <div class="recobox">
+      <strong>QUÉ SÍ hacer</strong> (en orden, módulo por módulo, nunca big-bang):
+      <ul>
+        <li>Medir primero (ver abajo).</li>
+        <li>Colapsar LEADS+PRUEBA+FAMILIAS+NIÑOS a un flujo con campo de estado (lead→prueba→activo); matar el checkbox CONTROL DATOS.</li>
+        <li>Crear VENTAS; modelar el caso <strong>1 Venta familiar → N niños</strong>; hacer que PAGOS cuelgue de UNA Venta.</li>
+        <li>Aislar el esquema en <strong>staging</strong> antes de tocar las tablas compartidas con Salsa.</li>
+        <li>Cada paso termina con: test de que Dorita/Fénix Agent siguen escribiendo bien + VENTAS cuadra con FACTURAS.</li>
+      </ul>
+    </div>
+    <div class="nobox">
+      <strong>QUÉ NO hacer ahora:</strong>
+      <ul>
+        <li>NO tocar Salsa, Curso, retail, Casona, Uber, Edificio Líder.</li>
+        <li>NO migrar a Postgres/NocoDB.</li>
+        <li>NO construir el PERSONAS cross-negocio unificado todavía.</li>
+        <li>NO meter todo el dinero del holding en una sola base contable de Airtable.</li>
+        <li>NO arrancar en paralelo al rebuild de Dorita sin decidir cuál de los dos para.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- FIRST THING -->
+  <div class="first">
+    <h2>🎯 Lo primero que hay que hacer</h2>
+    <p class="warn">Exportar a CSV y medir — antes de tocar un solo campo. Una mañana, cero riesgo.</p>
+    <p>De PAGOS, FAMILIAS FENIX, NIÑOS FENIX, LEADS FENIX y PRUEBA FENIX, responder 4 números:</p>
+    <ol>
+      <li>¿Cuántas filas en cada una? (define si es 1 semana o 1 mes)</li>
+      <li>¿Cuántas familias activas y promedio niños/familia? (dimensiona el 1→N)</li>
+      <li>De los PAGOS, ¿cuántos cuelgan de cada uno de los 4 padres?</li>
+      <li>¿Cuánta plata NO pasa por PAGOS + cuánta morosidad? (ROI)</li>
+    </ol>
+    <p class="warn">No se compromete ni una hora de migración hasta tener esos 4 números. Es el STATE_AUDIT del council de Dorita.</p>
+  </div>
+
+  <!-- ADVISOR DETAIL -->
+  <div class="card">
+    <h2>🗣️ Respuestas completas de los advisors</h2>
+
+    <details>
+      <summary>The Contrarian <span class="tag">busca el fallo fatal</span></summary>
+      <div class="body">
+        <p>El fallo fatal no está en el modelo de datos. El modelo Personas+Ventas+Pagos es correcto — de hecho es tan correcto que ahí está la trampa. Es elegante, normalizado, resuelve la identidad triplicada y el pago polimórfico de raíz. Por eso mismo Iván lo va a querer hacer entero. Y ese deseo de hacerlo entero es exactamente el mecanismo por el que este plan se rompe. El council de Dorita ya dijo, unánime, que el cuello de botella es el tiempo de Iván y que el punto ciego es "pensar en plataforma antes de estabilizar". Estamos a punto de repetir el error con un nombre más bonito: "party model".</p>
+        <p>Hagamos la cuenta que nadie quiere hacer. Rediseñar el holding completo significa migrar 39 tablas, reescribir las automatizaciones internas de Airtable, y re-puntar los agentes que LEEN y ESCRIBEN esos datos por API. El día que PAGOS deje de colgar de 4 padres y pase a Ventas, todo call site del agente que escribe un pago se rompe. ¿Cuántos hay? Nadie lo contó. Vas a mover el piso de datos abajo del agente que estás reconstruyendo arriba, al mismo tiempo, vos solo. Dos cirugías a corazón abierto simultáneas sobre el mismo paciente.</p>
+        <p>Posición sobre el alcance, sin anestesia: NADA de rediseñar el holding. El dolor real que Iván articuló fue quirúrgico: "Fénix y el pago se me complican". No dijo "necesito la persona unificada entre salsa y fénix" — eso lo proyectaste vos. El alcance correcto es brutal y chico: identidad triplicada de Fénix + el pago de Fénix. Un radio. El que duele.</p>
+        <p>Sobre Airtable vs Postgres: si construís el party model completo dentro de Airtable, estás cavando más hondo en la herramienta de la que decís que te vas a ir. El "después migramos" se vuelve más caro con cada tabla. Pero Postgres+NocoDB hoy, solo, con Dorita ardiendo, tampoco: es el mismo error de plataforma vestido de open-source.</p>
+        <p>Hay una mentira piadosa en "todo es Iván Lafuente". ¿Qué decisión concreta cambia mañana por saber que el papá de un niño Fénix también baila salsa? Si la respuesta es "no por ahora" — y lo es — la persona unificada es belleza que no paga renta. La pregunta que el council esquiva: si Iván tiene 6 horas reales por semana, ¿en qué universo termina una migración de 39 tablas antes de que algo crítico se caiga un mes? Y si es "en ninguno", ¿por qué seguimos dibujando el holding en vez de preguntarle cuál es la UNA query de Fénix que hoy le cuesta plata o sueño?</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The First Principles Thinker <span class="tag">reformula la pregunta real</span></summary>
+      <div class="body">
+        <p>El nombre de esto no es "rediseño de Airtable". Despojado de jerga, tenés UN libro mayor contable de una persona que cobra plata de muchas formas. El verdadero objeto no es "Alumno" ni "Familia" ni "Producto": es la TRANSACCIÓN. Personas y Hogares son atributos de la transacción, no al revés. La propuesta de Iván y la contrapropuesta pelean por la entidad equivocada como centro — el centro es Ventas/Pagos.</p>
+        <p>Causa raíz: el dolor de pagos y la identidad triplicada son EL MISMO bug. PAGOS es polimórfico precisamente porque no hay una Venta que homogenice el "por qué". La identidad se triplica porque no hay una Persona que homogenice el "quién". Son la misma costilla. Por eso SÍ, el modelo es correcto — pero por una razón dura: es el mínimo modelo que hace desaparecer los dos dolores a la vez.</p>
+        <p>Separá complejidad real de accidental. La REAL: Personas, Ventas, Pagos — tres tablas, irreductible y chico. La ACCIDENTAL: los 9 negocios, retail con stock, casona, Postgres vs NocoDB, el techo de records. Nada de eso es el problema de Iván HOY. El holding completo es lo que Iván IMAGINA; Fénix+Pagos es lo que TIENE.</p>
+        <p>El alcance correcto no es "fix chico" NI "rediseñar el holding": es instalar el NÚCLEO usando Fénix como primer y único cliente. Salsa/Curso/retail/casona NO se tocan. El núcleo se diseña pensando en que un día entren todos — esa concesión es barata: nombrar bien las tablas. Migración módulo por módulo, nunca big-bang.</p>
+        <p>Herramienta: Airtable. El techo de records es un problema FALSO — 50k &gt; humanos reales del universo Iván por años. El costo real de migrar ahora no es el techo, es el tiempo de Iván, ya comprometido en Dorita. La pregunta incómoda: ¿estamos resolviendo el dolor de Iván, o nos divertimos con un problema de modelado bonito mientras Dorita —lo único que le da de comer— sigue ardiendo?</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The Expansionist <span class="tag">ve la oportunidad grande</span></summary>
+      <div class="body">
+        <p>El modelo no es solo correcto: es lo único en esta conversación con chance de ser un ACTIVO en vez de un costo. La identidad triplicada y el PAGOS de 4 padres son el síntoma de que Iván tiene NUEVE negocios y CERO capa de identidad común. Cada negocio nuevo nace huérfano porque no existe el núcleo. No estamos "arreglando Fénix", estamos diseñando la columna vertebral del holding.</p>
+        <p>Lo que nadie ve: PERSONAS+HOGARES+VENTAS+PAGOS+FACTURAS, ya integrada con agentes de WhatsApp, es un PRODUCTO. Es lo que cualquier gimnasio, academia de música o jardín maternal necesita. Es el día-cero de una plataforma vertical de CRM+cobros+agente para PyMEs latinas. El curso de IA es su canal de distribución.</p>
+        <p>Herramienta: Postgres, pero NO ya. El día que el núcleo unifique 9 negocios, un solo PERSONAS revienta los 50k de Airtable. El destino es el Postgres que ya tiene en Railway + NocoDB. Pero lo que define la plataforma es el SCHEMA, no el motor: si modelás bien en Airtable hoy, el DDL se exporta casi 1:1. Airtable es el prototipo pago, no el cementerio.</p>
+        <p>Alcance — y acá traiciono mi instinto: el modelo del holding es correcto en el papel hoy, pero la EJECUCIÓN debe ser solo Fénix. Fénix tiene los dos problemas — es el caso de prueba que valida toda la arquitectura. Diseñás el holding en el diagrama; implementás un solo radio. El error no es soñar la plataforma, es construir nueve radios antes de que uno respire.</p>
+        <p>Lo que me preocupa: Dorita ESCRIBE en este backend. Si la reconstruís contra el esquema viejo, pagaste 8-10 semanas para acoplar tu agente más caro al modelo que ya decidiste matar. El orden importa más que el alcance. La pregunta incómoda: ¿qué pasa el día que Iván se enferma una semana? El núcleo unificado es lo único que convierte el schema que vive en su cabeza en un activo que otro —u otro agente— podría operar sin él.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The Outsider <span class="tag">cuestiona los supuestos básicos</span></summary>
+      <div class="body">
+        <p>Lo que nadie dijo en voz alta: no hay un solo número en todo el contexto. ¿Cuántas familias? ¿20 o 200? ¿Cuántos pagos a mano por mes? ¿Cuántas veces CONTROL DATOS atrapó una discrepancia real? Sin esos números todo es arquitectura de escritorio. Me huele a que el "dolor" es de 30 minutos por semana de re-tipeo, y la "solución" es un rediseño del holding de 9 negocios. Eso es escaparse hacia el problema más interesante.</p>
+        <p>El problema declarado y el real no son el mismo. Iván dijo "Fénix + pagos". No dijo "no puedo ver todo lo que una persona tiene conmigo a través de 9 negocios" — esa frase la pusieron los técnicos cuando se enamoraron del party model. Nadie despierta perdiendo plata porque el papá que baila salsa figura dos veces.</p>
+        <p>Posiciones: el modelo es conceptualmente correcto pero sobredimensionado para hoy. Airtable, sin discusión — no por las razones técnicas, sino porque Iván está SOLO con Dorita encima; migrar es regalarle un segundo proyecto monstruo. Alcance: solo Fénix+Pagos, diseñado para no contradecir el party model el día que lo necesite, pero sin construirlo ahora.</p>
+        <p>El cuestionamiento más básico: ¿el problema es el modelo de datos, o que Iván tiene 9 negocios y un solo cerebro? Si rediseñás la base perfecta, mañana seguís siendo una persona sosteniendo Dorita rota. El esquema limpio no te devuelve horas — es donde se van las horas. Estamos pensando en la plataforma del holding mientras Dorita arde: el patrón exacto que ya nos dijeron que es el error.</p>
+        <p>Lo que haría: una tabla de PAGOS que cuelgue de una sola referencia, colapsar las 3 tablas de identidad en una con campo de estado, matar CONTROL DATOS. Una semana, no diez. La pregunta incómoda: si Iván pasara dos semanas SIN tocar la base y las usara para estabilizar Dorita o cerrar inscripciones del curso, ¿ganaría más plata? Si la respuesta honesta es sí, esta conversación es el síntoma, no la cura.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The Executor <span class="tag">¿qué hacés el lunes?</span></summary>
+      <div class="body">
+        <p>El modelo es correcto en el papel, pero eso no importa el lunes. Brutal con el cronograma: rediseñar el holding —9 negocios, 3 patrones, 39 tablas, reescribir DOS agentes— es un año-hombre. Iván está solo y ya tiene 8-10 semanas en Dorita + dos academias + clases. La matemática no cierra. Si arranca el holding, en tres meses no tiene ni el holding ni Dorita: dos obras a medias y los agentes rotos en producción.</p>
+        <p>Herramienta: Airtable vs Postgres es una trampa de tiempo disfrazada de decisión técnica. Migrar significa reescribir toda la capa de API de los agentes y reconstruir las automatizaciones — semanas que no tiene. Los agentes ya hablan con Airtable. Quedate ahí. Migrar con el modelo todavía mal es pagar la migración dos veces. Postgres es decisión de 2027.</p>
+        <p>Alcance quirúrgico: solo Fénix, solo pagos + identidad triplicada. Es lo que verbalizó textual. El retail, la Casona, Uber, Líder NO existen en Airtable — no hay dolor, no hay deuda. Tocarlos es trabajo especulativo sobre negocios que ni sangran.</p>
+        <p>La acción del lunes, verificable en una mañana: crear UNA tabla VENTAS y hacer que PAGOS cuelgue de UNA Venta en vez de 4 padres. Paso cero (media hora): exportar a CSV PAGOS, FAMILIAS, NIÑOS, LEADS y PRUEBA FENIX para tener backup y ver el volumen. Si son 200 pagos, es una semana. Si son 4000, otra conversación. Nadie dio ese número.</p>
+        <p>Las dos semanas: S1 colapsar la identidad triplicada (FAMILIAS+NIÑOS como verdad, LEADS y PRUEBA como estados), matar CONTROL DATOS. S2 toda la plata de Fénix por VENTAS→PAGOS y sacar el primer estado de cuenta sin sumar a mano. Si funciona en Fénix, ES el prototipo del party model validado con un negocio real. Cada paso termina verificando que Dorita y Fénix Agent no se rompieron. La pregunta incómoda: ¿de dónde salen las horas si Dorita ya se come las 8-10 semanas? O Dorita se pausa, o este fix espera. ¿Cuál para?</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- PEER REVIEW -->
+  <div class="card">
+    <h2>🔁 Highlights del peer review (anonimizado A–E)</h2>
+    <p class="sub">A=Contrarian · B=First Principles · C=Expansionist · D=Outsider · E=Executor</p>
+    <details>
+      <summary>Las 5 reviews <span class="tag">más fuerte · punto ciego · todos ignoraron</span></summary>
+      <div class="body">
+        <p><span class="lens">Lente: ejecutabilidad</span><br><strong>Más fuerte: E</strong> (única con acción del lunes + paso cero de medir volumen). <strong>Punto ciego: C</strong> (fantasía de SaaS para PyMEs). <strong>Todos ignoraron:</strong> la base está VIVA y compartida con Salsa — falta staging.</p>
+        <p><span class="lens">Lente: riesgo de producción</span><br><strong>Más fuerte: E.</strong> <strong>Punto ciego: C</strong> (invierte el orden: núcleo antes que Dorita). <strong>Todos ignoraron:</strong> congelar escrituras durante la migración o un pago queda huérfano.</p>
+        <p><span class="lens">Lente: negocio / costo de oportunidad</span><br><strong>Más fuerte: B</strong> (causa raíz única, núcleo mínimo). <strong>Punto ciego: C</strong> (décimo negocio especulativo). <strong>Todos ignoraron:</strong> el costo de cobranza real — % morosidad y ticket familiar ponen número al ROI.</p>
+        <p><span class="lens">Lente: tiempo y recursos</span><br><strong>Más fuerte: B.</strong> <strong>Punto ciego: B</strong> (subestima el re-cableado de los agentes — "trivial de portar" es falso). <strong>Todos ignoraron:</strong> el plan familiar es 1 Venta → N niños, el caso 1-a-muchos.</p>
+        <p><span class="lens">Lente: solidez técnica</span><br><strong>Más fuerte: B</strong> (causa raíz + desmonta el techo de records). <strong>Punto ciego: C</strong> ("plataforma antes de estabilizar"). <strong>Todos ignoraron:</strong> conciliación fiscal con IVA/SET y que Airtable no maneja decimales/multimoneda contablemente.</p>
+      </div>
+    </details>
+  </div>
+
+  <footer>
+    Council generado el 02/06/2026 · LLM Council (Karpathy) · 5 advisors + peer review anonimizado + chairman · workflow multi-agente (11 sub-agentes)<br>
+    Transcript completo: <code>COUNCIL/council-transcript-20260602.md</code>
+  </footer>
+
+</div>
+</body>
+</html>

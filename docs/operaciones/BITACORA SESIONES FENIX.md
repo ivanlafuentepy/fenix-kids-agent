@@ -6,6 +6,25 @@ Registro de cada sesión de trabajo: qué pidió Ivan, qué se hizo.
 
 ---
 
+## 2026-06-02 (sesión 8 — limpieza conceptos pago Fénix)
+
+**Ivan:** "No me convence mi sistema en Airtable de Fénix — familia/niños está complicado y el pago se me complica. Hacé un análisis profundo del universo Fénix y destruí mi idea de manejar todo bajo una sola tabla de alumnos."
+**Fenix:** Auditoría de las 2 bases (CURSO IA limpio + SALSA SOUL APP.2 con 39 tablas, Fénix mezclado con Salsa). Diagnóstico: identidad triplicada (LEADS/PRUEBA/FAMILIAS/NIÑOS re-tipean al mismo niño), PAGOS polimórfico (cuelga de 4 padres), padre como texto plano desconectado de Salsa. Propuesta: party model Personas+Ventas+Pagos.
+
+**Ivan:** "Tengo más negocios: Uber, ventas de PC, Alma Latina (ropa/zapatos), Mamba Basket... corramos un Council completo sobre esta decisión."
+**Fenix:** Reencuadre a holding (9 negocios). Corrido un LLM Council (5 advisors aislados + peer review anonimizado + chairman) vía workflow multi-agente. Veredicto: modelo Personas+Ventas+Pagos correcto, pero NO rediseñar el holding (escalar antes de estabilizar = error); quedarse en Airtable (Postgres = 2027); foco quirúrgico solo Fénix; medir antes de tocar. Artefactos en `COUNCIL/` (transcript .md + reporte .html).
+
+**Ivan:** "Para el pago... mejor el que prueba paga una clase, no un estado. Y el CONCEPTO de pagos es un Frankenstein de mierda, reestructurámelo."
+**Fenix:** Confirmado con datos reales: Fénix cobra por FAMILIA (el PLAN ya depende de #hijos + frecuencia), no por niño. El campo CONCEPTO tenía 40 opciones que mezclaban negocio+monto+tipo (F.PRUEBA 90MIL, etc.). Modelo limpio: FUENTE=negocio, CONCEPTO=tipo, MONTO=monto. Alcance acordado: solo Fénix.
+
+**Ivan:** "Vamos con el plan" → backup, pre-cambio, deploy, migración.
+**Fenix:** Backup de 5 tablas (2.164 regs) a `backups/` (gitignored). `/pre-cambio` + `/pre-deploy`. Re-cableados 5 archivos para escribir conceptos genéricos (PRUEBA/CLASE/MENSUAL/TRIMESTRAL/MATRICULA), eliminado parche `_MONTOS_CONCEPTO`. Commit + deploy a Railway. Migrados 49 pagos históricos a genéricos, verificado 0 conceptos viejos. Opción `CLASE` creada en el select. FENIXMAMA preservado (tiene lecturas en código).
+
+### Commits
+- `957a250` refactor(pagos): unificar conceptos de pago Fenix a genericos
+
+---
+
 ## 2026-05-26 (sesión 4 — fix PRUEBA FENIX + QR + auditoría + docs)
 
 **Ivan:** endpoint 595985175667 — por qué no cargó el nombre del papá en Airtable cuando registró el pago?

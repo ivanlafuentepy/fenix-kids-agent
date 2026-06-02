@@ -12,6 +12,9 @@ config/google_credentials*.json
 # Output de scripts (datos de leads)
 scripts/output/
 
+# Backups de Airtable (datos sensibles: teléfonos, CI, pagos)
+backups/
+
 # Python
 __pycache__/
 *.py[cod]
