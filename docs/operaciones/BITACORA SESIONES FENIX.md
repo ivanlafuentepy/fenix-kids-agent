@@ -20,8 +20,13 @@ Registro de cada sesión de trabajo: qué pidió Ivan, qué se hizo.
 **Ivan:** "Vamos con el plan" → backup, pre-cambio, deploy, migración.
 **Fenix:** Backup de 5 tablas (2.164 regs) a `backups/` (gitignored). `/pre-cambio` + `/pre-deploy`. Re-cableados 5 archivos para escribir conceptos genéricos (PRUEBA/CLASE/MENSUAL/TRIMESTRAL/MATRICULA), eliminado parche `_MONTOS_CONCEPTO`. Commit + deploy a Railway. Migrados 49 pagos históricos a genéricos, verificado 0 conceptos viejos. Opción `CLASE` creada en el select. FENIXMAMA preservado (tiene lecturas en código).
 
+**Ivan:** "Vamos fase 2" (sacar PRUEBA FENIX, la identidad triplicada).
+**Fenix:** Escrito el plan completo del refactor en `docs/guias/PLAN FASE 2 - SACAR PRUEBA FENIX.md` (4 sub-fases incrementales, expand→migrate→contract). Hallazgo crítico: crear la familia al pagar la prueba dispara el router → mandaría al lead a Aurora en plena venta. Por eso 2.A arregla el router PRIMERO. Ejecutado **2.A paso 1 (router)**: helper `familia_es_activa()` — Aurora solo si ESTADO PLAN ≠ A PRUEBA (ACTIVO/PAUSADO/BAJA → Aurora sin cambio; A PRUEBA → Ivan). 3 call-sites (router, nocturno, grupo TG). Opción A PRUEBA agregada al select. Import OK, helper testeado, deployado, health OK. Comportamiento actual idéntico (no hay familias A PRUEBA). Pendiente 2.A paso 2: crear familia A PRUEBA al pagar.
+
 ### Commits
 - `957a250` refactor(pagos): unificar conceptos de pago Fenix a genericos
+- `4771bd6` docs: plan detallado Fase 2 — sacar PRUEBA FENIX (4 sub-fases)
+- `7a00032` feat(router): familias en estado A PRUEBA siguen con Ivan, no Aurora
 
 ---
 
