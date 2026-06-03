@@ -503,6 +503,19 @@ async def buscar_familia_por_telefono(telefono: str) -> dict | None:
     return records[0] if records else None
 
 
+def familia_es_activa(familia: dict | None) -> bool:
+    """True si la familia es un cliente real (no un lead en prueba).
+
+    ESTADO PLAN == "A PRUEBA" → lead que pagó la prueba pero todavía no se inscribió:
+    lo sigue atendiendo Ivan, no Aurora, y queda sujeto a las reglas de lead (nocturno, grupo).
+    ACTIVO / PAUSADO / BAJA / vacío → cliente (Aurora), igual que antes.
+    """
+    if not familia:
+        return False
+    estado = (familia.get("fields", {}).get("ESTADO PLAN") or "").strip().upper()
+    return estado != "A PRUEBA"
+
+
 async def marcar_control_datos(familia_id: str) -> bool:
     """Marca CONTROL DATOS = True en FAMILIAS FENIX."""
     return await _patch(_FAMILIAS, familia_id, {"CONTROL DATOS": True})

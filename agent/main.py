@@ -82,7 +82,7 @@ from agent.airtable_client import (
     actualizar_conversion_lead, actualizar_agent_lead,
     marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
     obtener_ninos_de_familia, crear_reserva,
-    buscar_familia_por_telefono, buscar_familia_por_nombre,
+    buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
@@ -2797,7 +2797,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             pass
         # Determinar grupo Telegram: familia o "Hola Aurora" → FLIAS, sino → LEADS
         _quiere_aurora = "aurora" in texto.lower()
-        _tg_group = group_id_para_agente("aurora") if (_fam_tg or _quiere_aurora) else group_id_para_agente("ivan")
+        _tg_group = group_id_para_agente("aurora") if (familia_es_activa(_fam_tg) or _quiere_aurora) else group_id_para_agente("ivan")
         # Telegram es best-effort: si falla, el agente sigue respondiendo
         topic_id = None
         try:
@@ -3136,7 +3136,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if es_horario_nocturno() and telefono not in _PHONES_SIN_DELAY:
             # Padres inscriptos no tienen restricción nocturna
             _familia_nocturno = await buscar_familia_por_telefono(telefono)
-            if not _familia_nocturno:
+            if not familia_es_activa(_familia_nocturno):
                 historial_noche = await obtener_historial(telefono, limite=5)
                 _tiene_actividad = len(historial_noche) > 0
                 if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
@@ -3201,7 +3201,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if es_nuevo:
             if agent_actual != "aurora":
                 familia_inscripta = await buscar_familia_por_telefono(telefono)
-                if familia_inscripta:
+                if familia_es_activa(familia_inscripta):
                     agent_actual = "aurora"
                     modo_nixie = "cliente_inscripto"
                     await actualizar_agent_actual(telefono, "aurora", modo_nixie)
