@@ -24,7 +24,7 @@ from agent.pagos import (
     formatear_monto, monto_prueba_por_hijos,
 )
 from agent.airtable_client import (
-    actualizar_conversion_lead, crear_prueba_fenix,
+    actualizar_conversion_lead, crear_prueba_fenix, crear_familia_a_prueba,
 )
 from agent.detectores_conv import (
     _extraer_nombre_del_historial, _extraer_nombre_hijo_historial,
@@ -367,6 +367,33 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
                 lead_record_id=lead_record_id,
             )
             creados = 1
+
+        # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 2.A) ──
+        # El lead que agendó/pagó la prueba se materializa como FAMILIA A PRUEBA
+        # + NIÑOS. Sigue con Ivan (router lo mantiene) hasta inscribirse.
+        # PRUEBA FENIX se mantiene en paralelo por ahora. Nunca rompe el pago.
+        try:
+            if ninos_form:
+                _ninos_familia = [
+                    {
+                        "nombre": n.get("nombre", ""),
+                        "apellido": n.get("apellido", ""),
+                        "fecha_nacimiento": n.get("fecha_nacimiento", ""),
+                    }
+                    for n in ninos_form if n.get("nombre")
+                ]
+            else:
+                _nh_fam = _extraer_nombre_hijo_historial(historial_completo)
+                _ninos_familia = [{"nombre": _nh_fam}] if _nh_fam and _nh_fam != "no mencionó" else []
+            _fam_id, _fam_ninos = await crear_familia_a_prueba(
+                telefono=telefono,
+                nombre_padre=nombre_resp,
+                apellido_padre=apellido_resp,
+                ninos=_ninos_familia,
+            )
+            logger.info(f"[AGENDA] FAMILIA A PRUEBA: {_fam_id}, niños={_fam_ninos}")
+        except Exception as e:
+            logger.error(f"[AGENDA] Error creando FAMILIA A PRUEBA: {e}")
 
         # ── Determinar cantidad de hijos para el mensaje ──────────────────
         cant_hijos = len(ninos_form) if ninos_form else 1

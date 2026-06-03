@@ -966,6 +966,64 @@ async def crear_familia_completa(
     return familia_id, nino_ids
 
 
+async def crear_familia_a_prueba(
+    telefono: str,
+    nombre_padre: str,
+    apellido_padre: str,
+    ninos: list[dict] | None = None,
+) -> tuple[str | None, list[str]]:
+    """
+    Crea (o reutiliza) una FAMILIA en estado A PRUEBA para un lead que pagó/agendó
+    la clase de prueba, con sus NIÑOS vinculados.
+
+    El estado A PRUEBA hace que el router siga atendiendo al lead con Ivan
+    (ver familia_es_activa); recién al inscribirse pasa a ACTIVO → Aurora.
+    Dual-write: PRUEBA FENIX se sigue creando aparte por ahora (Fase 2.A).
+
+    ninos = [{"nombre", "apellido", "fecha_nacimiento", "sexo"}, ...]
+    Retorna (familia_id, [nino_ids]). Si la familia ya existe, NO la duplica.
+    """
+    from agent.ab_test import guardar_familia_id
+
+    # Reutilizar familia existente (no duplicar si ya se creó antes)
+    familia_existente = await buscar_familia_por_telefono(telefono)
+    if familia_existente:
+        familia_id = familia_existente["id"]
+        await guardar_familia_id(telefono, familia_id)
+        logger.info(f"[A PRUEBA] FAMILIA ya existe para {telefono}: {familia_id}")
+        return familia_id, []
+
+    familia_id = await crear_familia({
+        "padre": {
+            "nombre": nombre_padre,
+            "apellido": apellido_padre,
+            "telefono": telefono,
+        }
+    })
+    if not familia_id:
+        logger.error(f"[A PRUEBA] No se pudo crear FAMILIA para {telefono}")
+        return None, []
+
+    # Estado A PRUEBA → el router la mantiene con Ivan (no Aurora)
+    await _patch(_FAMILIAS, familia_id, {"ESTADO PLAN": "A PRUEBA"})
+
+    # Estado local + vínculo al LEAD
+    await guardar_familia_id(telefono, familia_id)
+    await vincular_familia_a_lead(telefono, familia_id)
+
+    # NIÑOS vinculados
+    nino_ids = []
+    for n in (ninos or []):
+        if not n.get("nombre"):
+            continue
+        nid = await crear_nino(n, familia_id)
+        if nid:
+            nino_ids.append(nid)
+
+    logger.info(f"[A PRUEBA] FAMILIA creada para {telefono}: familia={familia_id}, niños={nino_ids}")
+    return familia_id, nino_ids
+
+
 # ── PRUEBA FENIX (leads que agendan/pagan clase de prueba) ────────────────────
 
 def _deducir_genero(nombre: str) -> str:
@@ -1268,8 +1326,11 @@ async def obtener_familias_inscriptas() -> list[dict]:
     Retorna todas las FAMILIAS con al menos un teléfono cargado.
     Cada item: {"id", "telefono", "nombre_padre", "apodo_padre",
                 "nombre_madre", "apodo_madre", "nino_ids"}
+
+    Excluye las familias en estado A PRUEBA (leads que pagaron la prueba pero
+    aún no se inscribieron) — no son clientes, no reciben broadcasts.
     """
-    formula = "OR(LEN({CELL PADRE})>0, LEN({CELL MADRE})>0)"
+    formula = "AND(OR(LEN({CELL PADRE})>0, LEN({CELL MADRE})>0), {ESTADO PLAN}!='A PRUEBA')"
     records = await _get_records(_FAMILIAS, formula=formula, max_records=100)
     resultado = []
     for r in records:
