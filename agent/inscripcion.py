@@ -372,6 +372,7 @@ async def _ejecutar_inscripcion(
     from agent.airtable_client import (
         _get_records, _post, _patch, _PRUEBAS, _LEADS, _FAMILIAS,
         crear_familia, crear_nino,
+        buscar_familia_por_telefono, obtener_ninos_de_familia,
     )
 
     fp = prueba.get("fields", {})
@@ -379,17 +380,28 @@ async def _ejecutar_inscripcion(
     nombre_padre = fp.get("NOMBRE", "")
     apellido_padre = fp.get("APELLIDO", "")
 
-    # ── 1. Crear FAMILIA ──────────────────────────────────────────────
-    familia_id = await crear_familia({
-        "padre": {
-            "nombre": nombre_padre,
-            "apellido": apellido_padre,
-            "telefono": tel,
-        }
-    })
-    if not familia_id:
-        await proveedor.enviar_mensaje(admin_phone, "Error creando familia en Airtable")
-        return
+    # ── 1. Buscar o crear FAMILIA ─────────────────────────────────────
+    # Si la familia ya existe (creada al pagar la prueba, en estado A PRUEBA),
+    # la reutilizamos y la promovemos a ACTIVO en vez de crear una duplicada.
+    # Hoy todavía no se crea familia en la prueba → esta rama queda dormida
+    # hasta que se active el flujo de pago (deploy siguiente de la Fase 2).
+    familia_existente = await buscar_familia_por_telefono(tel)
+    ninos_previos = []
+    if familia_existente:
+        familia_id = familia_existente["id"]
+        ninos_previos = await obtener_ninos_de_familia(familia_id)
+        logger.info(f"[INSCRIPCION] Reutilizando FAMILIA existente {familia_id} para {tel}")
+    else:
+        familia_id = await crear_familia({
+            "padre": {
+                "nombre": nombre_padre,
+                "apellido": apellido_padre,
+                "telefono": tel,
+            }
+        })
+        if not familia_id:
+            await proveedor.enviar_mensaje(admin_phone, "Error creando familia en Airtable")
+            return
 
     await _patch(_FAMILIAS, familia_id, {
         "PLAN": plan,
@@ -397,7 +409,18 @@ async def _ejecutar_inscripcion(
         "ESTADO PLAN": "ACTIVO",
     })
 
-    # ── 2. Crear NIÑO(S) ─────────────────────────────────────────────
+    # ── 2. Crear o reutilizar NIÑO(S) ─────────────────────────────────
+    # Si la familia ya traía niños (creados en la prueba), los matcheamos
+    # por NOMBRE para no duplicar; igual linkeamos PRUEBA→NIÑO y migramos cara.
+    def _match_nino_previo(nombre_hijo: str) -> str | None:
+        nh = (nombre_hijo or "").strip().lower()
+        if not nh:
+            return None
+        for np in ninos_previos:
+            if (np.get("nombre") or "").strip().lower() == nh:
+                return np.get("id")
+        return None
+
     ninos_creados = []
     for op in todas_pruebas:
         of = op.get("fields", {})
@@ -406,12 +429,16 @@ async def _ejecutar_inscripcion(
         h_fn = of.get("FECHA NACIMIENTO", "")
         h_genero = of.get("GENERO", "")
         if h_nombre:
-            nino_id = await crear_nino({
-                "nombre": h_nombre,
-                "apellido": h_apellido,
-                "fecha_nacimiento": h_fn,
-                "sexo": h_genero,
-            }, familia_id)
+            nino_id = _match_nino_previo(h_nombre)
+            if nino_id:
+                logger.info(f"[INSCRIPCION] Reutilizando NIÑO existente {nino_id} ({h_nombre})")
+            else:
+                nino_id = await crear_nino({
+                    "nombre": h_nombre,
+                    "apellido": h_apellido,
+                    "fecha_nacimiento": h_fn,
+                    "sexo": h_genero,
+                }, familia_id)
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
                 # Vincular PRUEBA FENIX → NIÑO FENIX
