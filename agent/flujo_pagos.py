@@ -180,6 +180,7 @@ async def _procesar_boton_pago(btn_titulo: str):
 
     tipo = datos.get("tipo", "prueba")
     tipo_label = "PRUEBA 90K" if tipo == "prueba" else "INSCRIPCIÓN"
+    topic_id = None
 
     if "confirmar" in btn_titulo:
         # ── Confirmar pago ────────────────────────────────────────────────
