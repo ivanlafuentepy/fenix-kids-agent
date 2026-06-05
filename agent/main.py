@@ -1474,6 +1474,27 @@ async def debug_lead(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
+@app.post("/reset/{telefono}")
+async def reset_total_admin(telefono: str, _: bool = Depends(_require_admin)):
+    """
+    Reset TOTAL de un número (solo admin): borra el historial de conversación local
+    (mensajes + A/B) Y todo en Airtable en cascada (familia, niños, reservas, pruebas,
+    lead). El número queda como lead 100% nuevo.
+
+    Equivale al comando 'holayosoyfenix' pero ejecutable de forma remota por admin
+    (con header X-ADMIN-KEY), sin que la persona tenga que escribir nada.
+    """
+    contador_airtable = await eliminar_todo_de_telefono(telefono)
+    await limpiar_estado_completo(telefono)
+    logger.info(f"[RESET] Reset total admin para {telefono}: {contador_airtable}")
+    return {
+        "telefono": telefono,
+        "reset": "total",
+        "airtable": contador_airtable,
+        "conversacion": "borrada",
+    }
+
+
 @app.post("/restaurar-aurora/{telefono}")
 async def restaurar_aurora(telefono: str, _: bool = Depends(_require_admin)):
     """Restaura un número a Aurora sin borrar historial."""
