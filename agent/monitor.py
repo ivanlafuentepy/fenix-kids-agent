@@ -29,6 +29,7 @@ _ADMIN_PHONE = os.getenv("ADMIN_PHONE", "595982790407")
 
 # Estado en memoria (se pierde al reiniciar — intencional)
 webhook_errors: list[dict] = []
+meta_send_errors: list[dict] = []  # Fallos de envío a Meta (401 token muerto, etc.)
 _MAX_ERRORS = 100
 background_tasks: dict[str, asyncio.Task] = {}
 
@@ -45,6 +46,36 @@ def registrar_error_webhook(telefono: str, error: str):
     })
     if len(webhook_errors) > _MAX_ERRORS:
         webhook_errors[:] = webhook_errors[-_MAX_ERRORS:]
+
+
+def registrar_error_meta(status: int, error: str, contexto: str = "envio"):
+    """Llamar desde providers/meta.py cuando un envío a Meta falla (status != 200).
+
+    Esto es lo que el monitor de salud mira para detectar el token muerto (401).
+    """
+    meta_send_errors.append({
+        "ts": datetime.utcnow(),
+        "status": status,
+        "error": error[:200],
+        "contexto": contexto,
+    })
+    if len(meta_send_errors) > _MAX_ERRORS:
+        meta_send_errors[:] = meta_send_errors[-_MAX_ERRORS:]
+
+
+def _contar_errores_meta() -> dict:
+    """Resume los fallos de envío a Meta de la última hora.
+
+    Returns dict con: total, auth (cantidad de 401 = token muerto), otros.
+    """
+    hace_1h = datetime.utcnow() - timedelta(hours=1)
+    recientes = [e for e in meta_send_errors if e["ts"] >= hace_1h]
+    auth = sum(1 for e in recientes if e["status"] == 401)
+    return {
+        "total": len(recientes),
+        "auth": auth,
+        "otros": len(recientes) - auth,
+    }
 
 
 def _monitor_group_id() -> int:
@@ -337,6 +368,19 @@ async def monitor_salud_loop():
             if total_errores >= 5:
                 problemas.append(f"Acumulación de errores webhook: {total_errores} en la última hora")
 
+            # 6. Fallos de envío a Meta (401 = token muerto, Aurora no responde a los papás)
+            meta_errs = _contar_errores_meta()
+            if meta_errs["auth"] > 0:
+                problemas.append(
+                    f"🔴 TOKEN META MUERTO — {meta_errs['auth']} envíos rechazados con 401 en la última hora. "
+                    f"Aurora NO está respondiendo a los papás. "
+                    f"Acción: renovar META_ACCESS_TOKEN en Railway y REINICIAR el servicio."
+                )
+            elif meta_errs["otros"] >= 3:
+                problemas.append(
+                    f"Fallos de envío a Meta: {meta_errs['otros']} en la última hora (no-auth, revisar logs)."
+                )
+
             if problemas:
                 lineas = [f"MONITOR SALUD — {hora_py}\n"]
                 for p in problemas:
@@ -346,7 +390,8 @@ async def monitor_salud_loop():
             elif _en_horario_reporte_ok():
                 await _enviar_alerta(
                     f"SALUD — {hora_py}\n"
-                    f"Todo OK. DB conectada, 10 detectores OK, {len(background_tasks)} tasks vivos, prompts.yaml valido."
+                    f"Todo OK. DB conectada, 10 detectores OK, {len(background_tasks)} tasks vivos, "
+                    f"prompts.yaml valido, envios Meta OK."
                 )
 
         except Exception as e:

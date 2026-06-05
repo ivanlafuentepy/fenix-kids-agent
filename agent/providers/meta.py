@@ -10,6 +10,20 @@ from agent.providers.base import ProveedorWhatsApp, MensajeEntrante
 logger = logging.getLogger("agentkit")
 
 
+def _registrar_fallo(status: int, texto_error: str, contexto: str):
+    """Loguea un fallo de envío a Meta y lo reporta al monitor.
+
+    El monitor de salud mira esto para detectar el token muerto (401) y avisar
+    por Telegram. Import perezoso para evitar import circular meta↔monitor.
+    """
+    logger.error(f"Error Meta {contexto}: {status} — {texto_error}")
+    try:
+        from agent.monitor import registrar_error_meta
+        registrar_error_meta(status, texto_error, contexto)
+    except Exception as e:
+        logger.warning(f"No se pudo registrar error Meta en monitor: {e}")
+
+
 class ProveedorMeta(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando la API oficial de Meta (Cloud API)."""
 
@@ -147,7 +161,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
-                logger.error(f"Error Meta botones: {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, "botones")
             return r.status_code == 200
 
     async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:
@@ -171,7 +185,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
-                logger.error(f"Error Meta imagen: {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, "imagen")
             return r.status_code == 200
 
     async def subir_media(self, image_bytes: bytes, mime_type: str = "image/png") -> str | None:
@@ -194,7 +208,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                     media_id = r.json().get("id")
                     logger.info(f"Media subida OK: {media_id}")
                     return media_id
-                logger.error(f"Error subiendo media: {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, "subir_media")
                 return None
         except Exception as e:
             logger.error(f"Error subiendo media: {e}")
@@ -235,7 +249,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
-                logger.error(f"Error Meta video: {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, "video")
             return r.status_code == 200
 
     async def enviar_plantilla(
@@ -290,7 +304,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
-                logger.error(f"Error Meta plantilla '{template_name}': {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, f"plantilla '{template_name}'")
             else:
                 logger.info(f"Plantilla '{template_name}' enviada a {telefono}")
             return r.status_code == 200
@@ -314,7 +328,7 @@ class ProveedorMeta(ProveedorWhatsApp):
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
-                logger.error(f"Error Meta API: {r.status_code} — {r.text}")
+                _registrar_fallo(r.status_code, r.text, "texto")
             return r.status_code == 200
 
     async def descargar_media(self, media_id: str) -> bytes | None:
