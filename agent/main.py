@@ -172,6 +172,8 @@ from agent.afiches import (
 
 # ── Menú de botones para leads nuevos (agent/lead_menu.py) ──
 from agent.lead_menu import procesar_menu_lead
+# ── Menú de botones para familias inscriptas (agent/alumno_menu.py) ──
+from agent.alumno_menu import procesar_menu_inscripto
 
 # ── Promo Madre (DESACTIVADA 2026-05-16 — venció 15/5 20h) ──
 _PROMO_MADRE_ACTIVA = False  # cambiar a True para reactivar
@@ -3282,6 +3284,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Fallback: buscar por teléfono
             if not familia_existente:
                 familia_existente = await buscar_familia_por_telefono(telefono)
+
+            # ── Menú de botones para inscriptos (Aurora) ──────────────────
+            # Si el menú maneja el turno (saludo+botones o una acción como QR),
+            # cortamos acá. Si retorna None, sigue el flujo conversacional normal.
+            if familia_existente:
+                _menu_alum = await procesar_menu_inscripto(
+                    telefono, texto, proveedor,
+                    familia=familia_existente,
+                    btn_id=getattr(msg, "btn_id", None),
+                    es_boton=getattr(msg, "es_boton", False),
+                    es_primer_contacto=(len(historial) <= 1),
+                    topic_id=topic_id,
+                    tg_group=_tg_group,
+                )
+                if _menu_alum is not None:
+                    logger.info(f"[ALUMNO] {telefono}: manejado por menú ({_menu_alum[:40]})")
+                    return {"status": "ok"}
+
             if familia_existente:
                 contexto_extra, _reservas_airtable = await _build_contexto_aurora(familia_existente, telefono)
 
