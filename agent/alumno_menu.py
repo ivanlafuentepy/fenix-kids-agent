@@ -23,14 +23,12 @@ logger = logging.getLogger("agentkit")
 
 # ── Botones del menú de inscriptos ───────────────────────────────────────────
 _BOTONES_ALUMNO = [
-    {"id": "alum_agendar", "title": "📅 Agendar clase"},
     {"id": "alum_qr", "title": "📱 QR familia"},
     {"id": "alum_contenido", "title": "📸 Contenido Fenix"},
 ]
 _TEXTO_BOTONES = "¿En qué te puedo ayudar? 👇"
 
 _ID_A_OPCION = {
-    "alum_agendar": "agendar",
     "alum_qr": "qr",
     "alum_contenido": "contenido",
 }
@@ -172,11 +170,7 @@ async def procesar_menu_inscripto(
             await _handle_contenido(telefono, proveedor, familia, topic_id, tg_group)
             return "[contenido fenix]"
 
-        # Agendar se completa en el paso 3 (botones de horario) → por ahora
-        # cae al flujo conversacional de Aurora (que ya sabe agendar).
-        if opcion == "agendar":
-            return None
-
+        # btn_id desconocido → flujo conversacional de Aurora.
         return None
 
     # ── Primer contacto → saludo + botones ────────────────────────────────
