@@ -22,7 +22,7 @@ import logging
 from agent.memory import guardar_mensaje
 from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
 from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
-from agent.afiches import _AFICHE_PATH, _AFICHE_HORARIOS_PATH
+from agent.afiches import _AFICHE_PATH, _AFICHE_HORARIOS_PATH, _AFICHE_HERMANOS_PATH
 
 logger = logging.getLogger("agentkit")
 
@@ -58,6 +58,12 @@ _BOTONES_POST_INFO = [
     {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
     {"id": "lead_volver_info", "title": "📋 Ver más info"},
 ]
+# Botones específicos después de Precios: ofrecen el combo de hermanos.
+_BOTONES_POST_PRECIOS = [
+    {"id": "lead_combo_hermanos", "title": "🧒 Combo hermanos"},
+    {"id": "lead_agendar", "title": "🎯 Agendar prueba"},
+    {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
+]
 _TEXTO_POST_INFO = "¿Qué querés hacer? 👇"
 
 # Recordatorio cuando el lead escribe texto libre en vez de tocar un botón.
@@ -77,12 +83,26 @@ _TEXTO_INFO = "Elegí una opción 👇"
 _BOTON_LISTA = "Ver opciones"
 
 # Texto de precios (sin la pregunta abierta — la reemplazan los botones).
+# El detalle de hermanos vive en el botón "Combo hermanos" para no ensuciar acá.
 TEXTO_PRECIOS = (
     "🌳 *Probá FENIX (padres entran gratis):*\n\n"
     "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
     "📅 *Mensual:* 230.000 Gs (4 sábados)\n"
-    "📋 *Matrícula anual:* 100.000 Gs (una vez por familia)\n\n"
-    "+50mil por hermano en prueba | +100mil por hermano en mensual"
+    "📋 *Matrícula anual:* 100.000 Gs (una vez por familia)"
+)
+
+# Texto del combo hermanos (acompaña al afiche de hermanos). Tabla clara por hijo.
+TEXTO_HERMANOS = (
+    "👦👦 *Combo hermanos:*\n\n"
+    "*Clase de prueba:*\n"
+    "1 hijo: 100.000 Gs\n"
+    "2 hermanos: 150.000 Gs\n"
+    "3 hermanos: 200.000 Gs\n\n"
+    "*Mensual:*\n"
+    "1 hijo: 230.000 Gs\n"
+    "2 hermanos: 330.000 Gs\n"
+    "3 hermanos: 430.000 Gs\n\n"
+    "📋 *Matrícula anual:* 100.000 Gs (una sola vez por familia)"
 )
 
 # Texto de horarios (acompaña al afiche de horarios).
@@ -115,6 +135,7 @@ _ID_A_OPCION = {
     "lead_precios": "precios",
     "lead_horarios": "horarios",
     "lead_ubicacion": "ubicacion",
+    "lead_combo_hermanos": "combo_hermanos",
     "lead_agendar": "agendar",
     "lead_aurora": "aurora",
 }
@@ -158,14 +179,17 @@ async def _enviar_afiche(telefono: str, proveedor, path: str):
 
 
 async def _enviar_contenido_con_botones(
-    telefono: str, proveedor, contenido: str, topic_id: int | None, tg_group: int
+    telefono: str, proveedor, contenido: str, topic_id: int | None, tg_group: int,
+    botones: list[dict] | None = None,
 ):
-    """Envía un texto informativo + los botones post-info en un solo mensaje."""
+    """Envía un texto informativo + botones (por defecto los post-info) en un solo mensaje."""
+    _botones = botones if botones is not None else _BOTONES_POST_INFO
     body = f"{contenido}\n\n{_TEXTO_POST_INFO}"
-    await proveedor.enviar_botones(telefono, body, _BOTONES_POST_INFO)
+    await proveedor.enviar_botones(telefono, body, _botones)
     await guardar_mensaje(telefono, "assistant", contenido)
+    _labels = " / ".join(b["title"].split(" ", 1)[-1] for b in _botones)
     await _espejar_telegram(
-        telefono, f"{contenido}\n[botones: Agendar / Hablar / Ver más]", topic_id, tg_group
+        telefono, f"{contenido}\n[botones: {_labels}]", topic_id, tg_group
     )
 
 
@@ -200,12 +224,20 @@ async def _enviar_recordatorio_botones(
 
 async def _handle_precios(telefono: str, proveedor, topic_id: int | None, tg_group: int):
     await _enviar_afiche(telefono, proveedor, _AFICHE_PATH)
-    await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_PRECIOS, topic_id, tg_group)
+    # Después de precios ofrecemos el combo de hermanos como botón.
+    await _enviar_contenido_con_botones(
+        telefono, proveedor, TEXTO_PRECIOS, topic_id, tg_group, botones=_BOTONES_POST_PRECIOS
+    )
 
 
 async def _handle_horarios(telefono: str, proveedor, topic_id: int | None, tg_group: int):
     await _enviar_afiche(telefono, proveedor, _AFICHE_HORARIOS_PATH)
     await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_HORARIOS, topic_id, tg_group)
+
+
+async def _handle_combo_hermanos(telefono: str, proveedor, topic_id: int | None, tg_group: int):
+    await _enviar_afiche(telefono, proveedor, _AFICHE_HERMANOS_PATH)
+    await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_HERMANOS, topic_id, tg_group)
 
 
 async def _handle_ubicacion(telefono: str, proveedor, topic_id: int | None, tg_group: int):
@@ -258,6 +290,10 @@ async def procesar_menu_lead(
         if opcion == "ubicacion":
             await _handle_ubicacion(telefono, proveedor, topic_id, tg_group)
             return "[ubicación + botones]"
+
+        if opcion == "combo_hermanos":
+            await _handle_combo_hermanos(telefono, proveedor, topic_id, tg_group)
+            return "[combo hermanos + botones]"
 
         if opcion in ("agendar", "aurora"):
             # Recién acá pasa a modo conversacional: el cerebro de leads toma el
