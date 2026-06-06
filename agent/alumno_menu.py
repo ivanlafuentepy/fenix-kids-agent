@@ -25,12 +25,19 @@ logger = logging.getLogger("agentkit")
 _BOTONES_ALUMNO = [
     {"id": "alum_qr", "title": "📱 QR familia"},
     {"id": "alum_contenido", "title": "📸 Contenido Fenix"},
+    {"id": "alum_aurora", "title": "💬 Hablar con Aurora"},
 ]
 _TEXTO_BOTONES = "¿En qué te puedo ayudar? 👇"
+
+# Botones individuales para armar el menú post-acción (sin repetir el recién usado).
+_BTN_QR = {"id": "alum_qr", "title": "📱 QR familia"}
+_BTN_CONTENIDO = {"id": "alum_contenido", "title": "📸 Contenido Fenix"}
+_BTN_AURORA = {"id": "alum_aurora", "title": "💬 Hablar con Aurora"}
 
 _ID_A_OPCION = {
     "alum_qr": "qr",
     "alum_contenido": "contenido",
+    "alum_aurora": "aurora",
 }
 
 # Caption del QR de la familia (mismo QR siempre — para check-in al llegar).
@@ -72,13 +79,14 @@ async def _enviar_saludo_y_botones(
         else "Hola! 🌟 Soy Aurora, tu asistente de Fenix Kids."
     await proveedor.enviar_botones(telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO)
     await guardar_mensaje(telefono, "assistant", saludo)
-    await _espejar_telegram(telefono, f"{saludo}\n[botones: Agendar / QR / Contenido]", topic_id, tg_group)
+    await _espejar_telegram(telefono, f"{saludo}\n[botones: QR / Contenido / Hablar con Aurora]", topic_id, tg_group)
 
 
-async def _enviar_botones(telefono: str, proveedor, texto: str, topic_id: int | None, tg_group: int):
-    """Re-muestra los botones del menú con un texto arriba."""
-    await proveedor.enviar_botones(telefono, texto, _BOTONES_ALUMNO)
-    await _espejar_telegram(telefono, f"{texto}\n[botones: Agendar / QR / Contenido]", topic_id, tg_group)
+async def _enviar_botones(telefono: str, proveedor, texto: str, botones: list[dict], topic_id: int | None, tg_group: int):
+    """Muestra los botones indicados con un texto arriba."""
+    await proveedor.enviar_botones(telefono, texto, botones)
+    _labels = " / ".join(b["title"].split(" ", 1)[-1] for b in botones)
+    await _espejar_telegram(telefono, f"{texto}\n[botones: {_labels}]", topic_id, tg_group)
 
 
 async def _handle_qr(
@@ -97,8 +105,8 @@ async def _handle_qr(
     except Exception as e:
         logger.error(f"[ALUMNO] {telefono}: error generando/enviando QR: {e}")
         await proveedor.enviar_mensaje(telefono, "Tuve un problema generando el QR, probá de nuevo en un ratito 🙏")
-    # Volver a ofrecer el menú
-    await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", topic_id, tg_group)
+    # Tras el QR, ofrecer las otras opciones (sin repetir QR).
+    await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", [_BTN_CONTENIDO, _BTN_AURORA], topic_id, tg_group)
 
 
 async def _handle_contenido(
@@ -134,8 +142,8 @@ async def _handle_contenido(
     await proveedor.enviar_mensaje(telefono, msg)
     await guardar_mensaje(telefono, "assistant", msg)
     await _espejar_telegram(telefono, msg, topic_id, tg_group)
-    # Volver a ofrecer el menú
-    await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", topic_id, tg_group)
+    # Tras el contenido, ofrecer las otras opciones (sin repetir Contenido).
+    await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", [_BTN_QR, _BTN_AURORA], topic_id, tg_group)
 
 
 # ── Orquestador ──────────────────────────────────────────────────────────────
@@ -169,6 +177,14 @@ async def procesar_menu_inscripto(
         if opcion == "contenido":
             await _handle_contenido(telefono, proveedor, familia, topic_id, tg_group)
             return "[contenido fenix]"
+
+        if opcion == "aurora":
+            # Deja al inscripto escribir; el siguiente mensaje va a Aurora conversacional.
+            msg = "¡Dale! Contame, ¿en qué te puedo ayudar? 😊"
+            await proveedor.enviar_mensaje(telefono, msg)
+            await guardar_mensaje(telefono, "assistant", msg)
+            await _espejar_telegram(telefono, msg, topic_id, tg_group)
+            return "[hablar aurora]"
 
         # btn_id desconocido → flujo conversacional de Aurora.
         return None
