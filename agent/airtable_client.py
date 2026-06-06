@@ -417,6 +417,34 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
     return contador
 
 
+async def asegurar_familia_prueba_admin(telefono: str) -> str | None:
+    """Garantiza que exista una familia de prueba para 'modo alumno'.
+
+    Si ya existe una familia para ese teléfono, la devuelve sin tocar nada.
+    Si no existe (ej: la borró 'modo padre'), la crea con un hijo de prueba para
+    que Aurora reconozca al admin como inscripto y no pregunte quién es.
+
+    Retorna el familia_id (existente o recién creado), o None si falló.
+    """
+    familia = await buscar_familia_por_telefono(telefono)
+    if familia:
+        return familia["id"]
+
+    familia_id = await crear_familia({
+        "padre": {"nombre": "Iván", "apellido": "Lafuente", "telefono": telefono},
+    })
+    if not familia_id:
+        logger.error(f"[PRUEBA] No se pudo crear la familia de prueba para {telefono}")
+        return None
+
+    await crear_nino(
+        {"nombre": "Mateo", "apellido": "Lafuente", "fecha_nacimiento": "2019-03-15"},
+        familia_id,
+    )
+    logger.info(f"[PRUEBA] Familia de prueba admin creada: {familia_id}")
+    return familia_id
+
+
 # ── FAMILIAS ──────────────────────────────────────────────────────────────────
 
 def _sin_acentos(texto: str) -> str:
