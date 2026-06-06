@@ -22,7 +22,7 @@ import logging
 from agent.memory import guardar_mensaje
 from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
 from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
-from agent.afiches import _AFICHE_PATH, _AFICHE_HORARIOS_PATH, _AFICHE_HERMANOS_PATH
+from agent.afiches import _AFICHE_PATH, _AFICHE_HORARIOS_PATH
 
 logger = logging.getLogger("agentkit")
 
@@ -236,7 +236,7 @@ async def _handle_horarios(telefono: str, proveedor, topic_id: int | None, tg_gr
 
 
 async def _handle_combo_hermanos(telefono: str, proveedor, topic_id: int | None, tg_group: int):
-    await _enviar_afiche(telefono, proveedor, _AFICHE_HERMANOS_PATH)
+    # Solo la info de hermanos (sin afiche — el afiche está desactualizado).
     await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_HERMANOS, topic_id, tg_group)
 
 
