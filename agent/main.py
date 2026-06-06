@@ -170,6 +170,9 @@ from agent.afiches import (
     _enviar_afiche_y_followup,
 )
 
+# ── Menú de botones para leads nuevos (agent/lead_menu.py) ──
+from agent.lead_menu import procesar_menu_lead
+
 # ── Promo Madre (DESACTIVADA 2026-05-16 — venció 15/5 20h) ──
 _PROMO_MADRE_ACTIVA = False  # cambiar a True para reactivar
 _esperando_pago_promo_madre: set[str] = set()       # leads esperando comprobante
@@ -3238,6 +3241,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Actualizar grupo Telegram si el router cambió el agente ──────
         _tg_group = group_id_para_agente(agent_actual or "ivan")
+
+        # ── Menú de botones para leads nuevos (Aurora, estilo Dorita) ─────
+        # Reemplaza la apertura conversacional del lead: primer contacto →
+        # saludo cortado + botones [Info / Agendar / Hablar]. El menú decide:
+        #   - retorna texto → ya respondió este turno (saludo, lista, afiche,
+        #     ubicación o puente); cortamos acá, no llamamos al brain.
+        #   - retorna None → el lead va en modo conversacional (o ya conversaba,
+        #     o es un lead viejo): seguimos el flujo normal de Ivan/Aurora.
+        if agent_actual == "ivan":
+            _menu_resp = await procesar_menu_lead(
+                telefono, texto, proveedor,
+                btn_id=getattr(msg, "btn_id", None),
+                es_boton=getattr(msg, "es_boton", False),
+                es_primer_contacto=(len(historial) <= 1),
+                topic_id=topic_id,
+                tg_group=_tg_group,
+            )
+            if _menu_resp is not None:
+                logger.info(f"[MENU] {telefono}: manejado por menú ({_menu_resp[:40]})")
+                return {"status": "ok"}
 
         # ── Si es Aurora cliente_inscripto: inyectar contexto con sus hijos ──
         contexto_extra = None
