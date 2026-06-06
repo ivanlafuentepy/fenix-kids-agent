@@ -89,11 +89,19 @@ class ProveedorMeta(ProveedorWhatsApp):
                         media_id = msg.get("audio", {}).get("id")
                         texto = "[audio]"
                     elif tipo == "interactive":
-                        # Respuesta a botón interactivo
+                        # Respuesta a botón interactivo o ítem de lista
                         _interactive = msg.get("interactive", {})
-                        _btn_reply = _interactive.get("button_reply", {})
-                        texto = _btn_reply.get("title", "") or _btn_reply.get("id", "")
-                        btn_id = _btn_reply.get("id", "")
+                        _int_type = _interactive.get("type", "")
+                        if _int_type == "list_reply":
+                            # Ítem elegido en una lista desplegable
+                            _list_reply = _interactive.get("list_reply", {})
+                            texto = _list_reply.get("title", "") or _list_reply.get("id", "")
+                            btn_id = _list_reply.get("id", "")
+                        else:
+                            # Botón de respuesta rápida
+                            _btn_reply = _interactive.get("button_reply", {})
+                            texto = _btn_reply.get("title", "") or _btn_reply.get("id", "")
+                            btn_id = _btn_reply.get("id", "")
                         es_boton = True
                     elif tipo == "button":
                         # Quick reply de template
@@ -162,6 +170,52 @@ class ProveedorMeta(ProveedorWhatsApp):
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
                 _registrar_fallo(r.status_code, r.text, "botones")
+            return r.status_code == 200
+
+    async def enviar_lista(
+        self,
+        telefono: str,
+        texto: str,
+        boton_texto: str,
+        secciones: list[dict],
+    ) -> bool:
+        """Envía mensaje interactivo con lista desplegable via Meta WhatsApp Cloud API.
+
+        Se usa cuando hay más de 3 opciones (los botones de Meta soportan máx 3).
+
+        Args:
+            telefono: Número del destinatario
+            boton_texto: Texto del botón que abre la lista (máx 20 chars)
+            secciones: [{"title": "Info clases", "rows": [
+                            {"id": "lead_precios", "title": "Precios"},
+                            {"id": "lead_horarios", "title": "Horarios"},
+                        ]}]
+        """
+        if not self.access_token or not self.phone_number_id:
+            logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": texto},
+                "action": {
+                    "button": boton_texto,
+                    "sections": secciones,
+                },
+            },
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                _registrar_fallo(r.status_code, r.text, "lista")
             return r.status_code == 200
 
     async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:
