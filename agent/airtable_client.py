@@ -1308,6 +1308,35 @@ async def marcar_contenido_notificado(record_id: str) -> bool:
     return await _patch(_CONTENIDO, record_id, {"NOTIFICADO": True})
 
 
+async def obtener_contenido_de_ninos(nino_ids: list[str], max_items: int = 5) -> list[dict]:
+    """Retorna el contenido (CONTENIDO FENIX) más reciente donde aparece alguno
+    de los niños dados, ordenado por FECHA descendente.
+
+    Cada item: {"titulo", "red", "link", "fecha"}.
+    Filtra en Python porque el match es por record_id (no por display value).
+    """
+    if not nino_ids:
+        return []
+    nset = set(nino_ids)
+    records = await _get_records(_CONTENIDO, max_records=100)
+    items = []
+    for r in records:
+        f = r.get("fields", {})
+        if not (nset & set(f.get("NIÑOS FENIX", []))):
+            continue
+        link = f.get("LINK", "")
+        if not link:
+            continue
+        items.append({
+            "titulo": f.get("TITULO", ""),
+            "red": f.get("RED", ""),
+            "link": link,
+            "fecha": f.get("FECHA", ""),
+        })
+    items.sort(key=lambda x: x.get("fecha", ""), reverse=True)
+    return items[:max_items]
+
+
 async def obtener_ultimo_contenido_por_red(red: str) -> dict | None:
     """
     Retorna el contenido más reciente de una red social específica.

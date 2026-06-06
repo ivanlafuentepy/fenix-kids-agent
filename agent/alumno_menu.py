@@ -103,6 +103,43 @@ async def _handle_qr(
     await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", topic_id, tg_group)
 
 
+async def _handle_contenido(
+    telefono: str, proveedor, familia: dict, topic_id: int | None, tg_group: int
+):
+    """Envía el contenido reciente de los hijos de la familia + las redes de Fenix."""
+    from agent.airtable_client import obtener_contenido_de_ninos, obtener_redes
+
+    nino_ids = familia.get("fields", {}).get("NIÑOS FENIX", []) or []
+    contenido = await obtener_contenido_de_ninos(nino_ids, max_items=5)
+    redes = await obtener_redes()
+
+    partes: list[str] = []
+    if contenido:
+        partes.append("📸 *Contenido reciente de tus hijos:*")
+        for c in contenido:
+            red = c.get("red", "")
+            partes.append(f"• {red}: {c['link']}" if red else f"• {c['link']}")
+    else:
+        partes.append("Todavía no tenemos fotos/videos cargados de tus hijos, pero se vienen pronto 📸")
+
+    if redes:
+        partes.append("\n📱 *Seguinos en redes:*")
+        for r in redes:
+            perfil = r.get("perfil", "")
+            if not perfil:
+                continue
+            icono = r.get("icono", "")
+            red = r.get("red", "")
+            partes.append(f"{icono} {red}: {perfil}".strip())
+
+    msg = "\n".join(partes)
+    await proveedor.enviar_mensaje(telefono, msg)
+    await guardar_mensaje(telefono, "assistant", msg)
+    await _espejar_telegram(telefono, msg, topic_id, tg_group)
+    # Volver a ofrecer el menú
+    await _enviar_botones(telefono, proveedor, "¿Algo más? 👇", topic_id, tg_group)
+
+
 # ── Orquestador ──────────────────────────────────────────────────────────────
 
 async def procesar_menu_inscripto(
@@ -131,9 +168,13 @@ async def procesar_menu_inscripto(
             await _handle_qr(telefono, proveedor, familia, topic_id, tg_group)
             return "[QR familia]"
 
-        # Agendar y Contenido se completan en los pasos 2 y 3 → por ahora
-        # caen al flujo conversacional de Aurora (que ya sabe agendar).
-        if opcion in ("agendar", "contenido"):
+        if opcion == "contenido":
+            await _handle_contenido(telefono, proveedor, familia, topic_id, tg_group)
+            return "[contenido fenix]"
+
+        # Agendar se completa en el paso 3 (botones de horario) → por ahora
+        # cae al flujo conversacional de Aurora (que ya sabe agendar).
+        if opcion == "agendar":
             return None
 
         return None
