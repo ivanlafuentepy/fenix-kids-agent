@@ -53,7 +53,7 @@ from agent.telegram_bridge import (
     configurar_webhook, obtener_info_webhook,
     notificar_agenda_telegram, notificar_llamada_urgente,
     notificar_pago_telegram,
-    group_id_para_agente,
+    group_id_para_agente, grupo_telegram_para,
 )
 from agent.meta_capi import enviar_evento_agenda, enviar_evento_pago
 from agent.monitor import (
@@ -2827,9 +2827,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _topic_nombre = f"📱 {_nombre_lead}"
         except Exception:
             pass
-        # Determinar grupo Telegram: familia o "Hola Aurora" → FLIAS, sino → LEADS
-        _quiere_aurora = "aurora" in texto.lower()
-        _tg_group = group_id_para_agente("aurora") if (familia_es_activa(_fam_tg) or _quiere_aurora) else group_id_para_agente("ivan")
+        # Determinar grupo Telegram según el agent_actual persistente (fuente
+        # única). No depende del texto ni de Airtable vivo → el topic no rebota.
+        _tg_group = await grupo_telegram_para(telefono)
         # Telegram es best-effort: si falla, el agente sigue respondiendo
         topic_id = None
         try:

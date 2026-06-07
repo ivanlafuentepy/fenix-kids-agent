@@ -50,6 +50,25 @@ def group_id_para_agente(agent_actual: str) -> int:
     return _group_id()
 
 
+async def grupo_telegram_para(telefono: str) -> int:
+    """
+    Fuente ÚNICA de verdad para decidir el grupo de Telegram de un teléfono.
+
+    Se basa en el agent_actual PERSISTENTE en la DB — el mismo valor que decide
+    qué prompt/tools/menú se usa para el número — así el topic queda siempre
+    alineado con cómo se está atendiendo, y NO rebota entre grupos.
+
+    NO depende del texto del mensaje ni de una llamada viva a Airtable (ambos
+    volátiles): eso era lo que migraba el topic ida y vuelta y disparaba
+    "Fenix cerró el tema" en cada salto.
+
+    Aurora → grupo familias; Ivan (o default) → grupo leads.
+    """
+    from agent.ab_test import obtener_agent_actual
+    agent_actual, _ = await obtener_agent_actual(telefono)
+    return group_id_para_agente(agent_actual or "ivan")
+
+
 def _api_url(metodo: str) -> str:
     return f"https://api.telegram.org/bot{_token()}/{metodo}"
 
@@ -160,8 +179,12 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
     """
     Un solo topic por teléfono. Si el grupo cambió (lead→familia o vice versa),
     crea topic nuevo en el grupo correcto y actualiza el registro.
+
+    Sin group_override, el grupo se decide con grupo_telegram_para (agent_actual
+    persistente), no con el default 'leads'. Así reset/alumno/hooks/night_mode
+    mandan al grupo correcto en vez de botar a las familias a leads.
     """
-    group = group_override or _group_id()
+    group = group_override or await grupo_telegram_para(telefono)
     print(f"[TELEGRAM] obtener_o_crear_topic para {telefono} en grupo {group}", flush=True)
 
     if not _token() or not group:
