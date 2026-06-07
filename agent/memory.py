@@ -241,6 +241,35 @@ async def _migrar_columnas_nuevas():
             text("ALTER TABLE topics_telegram ALTER COLUMN group_id TYPE BIGINT")
         )
 
+    # Un solo topic por teléfono: deduplicar filas existentes (quedarse con la
+    # más reciente) y crear índice UNIQUE. Esto impide que webhooks duplicados
+    # de Meta creen dos topics para el mismo número (race en la creación).
+    # Best-effort: si algo falla no debe tumbar el arranque.
+    try:
+        async with engine.begin() as conn:
+            if _es_postgres:
+                # Borra todas las filas de un teléfono menos la de id más alto
+                await conn.execute(text(
+                    "DELETE FROM topics_telegram a USING topics_telegram b "
+                    "WHERE a.telefono = b.telefono AND a.id < b.id"
+                ))
+            else:
+                await conn.execute(text(
+                    "DELETE FROM topics_telegram WHERE id NOT IN "
+                    "(SELECT MAX(id) FROM topics_telegram GROUP BY telefono)"
+                ))
+    except Exception as e:
+        print(f"[DB] Dedup topics_telegram falló (se omite): {e}", flush=True)
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_topics_telegram_telefono "
+                "ON topics_telegram (telefono)"
+            ))
+    except Exception as e:
+        print(f"[DB] Índice UNIQUE topics_telegram falló (se omite): {e}", flush=True)
+
 
 async def inicializar_db():
     """Crea las tablas si no existen y migra columnas nuevas."""

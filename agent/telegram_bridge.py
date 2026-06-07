@@ -14,6 +14,7 @@ import logging
 import httpx
 from datetime import datetime, timedelta
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from agent.memory import async_session, TopicTelegram
 
 logger = logging.getLogger("agentkit")
@@ -238,7 +239,18 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
             nombre=nombre,
             group_id=group,
         ))
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # Otra corutina (webhook duplicado de Meta) ya creó el topic.
+            # El topic_id que acabamos de crear en Telegram queda huérfano;
+            # usamos el que ganó la carrera para no duplicar en la DB.
+            await session.rollback()
+            existente = await obtener_topic(telefono)
+            if existente:
+                print(f"[TELEGRAM] Race en creación de {telefono} — uso topic existente {existente.topic_id}", flush=True)
+                return existente.topic_id
+            return topic_id
 
     print(f"[TELEGRAM] Topic guardado en DB: {telefono} → topic_id={topic_id} grupo={group}", flush=True)
     return topic_id
@@ -368,7 +380,14 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
                                 nombre=f"📱 {telefono}",
                                 group_id=group,
                             ))
-                        await session.commit()
+                        try:
+                            await session.commit()
+                        except IntegrityError:
+                            # Otra corutina recreó el topic primero — uso ese
+                            await session.rollback()
+                            ganador = await obtener_topic(telefono)
+                            if ganador:
+                                nuevo_topic_id = ganador.topic_id
                     print(f"[TELEGRAM] Topic recreado: {nuevo_topic_id} — reintentando envío", flush=True)
                     payload["message_thread_id"] = nuevo_topic_id
                     r2 = await client.post(url, json=payload)
