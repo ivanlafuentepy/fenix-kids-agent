@@ -1912,3 +1912,26 @@ f2241b3 fix(detectores): ampliar detección de respuestas afirmativas y "a qué 
 5d1a572 fix(prompt): corregir info de lluvia — la mansion es el refugio, no 3000m2 bajo techo
 ```
 (El resto de la sesión fue carga operacional en Airtable, sin commits de código.)
+
+## 2026-06-07 (sesión 12 — fix topics duplicados/rebotando en Telegram)
+
+**Ivan:** ¿por qué Fénix en Telegram me abre varios topics para un solo número? Patricia Amarilla tiene 2, Fernando Salla 4, y veo muchos "Fenix cerró el tema" del mismo número
+**Fenix:** investigó con grep + lectura (no asumió). Causa raíz doble: (1) el grupo del topic se decidía con señales volátiles que cambian entre mensajes — `main.py:2832` usaba `"aurora" in texto OR familia_es_activa` (Airtable vivo); mensaje sin "aurora" o Airtable lento → grupo leads → migra el topic (cierra el viejo = "Fenix cerró el tema" + crea nuevo); siguiente mensaje → vuelve a Aurora → migra de nuevo; rebote = topics acumulados. (2) `TopicTelegram.telefono` no era único → webhooks duplicados de Meta crean 2 topics. Presentó plan de 2 commits
+
+**Ivan:** sí (al plan)
+**Fenix:** corrió /pre-cambio. Confirmó que el grupo se calcula 2 veces en el mismo request con lógicas distintas (2832 al crear el topic vs 3251 con agent_actual ya cargado en 3192). Diseñó: fuente única = `agent_actual` persistente de la DB
+
+**Ivan:** sí (arrancar Commit 1)
+**Fenix:** Commit 1 (`6050867`) — seguridad DB: dedup + índice UNIQUE en topics_telegram (memory.py, SQL Postgres/SQLite), manejo de IntegrityError en los 2 inserts (telegram_bridge.py). Verificó sintaxis + import
+
+**Ivan:** 1 (deploy incremental — pushear Commit 1 ahora)
+**Fenix:** corrió /pre-deploy, push, esperó build, verificó health 200 + /debug. El /debug del admin reveló `agent_actual: aurora` pero `topic.group_id: 0` (leads) — confirmó el diagnóstico en vivo
+
+**Ivan:** sí (Commit 2)
+**Fenix:** Commit 2 (`d4c7dde`) — `grupo_telegram_para(telefono)` lee agent_actual de la DB (aurora→FLIAS, ivan→LEADS); `obtener_o_crear_topic` la usa como default; main.py:2832 reemplazado. Asserts del mapeo OK, import OK. /pre-deploy → push → health 200 estable. Propuso test en vivo (Ivan manda "Hola" desde su cel) para confirmar migración única sin rebote
+
+### Commits
+```
+6050867 fix(telegram): un solo topic por teléfono — índice UNIQUE + manejo de race
+d4c7dde fix(telegram): decisión de grupo única por agent_actual — frena el rebote
+```
