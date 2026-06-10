@@ -1935,3 +1935,34 @@ f2241b3 fix(detectores): ampliar detección de respuestas afirmativas y "a qué 
 6050867 fix(telegram): un solo topic por teléfono — índice UNIQUE + manejo de race
 d4c7dde fix(telegram): decisión de grupo única por agent_actual — frena el rebote
 ```
+
+## 2026-06-10 (sesión 13 — seguridad Fase 0: firma webhook + hardening)
+
+**Ivan:** auditoría ya hecha, quiero replicar la "Fase 0" probada en Dorita. Mirá `verificar_firma()` y `META_FIRMA_RECHAZAR` en whatsapp-agentkit antes de codear. 3 hallazgos: webhook sin validar firma, META_VERIFY_TOKEN con default, ADMIN_PHONE hardcodeado. No toques rate limit ni auth de debug
+**Fenix:** leyó la referencia de Dorita (meta.py verificar_firma + main.py log-only). Detectó algo extra: la `validar_webhook` de Fenix no tenía el guard `if self.verify_token and...` → sacar el default sin el guard sería un agujero. Presentó plan de 3 commits + objeción sobre ADMIN_PHONE (None rompe envíos → recomendó `""`)
+
+**Ivan:** ¿qué es eso de ADMIN_PHONE quitar el default?
+**Fenix:** explicó: el número admin estaba baked-in como respaldo en `os.getenv(...)` → queda en el código/GitHub; sacarlo lo deja solo en Railway. `""` = fail-closed sin crashear
+
+**Ivan:** no me preguntes si está en Railway, vos tenés el CLI, miralo. Y guardá que estás conectado a Railway/Airtable/GitHub, no puede ser que yo lo recuerde
+**Fenix:** linkeó proyecto FENIX por CLI, confirmó que ADMIN_PHONE NO estaba → la cargó. Guardó 2 memorias: conexiones disponibles + "no pedir lo que puedo mirar solo"
+
+**Ivan:** ¿qué falta exactamente? decime copiá tal cosa o hacelo vos
+**Fenix:** aclaró: META_FIRMA_RECHAZAR lo hago yo; META_APP_SECRET solo lo tenés vos (panel de Meta), te digo de dónde sacarlo. Y el timing: deploy log-only → verificar logs → recién activar rechazo
+
+**Ivan:** listo (arrancar) → commit 1, 2, 3
+**Fenix:** Commit 1 (`b1555ad`) firma webhook log-only (meta.py verificar_firma + main.py), 6 asserts OK. Commit 2 (`c1f2c14`) META_VERIFY_TOKEN sin default + guard. Commit 3 (`fb3fe4e`) ADMIN_PHONE sin default en 22 sitios/8 archivos. Cada uno: ast.parse + import + health 200 + push incremental
+
+**Ivan:** acá tenés el meta secret 3d93...
+**Fenix:** lo cargó por CLI. Detectó variable basura `META_APP_SECRETGracias.` (paste viejo con "Gracias." pegado) → la borró. Confirmó META_APP_SECRET correcto (32 chars)
+
+**Ivan:** [manda "Hola" reales] listo / hola / ahora si
+**Fenix:** verificó en logs: mensajes procesados con `200 OK`, 0 `[FIRMA-INVALIDA]`, 0 `403` con META_FIRMA_RECHAZAR=1 activo → firmas legítimas pasan, forjados se rechazan. Webhook blindado
+
+### Commits
+```
+b1555ad feat(seguridad): validar firma X-Hub-Signature-256 del webhook (log-only)
+c1f2c14 fix(seguridad): META_VERIFY_TOKEN sin default + guard en validar_webhook
+fb3fe4e fix(seguridad): ADMIN_PHONE sin default hardcodeado
+```
+Variables Railway (por CLI): cargadas `META_APP_SECRET`, `META_FIRMA_RECHAZAR=1`, `ADMIN_PHONE`; borrada basura `META_APP_SECRETGracias.`
