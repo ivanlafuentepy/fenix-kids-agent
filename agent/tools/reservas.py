@@ -125,7 +125,7 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
 
     # Notificar admin por WhatsApp
     nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     notificacion_admin = {
         "enviar_admin": True,
         "mensaje_admin": (
@@ -285,7 +285,7 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
     nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
 
     # Notificar admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     notificacion_admin = {
         "enviar_admin": True,
         "mensaje_admin": (

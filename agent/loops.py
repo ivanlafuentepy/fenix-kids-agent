@@ -167,7 +167,7 @@ async def _enviar_recordatorio(rec):
             f"⏰ Hora acordada: {hora}\n\n"
             f"📲 {wa_link}"
         )
-        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        admin_phone = os.getenv("ADMIN_PHONE", "")
         ok = await proveedor.enviar_mensaje(admin_phone, alerta)
         try:
             await notificar_llamada_urgente(telefono_lead, nombre_padre, wa_link)
@@ -190,7 +190,7 @@ async def _resumen_diario_loop():
     """Envía resumen anuncios + resumen reservas al admin todos los días a las 8:00 AM PY."""
     from datetime import datetime, timezone, timedelta
     _PY = timezone(timedelta(hours=-4))
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     while True:
         ahora = datetime.now(_PY)
         hoy_8 = ahora.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -633,7 +633,7 @@ async def _followup_video_oneshot():
         return
 
     # Excluir admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     telefonos_ventana.discard(admin_phone)
 
     logger.info(f"[FOLLOWUP-VIDEO] {len(telefonos_ventana)} leads con ventana abierta")

@@ -378,14 +378,14 @@ async def _procesar_boton_seguimiento(btn_id: str):
         record_id = btn_id[len("seg_enviado_"):]
         ok = await _patch(_SEGUIMIENTO, record_id, {"ENVIADO": True})
         if ok:
-            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "✅ Marcado como enviado")
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", ""), "✅ Marcado como enviado")
         else:
-            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Error marcando en Airtable")
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", ""), "❌ Error marcando en Airtable")
 
     elif btn_id.startswith("seg_descartado_"):
         record_id = btn_id[len("seg_descartado_"):]
         ok = await _patch(_SEGUIMIENTO, record_id, {"DESCARTADO": True})
         if ok:
-            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Marcado como descartado")
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", ""), "❌ Marcado como descartado")
         else:
-            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", "595982790407"), "❌ Error marcando en Airtable")
+            await proveedor.enviar_mensaje(os.getenv("ADMIN_PHONE", ""), "❌ Error marcando en Airtable")

@@ -74,7 +74,7 @@ async def escalar_a_humano(telefono: str, motivo: str, resumen: str, **kwargs) -
     )
 
     # Canal 1: WhatsApp al admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     try:
         from agent.providers import obtener_proveedor
         proveedor = obtener_proveedor()

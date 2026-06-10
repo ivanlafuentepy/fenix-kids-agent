@@ -54,7 +54,7 @@ async def _procesar_comprobante(
     3. Reenvía imagen al admin + botones confirmar/rechazar
     4. Notifica en Telegram
     """
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     nombre_padre = _extraer_nombre_del_historial(historial, texto) or "Lead"
     nombre_hijo = _extraer_nombre_hijo_historial(historial)
     tipo = detectar_tipo_pago(historial)
@@ -171,7 +171,7 @@ async def _procesar_boton_pago(btn_titulo: str):
     Procesa la respuesta del admin (confirmar/rechazar) a un comprobante.
     Busca el pago pendiente más reciente y actúa según el botón.
     """
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
 
     tel_lead, datos = await obtener_pago_pendiente()
     if not tel_lead or not datos:

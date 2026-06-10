@@ -184,7 +184,7 @@ _promo_masiva_estado: dict = {"activo": False, "total": 0, "enviados": 0, "error
 
 
 # Números que no reciben delay de análisis (admin/pruebas)
-_PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "595982790407")}
+_PHONES_SIN_DELAY = {os.getenv("ADMIN_PHONE", "")}
 
 import re
 
@@ -1853,7 +1853,7 @@ async def _alertar_pedido_llamada(telefono: str, historial: list[dict], texto_nu
     )
 
     # Canal 1: WhatsApp al admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     wa_ok = False
     try:
         wa_ok = await proveedor.enviar_mensaje(admin_phone, alerta)
@@ -1910,7 +1910,7 @@ async def _alertar_silencio_ivan(telefono: str, ultimo_msg: str, historial: list
     )
 
     # Canal 1: WhatsApp al admin
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     try:
         await proveedor.enviar_mensaje(admin_phone, alerta)
         logger.info(f"[SILENCIO] Alerta WhatsApp al admin: OK")
@@ -2267,7 +2267,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.warning(f"[AUDIO] Falló para {telefono}: {_debug_info}")
 
         # ── Admin phone + atajo numérico del menú secre ──
-        admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+        admin_phone = os.getenv("ADMIN_PHONE", "")
         if telefono == admin_phone and telefono not in _admin_modo_padre:
             _MENU_SECRE = {
                 "1": "resumen reservas", "2": "resumen anuncios", "3": "resumen flias",
@@ -3552,7 +3552,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             await actualizar_estado_flags(telefono, **{f"{_afiche_key}_enviado": True})
                     # Notificaciones al admin
                     if _ta_result.get("enviar_admin") and _ta_result.get("mensaje_admin"):
-                        _admin_phone_tool = os.getenv("ADMIN_PHONE", "595982790407")
+                        _admin_phone_tool = os.getenv("ADMIN_PHONE", "")
                         if telefono != _admin_phone_tool:
                             await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
                     # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva
@@ -4059,7 +4059,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await actualizar_estado_flags(telefono, prueba_creada=True)
             try:
                 from urllib.parse import quote
-                admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+                admin_phone = os.getenv("ADMIN_PHONE", "")
                 historial_completo = await obtener_historial(telefono, limite=40)
                 # Nombre padre del historial
                 _np = _extraer_nombre_del_historial(historial_completo) or ""
@@ -4377,7 +4377,7 @@ async def _procesar_confirmacion_reserva(
                     if _reservas_dia:
                         # Ya tiene reserva ese día — alertar admin
                         _horas_existentes = [r.get("fields", {}).get("HORA", ["?"])[0] if isinstance(r.get("fields", {}).get("HORA"), list) else r.get("fields", {}).get("HORA", "?") for r in _reservas_dia]
-                        _admin_phone_dup = os.getenv("ADMIN_PHONE", "595982790407")
+                        _admin_phone_dup = os.getenv("ADMIN_PHONE", "")
                         _nombre_nino = nino.get("nombre_completo") or nino.get("nombre") or "?"
                         await proveedor.enviar_mensaje(
                             _admin_phone_dup,
@@ -4420,7 +4420,7 @@ async def _procesar_confirmacion_reserva(
                     logger.info(f"[REAGENDAR] {_nh_pr} ({telefono}): {fecha_str} {_hora_norm}")
 
                 # Notificar admin por WhatsApp
-                _admin_phone_re = os.getenv("ADMIN_PHONE", "595982790407")
+                _admin_phone_re = os.getenv("ADMIN_PHONE", "")
                 _hijos_txt = ", ".join(_hijos_re)
                 _msg_re = (
                     f"🔄 REAGENDAMIENTO\n"

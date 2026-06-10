@@ -25,7 +25,7 @@ logger = logging.getLogger("agentkit")
 _TZ_PY = ZoneInfo("America/Asuncion")
 _INTERVALO_SEGUNDOS = 3600  # 1 hora
 _UMBRAL_SIN_RESPUESTA_MIN = 10
-_ADMIN_PHONE = os.getenv("ADMIN_PHONE", "595982790407")
+_ADMIN_PHONE = os.getenv("ADMIN_PHONE", "")
 
 # Estado en memoria (se pierde al reiniciar — intencional)
 webhook_errors: list[dict] = []

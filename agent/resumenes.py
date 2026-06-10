@@ -797,7 +797,7 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str, solo_pr
 
 async def _enviar_asistencia_automatica(turno: str):
     """Envía la lista de asistencia automáticamente al terminar un turno."""
-    admin_phone = os.getenv("ADMIN_PHONE", "595982790407")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
     try:
         await _generar_lista_asistencia(admin_phone, turno_especifico=turno)
         logger.info(f"[ASISTENCIA] Lista automática enviada para turno {turno}")
