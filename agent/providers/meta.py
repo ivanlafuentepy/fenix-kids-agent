@@ -2,6 +2,8 @@
 # Generado por AgentKit
 
 import os
+import hmac
+import hashlib
 import logging
 import httpx
 from fastapi import Request
@@ -43,6 +45,22 @@ class ProveedorMeta(ProveedorWhatsApp):
             # Meta espera el challenge como respuesta en texto plano
             return int(challenge)
         return None
+
+    def verificar_firma(self, body_bytes: bytes, firma_header: str | None) -> bool:
+        """
+        Valida la firma X-Hub-Signature-256 del webhook (HMAC-SHA256 con el App Secret).
+
+        Sin META_APP_SECRET configurado no se puede validar → devuelve True
+        (con warning) para no dejar a Fenix mudo por falta de config (fail-open).
+        """
+        app_secret = os.getenv("META_APP_SECRET", "")
+        if not app_secret:
+            logger.warning("[FIRMA] META_APP_SECRET no configurado — firma NO validada")
+            return True
+        if not firma_header or not firma_header.startswith("sha256="):
+            return False
+        esperada = hmac.new(app_secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(esperada, firma_header[len("sha256="):])
 
     async def parsear_webhook(self, request: Request) -> list[MensajeEntrante]:
         """

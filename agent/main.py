@@ -1954,6 +1954,22 @@ async def webhook_handler(request: Request):
         logger.warning("[KILL SWITCH] Agente pausado — ignorando webhook")
         return {"status": "ok"}
     try:
+        # ── Firma de Meta (X-Hub-Signature-256) ──
+        # Log-only por defecto; con META_FIRMA_RECHAZAR=1 rechaza con 403.
+        # Leer el body crudo ANTES de parsear (Starlette lo cachea → el
+        # request.json() de parsear_webhook sigue funcionando).
+        if hasattr(proveedor, "verificar_firma"):
+            body_bytes = await request.body()
+            _firma_ok = proveedor.verificar_firma(
+                body_bytes, request.headers.get("X-Hub-Signature-256")
+            )
+            if not _firma_ok:
+                if os.getenv("META_FIRMA_RECHAZAR", "").strip() == "1":
+                    logger.warning("[FIRMA-INVALIDA] Webhook rechazado (403)")
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(status_code=403, content={"error": "firma invalida"})
+                logger.warning("[FIRMA-INVALIDA] Firma no coincide — modo log-only, se procesa igual")
+
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
