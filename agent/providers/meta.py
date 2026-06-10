@@ -32,7 +32,7 @@ class ProveedorMeta(ProveedorWhatsApp):
     def __init__(self):
         self.access_token = os.getenv("META_ACCESS_TOKEN")
         self.phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
-        self.verify_token = os.getenv("META_VERIFY_TOKEN", "agentkit-verify")
+        self.verify_token = os.getenv("META_VERIFY_TOKEN", "")
         self.api_version = "v21.0"
 
     async def validar_webhook(self, request: Request) -> int | None:
@@ -41,9 +41,11 @@ class ProveedorMeta(ProveedorWhatsApp):
         mode = params.get("hub.mode")
         token = params.get("hub.verify_token")
         challenge = params.get("hub.challenge")
-        if mode == "subscribe" and token == self.verify_token:
+        if self.verify_token and mode == "subscribe" and token == self.verify_token:
             # Meta espera el challenge como respuesta en texto plano
             return int(challenge)
+        if not self.verify_token:
+            logger.warning("[META] META_VERIFY_TOKEN no configurado — verificación GET rechazada")
         return None
 
     def verificar_firma(self, body_bytes: bytes, firma_header: str | None) -> bool:
