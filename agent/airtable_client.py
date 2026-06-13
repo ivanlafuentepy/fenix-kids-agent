@@ -711,10 +711,16 @@ async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
     """
     Retorna los próximos HORARIOS disponibles.
     Cada item: {"id", "horario", "fecha", "hora", "dia"}
+
+    Incluye los turnos de HOY: si la persona quiere venir en el día, la agenda
+    decide ella (11:00 o 15:30), no importa si una de las horas ya pasó.
     """
-    from datetime import date
-    hoy = date.today().isoformat()
-    formula = f"IS_AFTER({{FECHA}}, '{hoy}')"
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    # Hora de Paraguay, NO la del server (Railway corre en UTC)
+    hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+    # fecha >= hoy — incluye hoy (IS_AFTER lo excluía y rechazaba agendar en el día)
+    formula = f"NOT(IS_BEFORE({{FECHA}}, '{hoy}'))"
     records = await _get_records(_HORARIOS, formula=formula, max_records=max_horarios)
     resultado = []
     for r in records:
