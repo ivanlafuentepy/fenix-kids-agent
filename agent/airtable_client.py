@@ -769,6 +769,44 @@ async def obtener_o_crear_horario(fecha_iso: str, hora: str) -> str | None:
     return None
 
 
+async def crear_horarios_mes(anio: int, mes: int, horas: tuple[str, ...] = ("11:00", "15:30")) -> dict:
+    """
+    Crea los HORARIOS de un mes completo: cada sábado × cada hora.
+    Idempotente — los que ya existen no se duplican.
+
+    Retorna {"creados": [...], "existentes": [...], "sabados": [...]}
+    donde creados/existentes son strings "YYYY-MM-DD HH:MM".
+    """
+    from datetime import date, timedelta
+
+    # Todos los sábados del mes
+    d = date(anio, mes, 1)
+    d += timedelta(days=(5 - d.weekday()) % 7)  # avanzar al primer sábado
+    sabados = []
+    while d.month == mes:
+        sabados.append(d)
+        d += timedelta(days=7)
+
+    creados, existentes = [], []
+    for s in sabados:
+        fecha_iso = s.isoformat()
+        for hora in horas:
+            # ¿Ya existe? (misma fórmula que obtener_o_crear_horario)
+            formula = f"AND(DATESTR({{FECHA}})='{fecha_iso}', {{HORA}}='{hora}')"
+            ya = await _get_records(_HORARIOS, formula=formula, max_records=1)
+            if ya:
+                existentes.append(f"{fecha_iso} {hora}")
+                continue
+            rid = await obtener_o_crear_horario(fecha_iso, hora)
+            if rid:
+                creados.append(f"{fecha_iso} {hora}")
+            else:
+                logger.error(f"[HORARIOS-MES] No se pudo crear {fecha_iso} {hora}")
+
+    logger.info(f"[HORARIOS-MES] {anio}-{mes:02d}: {len(creados)} creados, {len(existentes)} ya existían")
+    return {"creados": creados, "existentes": existentes, "sabados": [s.isoformat() for s in sabados]}
+
+
 async def obtener_horario_por_id(horario_id: str) -> dict | None:
     """Retorna los datos de un HORARIO por su record_id."""
     url = f"{_BASE_URL}/{_HORARIOS}/{horario_id}"

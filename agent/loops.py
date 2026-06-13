@@ -271,6 +271,92 @@ async def _asistencia_auto_loop():
         await asyncio.sleep(60)
 
 
+# ── Horarios mensuales (auto-creación) ───────────────────────────────────────
+
+async def _horarios_mensuales_loop():
+    """
+    Mantiene la tabla HORARIOS cargada sola — nunca más falta un turno.
+
+    - Al arrancar: asegura el mes ACTUAL + el SIGUIENTE (tapa huecos al instante).
+    - Después: corre el ÚLTIMO día de cada mes a las 9:00 AM PY y crea el mes siguiente.
+
+    Avisa por WhatsApp al admin SOLO si creó turnos nuevos (evita spam en cada
+    reinicio de Railway, donde normalmente ya está todo cargado).
+    """
+    from datetime import datetime, date, time, timedelta
+    from calendar import monthrange
+    from agent.airtable_client import crear_horarios_mes
+
+    admin_phone = os.getenv("ADMIN_PHONE", "")
+    meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+    def _mes_siguiente(anio: int, mes: int) -> tuple[int, int]:
+        return (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+
+    def _ultimo_dia_9am(anio: int, mes: int) -> datetime:
+        ultimo = monthrange(anio, mes)[1]
+        return datetime.combine(date(anio, mes, ultimo), time(9, 0), tzinfo=_TZ_PY)
+
+    def _fmt(item: str) -> str:
+        # "2026-07-04 11:00" → "sábado 4 de julio — 11:00h"
+        fecha, hora = item.split(" ")
+        dd = date.fromisoformat(fecha)
+        return f"sábado {dd.day} de {meses_es[dd.month - 1]} — {hora}h"
+
+    async def _asegurar(meses: list[tuple[int, int]], titulo: str):
+        creados: list[str] = []
+        for (a, m) in meses:
+            try:
+                res = await crear_horarios_mes(a, m)
+                creados.extend(res["creados"])
+            except Exception as e:
+                logger.error(f"[HORARIOS-MES] Error creando {a}-{m:02d}: {e}")
+        if creados and admin_phone:
+            lineas = "\n".join(f"  • {_fmt(c)}" for c in creados)
+            msg = f"🗓️ {titulo}\n\nCargué {len(creados)} turnos nuevos en la agenda:\n{lineas}"
+            try:
+                await proveedor.enviar_mensaje(admin_phone, msg)
+            except Exception as e:
+                logger.error(f"[HORARIOS-MES] No pude avisar al admin: {e}")
+        return creados
+
+    # ── Arranque: asegurar mes actual + siguiente ──
+    try:
+        ahora = datetime.now(_TZ_PY)
+        await _asegurar(
+            [(ahora.year, ahora.month), _mes_siguiente(ahora.year, ahora.month)],
+            "Agenda al día (arranque)",
+        )
+    except Exception as e:
+        logger.error(f"[HORARIOS-MES] Error en arranque: {e}")
+
+    # ── Loop: último día del mes 9:00 AM PY → crear mes siguiente ──
+    while True:
+        ahora = datetime.now(_TZ_PY)
+        target = _ultimo_dia_9am(ahora.year, ahora.month)
+        if ahora >= target:
+            # El último día de este mes ya pasó → apuntar al del mes siguiente
+            a2, m2 = _mes_siguiente(ahora.year, ahora.month)
+            target = _ultimo_dia_9am(a2, m2)
+        delay = (target - ahora).total_seconds()
+        logger.info(f"[HORARIOS-MES] Próxima creación en {delay/86400:.1f}d ({target.strftime('%Y-%m-%d %H:%M')} PY)")
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+
+        try:
+            # Estamos a fin de mes → crear el mes siguiente
+            ahora2 = datetime.now(_TZ_PY)
+            a3, m3 = _mes_siguiente(ahora2.year, ahora2.month)
+            await _asegurar([(a3, m3)], f"Horarios de {meses_es[m3 - 1]} {a3} creados")
+        except Exception as e:
+            logger.error(f"[HORARIOS-MES] Error creando mes siguiente: {e}")
+
+        await asyncio.sleep(3600)  # evitar doble disparo el mismo día
+
+
 # ── Follow-up leads ──────────────────────────────────────────────────────────
 
 async def _resetear_seguimiento(telefono: str):

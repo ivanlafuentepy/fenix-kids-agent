@@ -137,6 +137,7 @@ from agent.loops import (
     _programar_recordatorio_clase, _programar_llamada,
     _enviar_recordatorio, _recordatorios_loop,
     _resumen_diario_loop, _asistencia_auto_loop,
+    _horarios_mensuales_loop,
     _procesar_pendientes_noche,
     _followup_loop, _ejecutar_followup,
     _followup_fotos_oneshot, _followup_video_oneshot,
@@ -234,6 +235,9 @@ async def lifespan(app: FastAPI):
     # Asistencia automática: enviar lista al terminar cada turno (sábados)
     _asistencia_task = _fire_and_forget(_asistencia_auto_loop())
 
+    # Horarios mensuales: auto-crea sábados × turnos del mes siguiente (último día del mes 9AM)
+    _horarios_task = _fire_and_forget(_horarios_mensuales_loop())
+
     # Monitor de producción (Capa 1): conversaciones sin respuesta + salud del sistema
     _monitor_conv_task = _fire_and_forget(monitor_conversaciones_loop())
     _monitor_salud_task = _fire_and_forget(monitor_salud_loop())
@@ -244,6 +248,7 @@ async def lifespan(app: FastAPI):
         "noche": _noche_task,
         "keepalive": _keepalive_task,
         "asistencia": _asistencia_task,
+        "horarios_mensuales": _horarios_task,
         "monitor_conv": _monitor_conv_task,
         "monitor_salud": _monitor_salud_task,
     })
