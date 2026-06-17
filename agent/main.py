@@ -4664,7 +4664,7 @@ async def telegram_webhook(request: Request):
                 if fam_id_nuevo:
                     await guardar_familia_id(telefono, fam_id_nuevo)
                 msg_registro = (
-                    "Hola! 🤗 Soy Aurora 🌟, asistente IA de Fenix Kids.\n"
+                    "Hola! 🤗 Soy Aurora 🌟, asistente de Fenix Kids.\n"
                     "Bienvenido/a a la familia Fenix! 🌳 Necesito registrar tus datos.\n"
                     "¿Con quién tengo el gusto? (nombre y apellido)"
                 )
