@@ -532,16 +532,27 @@ async def buscar_familia_por_telefono(telefono: str) -> dict | None:
 
 
 def familia_es_activa(familia: dict | None) -> bool:
-    """True si la familia es un cliente real (no un lead en prueba).
+    """True si la familia es un cliente real (no un lead en prueba ni una ficha vacía).
 
     ESTADO PLAN == "A PRUEBA" → lead que pagó la prueba pero todavía no se inscribió:
-    lo sigue atendiendo Ivan, no Aurora, y queda sujeto a las reglas de lead (nocturno, grupo).
-    ACTIVO / PAUSADO / BAJA / vacío → cliente (Aurora), igual que antes.
+    se lo atiende en modo leads, sujeto a las reglas de lead (nocturno, grupo).
+    Una ficha SIN datos reales (sin hijos ni nombres) NO es cliente: es un registro
+    fantasma (p.ej. creado por error) y se trata como lead.
+    ACTIVO / PAUSADO / BAJA / vacío, CON datos reales → cliente (Aurora modo alumno).
     """
     if not familia:
         return False
-    estado = (familia.get("fields", {}).get("ESTADO PLAN") or "").strip().upper()
-    return estado != "A PRUEBA"
+    fields = familia.get("fields", {})
+    estado = (fields.get("ESTADO PLAN") or "").strip().upper()
+    if estado == "A PRUEBA":
+        return False
+    # Datos reales: hijos registrados o al menos nombre de padre/madre.
+    tiene_hijos = bool(fields.get("NIÑOS FENIX"))
+    tiene_nombre = bool(
+        (fields.get("NOMBRE PADRE") or "").strip()
+        or (fields.get("NOMBRE MADRE") or "").strip()
+    )
+    return tiene_hijos or tiene_nombre
 
 
 async def marcar_control_datos(familia_id: str) -> bool:

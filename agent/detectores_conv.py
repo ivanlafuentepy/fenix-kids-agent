@@ -20,11 +20,6 @@ _CLAVES_AURORA = [
 ]
 
 
-def _detectar_registro(texto: str) -> bool:
-    """El padre quiere registrarse. Solo si menciona 'aurora' explícitamente."""
-    return "aurora" in texto.lower()
-
-
 def _detectar_activacion_aurora(texto: str) -> bool:
     """El padre escribió directamente a Aurora."""
     t = texto.lower()

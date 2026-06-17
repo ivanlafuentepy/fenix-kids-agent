@@ -1791,7 +1791,7 @@ async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)
 
 # ── Detectores de conversación (extraído a agent/detectores_conv.py) ──
 from agent.detectores_conv import (
-    _detectar_registro, _detectar_activacion_aurora, _detectar_handoff_ivan_aurora,
+    _detectar_activacion_aurora, _detectar_handoff_ivan_aurora,
     _cancelar_diagnostico_pendiente, _diagnostico_pendiente, _DELAY_DIAGNOSTICO,
     _detectar_respuesta_edad, _diagnostico_ya_enviado, _padre_muestra_interes,
     _padre_ya_pidio_precios, _detectar_pedido_llamada,
@@ -3235,22 +3235,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[FOLLOWUP] Error detectando respuesta post-FU: {e}")
 
-        # ── "Hola Aurora" fuerza Aurora (una vez por número) ──────────────
-        _quiere_registro = _detectar_registro(texto) and not (await obtener_estado_flags(telefono)).get("registro_ya_iniciado")
-        if _quiere_registro and agent_actual != "aurora":
-            await actualizar_estado_flags(telefono, registro_ya_iniciado=True)
-            familia_reg = await buscar_familia_por_telefono(telefono)
-            if not familia_reg:
-                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}, "madre": {"telefono": telefono}})
-                if fam_id_nuevo:
-                    await guardar_familia_id(telefono, fam_id_nuevo)
-                    logger.info(f"[REGISTRO] FAMILIA creada: {fam_id_nuevo}")
-            agent_actual = "aurora"
-            modo_nixie = "cliente_inscripto"
-            await actualizar_agent_actual(telefono, "aurora", modo_nixie)
-            logger.info(f"[REGISTRO] {telefono} → Aurora (forzado por 'Hola Aurora')")
+        # ── El modo (leads/alumno) lo decide SIEMPRE el router por teléfono ──
+        # (abajo). La palabra "aurora" en el texto ya NO fuerza nada: confundía
+        # el botón "Hablar con Aurora" con "soy familia" y creaba fichas fantasma.
 
-        # ── Lead nuevo: router Ivan/Aurora por teléfono ───────────────────
+        # ── Lead nuevo: router leads/alumno por teléfono ──────────────────
         if es_nuevo:
             if agent_actual != "aurora":
                 familia_inscripta = await buscar_familia_por_telefono(telefono)
