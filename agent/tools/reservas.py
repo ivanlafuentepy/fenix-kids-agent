@@ -121,6 +121,11 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
         prueba_ids.append(r["record_id"])
         logger.info(f"[REAGENDAR-TOOL] {r['hijo']} ({telefono}): {r['fecha']} {r['hora']} → {fecha_nueva or r['fecha']} {hora_nueva or r['hora']}")
 
+    # A1: reagendar la RESERVA FENIX real (dual-write). Fecha: la nueva si vino, si no la actual.
+    _fecha_real = _parsear_fecha(fecha_nueva) if fecha_nueva else _parsear_fecha(reservas_info[0]["fecha"])
+    if _fecha_real and hora_nueva:
+        await _crear_reserva_real(telefono, _fecha_real, hora_nueva, reagendar=True)
+
     hijos_txt = ", ".join(hijos_reagendados)
 
     # Notificar admin por WhatsApp
@@ -209,6 +214,29 @@ def _parsear_fecha(fecha_texto: str) -> str | None:
     return None
 
 
+async def _crear_reserva_real(telefono: str, fecha_iso: str, hora: str, reagendar: bool = False) -> None:
+    """A1 (migración) — crea/reagenda la RESERVA FENIX real para la familia del lead en prueba.
+
+    Dual-write: corre ADEMÁS del _patch a PRUEBA FENIX. La familia ya existe (dual-write
+    al pagar + migración histórica). Aislado en try/except: nunca rompe la confirmación
+    al padre. Reusa la maquinaria de agenda.py (resuelve familia por teléfono y crea
+    una RESERVA por cada hijo, idempotente).
+    """
+    try:
+        from agent.tools.agenda import gestionar_reserva
+        accion = "reagendar" if reagendar else "agendar"
+        res = await gestionar_reserva(telefono, accion, fecha=fecha_iso, hora=hora)
+        # Si era reagendar pero no había reserva previa real → agendar normal
+        if res.get("error") and reagendar:
+            res = await gestionar_reserva(telefono, "agendar", fecha=fecha_iso, hora=hora)
+        if res.get("error"):
+            logger.warning(f"[A1] Reserva real NO creada para {telefono}: {res.get('message')}")
+        else:
+            logger.info(f"[A1] Reserva real OK para {telefono}: {fecha_iso} {hora}")
+    except Exception as e:
+        logger.error(f"[A1] Error creando reserva real para {telefono}: {e}")
+
+
 async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwargs) -> dict:
     """
     Confirma o crea una reserva de clase de prueba en PRUEBA FENIX.
@@ -280,6 +308,9 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
         hijos_confirmados.append(f.get("NOMBRE HIJO", "?"))
         prueba_ids.append(pr["id"])
         logger.info(f"[CONFIRMAR-TOOL] {f.get('NOMBRE HIJO', '?')} ({telefono}): {fecha_iso} {hora}")
+
+    # A1: crear la RESERVA FENIX real (dual-write — el _patch a PRUEBA de arriba se mantiene)
+    await _crear_reserva_real(telefono, fecha_iso, hora, reagendar=False)
 
     hijos_txt = ", ".join(hijos_confirmados)
     nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
