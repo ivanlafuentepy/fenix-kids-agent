@@ -2986,6 +2986,26 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         diagnostico_ids=_diag_pm,
                         lead_record_id=_lead_id_pm,
                     )
+                # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 1) ──
+                try:
+                    from agent.airtable_client import crear_familia_a_prueba as _cfap_pm
+                    _ninos_pm_fam = [
+                        {
+                            "nombre": n.get("nombre", ""),
+                            "apellido": n.get("apellido", ""),
+                            "fecha_nacimiento": n.get("fecha_nacimiento", ""),
+                        }
+                        for n in ninos_pm if n.get("nombre")
+                    ] if ninos_pm else []
+                    _fam_id_pm, _fam_ninos_pm = await _cfap_pm(
+                        telefono=telefono,
+                        nombre_padre=_nom_pm,
+                        apellido_padre=_ape_pm,
+                        ninos=_ninos_pm_fam,
+                    )
+                    logger.info(f"[PROMO-MADRE] FAMILIA A PRUEBA: {_fam_id_pm}, niños={_fam_ninos_pm}")
+                except Exception as _e_fam_pm:
+                    logger.error(f"[PROMO-MADRE] Error creando FAMILIA A PRUEBA: {_e_fam_pm}")
                 logger.info(f"[PROMO-MADRE] PRUEBA FENIX creada con concepto FENIXMAMA para {telefono}")
             except Exception as _e_pm:
                 logger.error(f"[PROMO-MADRE] Error Airtable: {_e_pm}")
@@ -4139,6 +4159,32 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             diagnostico_ids=_diag_ids,
                             lead_record_id=_lead_id,
                         )
+                    # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 1) ──
+                    # El lead que pagó la prueba se materializa como FAMILIA A PRUEBA
+                    # + NIÑOS. Aurora lo sigue atendiendo en modo leads hasta que se
+                    # inscriba. PRUEBA FENIX se mantiene en paralelo. Nunca rompe el pago.
+                    try:
+                        from agent.airtable_client import crear_familia_a_prueba
+                        if ninos_form:
+                            _ninos_familia = [
+                                {
+                                    "nombre": n.get("nombre", ""),
+                                    "apellido": n.get("apellido", ""),
+                                    "fecha_nacimiento": n.get("fecha_nacimiento", ""),
+                                }
+                                for n in ninos_form if n.get("nombre")
+                            ]
+                        else:
+                            _ninos_familia = [{"nombre": _hijo}] if _hijo else []
+                        _fam_id_pf, _fam_ninos_pf = await crear_familia_a_prueba(
+                            telefono=telefono,
+                            nombre_padre=nombre_resp,
+                            apellido_padre=apellido_resp,
+                            ninos=_ninos_familia,
+                        )
+                        logger.info(f"[FORMULARIO] FAMILIA A PRUEBA: {_fam_id_pf}, niños={_fam_ninos_pf}")
+                    except Exception as _e_fam_pf:
+                        logger.error(f"[FORMULARIO] Error creando FAMILIA A PRUEBA: {_e_fam_pf}")
                     # Actualizar LEADS a PAGO
                     await actualizar_conversion_lead(telefono, "PAGO")
                     # CAPI: evento LeadSubmitted + Purchase
