@@ -17,6 +17,7 @@ import logging
 from agent.memory import guardar_mensaje
 from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
 from agent.qr import generar_qr_familia
+from agent.airtable_client import obtener_tutores_de_familia
 
 logger = logging.getLogger("agentkit")
 
@@ -49,10 +50,17 @@ _CAPTION_QR = (
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _primer_nombre(familia: dict) -> str:
-    """Saca el primer nombre del padre/madre para personalizar el saludo."""
-    f = familia.get("fields", {})
-    nombre = f.get("NOMBRE PADRE") or f.get("NOMBRE MADRE") or ""
+async def _primer_nombre(familia: dict) -> str:
+    """Saca el primer nombre de un tutor para personalizar el saludo.
+
+    Lee de TUTORES FENIX (con fallback a campos PADRE/MADRE viejos). Prefiere
+    al que paga; si no, el primer tutor.
+    """
+    tutores = await obtener_tutores_de_familia(familia["id"])
+    if not tutores:
+        return ""
+    t = next((x for x in tutores if x.get("es_quien_paga")), tutores[0])
+    nombre = (t.get("nombre") or "").strip()
     return nombre.split()[0] if nombre else ""
 
 
@@ -74,7 +82,7 @@ async def _enviar_saludo_y_botones(
     telefono: str, proveedor, familia: dict, topic_id: int | None, tg_group: int
 ):
     """Primer contacto del inscripto: saludo personalizado + botones."""
-    nombre = _primer_nombre(familia)
+    nombre = await _primer_nombre(familia)
     saludo = f"Hola {nombre}! 🌟 Soy Aurora, tu asistente de Fenix Kids." if nombre \
         else "Hola! 🌟 Soy Aurora, tu asistente de Fenix Kids."
     await proveedor.enviar_botones(telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO)
