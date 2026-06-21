@@ -4185,6 +4185,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         logger.info(f"[FORMULARIO] FAMILIA A PRUEBA: {_fam_id_pf}, niños={_fam_ninos_pf}")
                     except Exception as _e_fam_pf:
                         logger.error(f"[FORMULARIO] Error creando FAMILIA A PRUEBA: {_e_fam_pf}")
+                    # A1: crear la RESERVA FENIX real si la prueba ya nace con fecha+hora
+                    if _fecha_res and _hora_res:
+                        try:
+                            from agent.tools.reservas import _crear_reserva_real, _parsear_fecha
+                            _f_iso = _parsear_fecha(_fecha_res)
+                            if _f_iso:
+                                await _crear_reserva_real(telefono, _f_iso, _hora_res, reagendar=False)
+                        except Exception as _e_res_pf:
+                            logger.error(f"[FORMULARIO] Error creando RESERVA real: {_e_res_pf}")
                     # Actualizar LEADS a PAGO
                     await actualizar_conversion_lead(telefono, "PAGO")
                     # CAPI: evento LeadSubmitted + Purchase
