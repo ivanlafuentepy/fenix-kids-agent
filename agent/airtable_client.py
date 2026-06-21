@@ -44,6 +44,7 @@ _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
 _PRUEBAS   = "PRUEBA FENIX"
+_TUTORES   = "TUTORES FENIX"
 _CONTENIDO = "CONTENIDO FENIX"
 _ANUNCIOS  = "ANUNCIOS FENIX"
 _REDES     = "REDES FENIX"
@@ -560,6 +561,58 @@ async def marcar_control_datos(familia_id: str) -> bool:
     return await _patch(_FAMILIAS, familia_id, {"CONTROL DATOS": True})
 
 
+async def crear_o_actualizar_tutor(familia_id: str, persona: dict, parentesco: str) -> str | None:
+    """
+    Escritura dual (EJE B) — crea/actualiza un registro en TUTORES FENIX para una persona
+    de la familia. Idempotente por (familia, parentesco): si ya existe ese tutor en la
+    familia, lo actualiza en vez de duplicar.
+
+    persona = {nombre, apellido, ci, telefono, email, fecha_nacimiento}
+    parentesco = "Papá" | "Mamá" | "Tutor"
+    """
+    if not persona.get("nombre"):
+        return None
+
+    import re
+    campos: dict = {"NOMBRE": persona["nombre"]}
+    if persona.get("apellido"):
+        campos["APELLIDO"] = persona["apellido"]
+    if persona.get("ci"):
+        campos["CI"] = str(persona["ci"]).strip()
+    tel = ""
+    if persona.get("telefono"):
+        tel = str(persona["telefono"]).strip()
+        campos["CELL"] = tel
+    if persona.get("email"):
+        campos["EMAIL"] = persona["email"]
+    if persona.get("fecha_nacimiento"):
+        campos["FECHA NACIMIENTO"] = persona["fecha_nacimiento"]
+
+    # Idempotencia: buscar tutor existente de ESTA familia por CELL LIMPIO + PARENTESCO.
+    # OJO: NO se puede filtrar por el link FAMILIA con FIND(id, ARRAYJOIN(...)) — ARRAYJOIN
+    # de un link devuelve el nombre (primary), no el record_id. Se filtra por CELL LIMPIO
+    # (server-side, pocos resultados) y se confirma la familia leyendo el campo FAMILIA
+    # (que sí trae record_ids).
+    if tel:
+        tel_norm = re.sub(r"[^0-9]", "", tel)
+        if tel_norm.startswith("0"):
+            tel_norm = "595" + tel_norm[1:]
+        candidatos = await _get_records(_TUTORES, formula=f"{{CELL LIMPIO}}='{tel_norm}'", max_records=10)
+        for c in candidatos:
+            cf = c.get("fields", {})
+            if familia_id in (cf.get("FAMILIA") or []) and cf.get("PARENTESCO") == parentesco:
+                await _patch(_TUTORES, c["id"], campos)
+                return c["id"]
+
+    campos["FAMILIA"] = [familia_id]
+    campos["PARENTESCO"] = parentesco
+    resultado = await _post(_TUTORES, campos)
+    if resultado:
+        logger.info(f"Tutor creado: {resultado['id']} ({parentesco}) familia={familia_id}")
+        return resultado["id"]
+    return None
+
+
 async def crear_familia(datos: dict) -> str | None:
     """
     Crea un registro en FAMILIAS con los datos de padre y madre.
@@ -608,6 +661,15 @@ async def crear_familia(datos: dict) -> str | None:
     resultado = await _post(_FAMILIAS, campos)
     if resultado:
         logger.info(f"Familia creada: {resultado['id']}")
+        # Escritura dual (EJE B) — materializar padre/madre en TUTORES FENIX.
+        # Aislado: nunca rompe la creación de la familia si TUTORES falla.
+        try:
+            if padre.get("nombre"):
+                await crear_o_actualizar_tutor(resultado["id"], padre, "Papá")
+            if madre.get("nombre"):
+                await crear_o_actualizar_tutor(resultado["id"], madre, "Mamá")
+        except Exception as e:
+            logger.error(f"[TUTORES] dual-write en crear_familia falló: {e}")
         return resultado["id"]
     return None
 

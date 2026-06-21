@@ -6,6 +6,7 @@ import logging
 from agent.airtable_client import (
     buscar_familia_por_telefono,
     crear_familia,
+    crear_o_actualizar_tutor,
     crear_nino,
     deducir_genero,
     _patch,
@@ -59,6 +60,12 @@ async def registrar_familia(
         ok = await _patch(_FAMILIAS, familia_id, campos)
         if ok:
             logger.info(f"[REGISTRO] {rol} actualizado: {nombre} {apellido} → familia {familia_id}")
+            # Escritura dual (EJE B) — reflejar en TUTORES FENIX. Aislado, nunca rompe el registro.
+            try:
+                persona = {"nombre": nombre, "apellido": apellido, "telefono": telefono}
+                await crear_o_actualizar_tutor(familia_id, persona, "Mamá" if es_madre else "Papá")
+            except Exception as e:
+                logger.error(f"[TUTORES] dual-write en registrar_familia falló: {e}")
             return {
                 "texto": f"{rol.title()} registrado: {nombre} {apellido}".strip(),
                 "registrada": True,
