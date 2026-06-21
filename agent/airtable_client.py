@@ -561,6 +561,80 @@ async def marcar_control_datos(familia_id: str) -> bool:
     return await _patch(_FAMILIAS, familia_id, {"CONTROL DATOS": True})
 
 
+async def obtener_tutores_de_familia(familia_id: str) -> list[dict]:
+    """
+    EJE B (lectura) — Retorna los tutores de una familia desde TUTORES FENIX.
+
+    FALLBACK: si la familia todavía no tiene registros en TUTORES (no migrada o
+    creada antes del dual-write), deriva los tutores de los campos PADRE/MADRE
+    viejos de FAMILIAS. Así las lecturas que se migren a TUTORES siguen funcionando
+    en transición sin romperse para ninguna familia.
+
+    Formato uniforme por tutor:
+    {id, nombre, apellido, apodo, ci, cell, cell_limpio, email,
+     fecha_nacimiento, parentesco, es_quien_paga}
+    """
+    # Leer la familia: IDs de tutores (link inverso) + campos viejos para el fallback.
+    fam_fields: dict = {}
+    tutor_ids: list = []
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                fam_fields = r.json().get("fields", {})
+                tutor_ids = fam_fields.get("TUTORES FENIX", []) or []
+        except Exception as e:
+            logger.error(f"Error obteniendo familia {familia_id}: {e}")
+
+    # Camino normal: leer cada tutor de TUTORES FENIX.
+    if tutor_ids:
+        resultado = []
+        async with httpx.AsyncClient() as client:
+            for tid in tutor_ids:
+                try:
+                    r = await client.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
+                    if r.status_code == 200:
+                        f = r.json().get("fields", {})
+                        resultado.append({
+                            "id": tid,
+                            "nombre": f.get("NOMBRE", ""),
+                            "apellido": f.get("APELLIDO", ""),
+                            "apodo": f.get("APODO", ""),
+                            "ci": f.get("CI", ""),
+                            "cell": f.get("CELL", ""),
+                            "cell_limpio": f.get("CELL LIMPIO", ""),
+                            "email": f.get("EMAIL", ""),
+                            "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
+                            "parentesco": f.get("PARENTESCO", ""),
+                            "es_quien_paga": bool(f.get("ES QUIEN PAGA")),
+                        })
+                except Exception as e:
+                    logger.error(f"Error obteniendo tutor {tid}: {e}")
+        if resultado:
+            return resultado
+
+    # FALLBACK: derivar de los campos PADRE/MADRE viejos del registro de la familia.
+    fallback = []
+    for rol, suf in (("Papá", "PADRE"), ("Mamá", "MADRE")):
+        nombre = (fam_fields.get(f"NOMBRE {suf}") or "").strip()
+        if not nombre:
+            continue
+        fallback.append({
+            "id": "",
+            "nombre": nombre,
+            "apellido": (fam_fields.get(f"APELLIDO {suf}") or "").strip(),
+            "apodo": (fam_fields.get(f"APODO {suf}") or "").strip(),
+            "ci": (fam_fields.get(f"CI {suf}") or "").strip(),
+            "cell": (fam_fields.get(f"CELL {suf}") or "").strip(),
+            "cell_limpio": (fam_fields.get(f"CELL LIMPIO {suf}") or "").strip(),
+            "email": (fam_fields.get(f"EMAIL {suf}") or "").strip(),
+            "fecha_nacimiento": fam_fields.get(f"FECHA NACIMIENTO {suf}", ""),
+            "parentesco": rol,
+            "es_quien_paga": False,
+        })
+    return fallback
+
+
 async def crear_o_actualizar_tutor(familia_id: str, persona: dict, parentesco: str) -> str | None:
     """
     Escritura dual (EJE B) — crea/actualiza un registro en TUTORES FENIX para una persona
