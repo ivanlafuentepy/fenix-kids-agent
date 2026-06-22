@@ -81,7 +81,7 @@ from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
     actualizar_conversion_lead, actualizar_agent_lead,
     marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
-    obtener_ninos_de_familia, crear_reserva,
+    obtener_ninos_de_familia, obtener_tutores_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
@@ -2013,23 +2013,28 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         """Retorna solo el primer nombre (sin apellido ni segundo nombre)."""
         return nombre.strip().split()[0] if nombre and nombre.strip() else ""
 
+    # Tutores desde TUTORES FENIX (con fallback a campos PADRE/MADRE viejos)
+    tutores = await obtener_tutores_de_familia(familia["id"])
+
+    def _genero_de(parentesco: str) -> str:
+        return {"Papá": "papá", "Mamá": "mamá"}.get(parentesco, "padre/madre")
+
     # Detectar quién escribe por teléfono — apodo primero, sino solo primer nombre
-    _es_padre = telefono and (
-        campos.get("CELL PADRE") == telefono or campos.get("CELL LIMPIO PADRE") == telefono
-    )
-    _es_madre = telefono and (
-        campos.get("CELL MADRE") == telefono or campos.get("CELL LIMPIO MADRE") == telefono
-    )
-    if _es_padre:
-        quien_escribe = campos.get("APODO PADRE", "").strip() or _primer_nombre(campos.get("NOMBRE PADRE", ""))
-        es_genero = "papá"
-    elif _es_madre:
-        quien_escribe = campos.get("APODO MADRE", "").strip() or _primer_nombre(campos.get("NOMBRE MADRE", ""))
-        es_genero = "mamá"
+    _quien = None
+    if telefono:
+        _quien = next(
+            (t for t in tutores if telefono in (t.get("cell"), t.get("cell_limpio"))),
+            None,
+        )
+    if _quien:
+        quien_escribe = (_quien.get("apodo") or "").strip() or _primer_nombre(_quien.get("nombre", ""))
+        es_genero = _genero_de(_quien.get("parentesco", ""))
     else:
+        # No identificado por teléfono: usar el primer tutor que tenga nombre
+        _primero = next((t for t in tutores if (t.get("nombre") or "").strip()), None)
         quien_escribe = (
-            campos.get("APODO PADRE", "").strip() or _primer_nombre(campos.get("NOMBRE PADRE", ""))
-            or campos.get("APODO MADRE", "").strip() or _primer_nombre(campos.get("NOMBRE MADRE", ""))
+            (_primero.get("apodo") or "").strip() or _primer_nombre(_primero.get("nombre", ""))
+            if _primero else ""
         )
         es_genero = "padre/madre"
 
@@ -2040,36 +2045,24 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
     else:
         datos_quien_escribe = f"Nombre: {quien_escribe}, género: {es_genero}"
 
-    # Datos del padre
+    # Datos de los tutores (para verificación) — desde TUTORES FENIX
     datos_padre = []
-    if campos.get("NOMBRE PADRE"):
-        p = f"PADRE: {campos.get('NOMBRE PADRE', '')} {campos.get('APELLIDO PADRE', '')}".strip()
-        if campos.get("APODO PADRE"):
-            p += f" (apodo: {campos['APODO PADRE']})"
-        if campos.get("CI PADRE"):
-            p += f", CI: {campos['CI PADRE']}"
-        if campos.get("CELL PADRE"):
-            p += f", cel: {campos['CELL PADRE']}"
-        if campos.get("EMAIL PADRE"):
-            p += f", email: {campos['EMAIL PADRE']}"
-        if campos.get("FECHA NACIMIENTO PADRE"):
-            p += f", nac: {campos['FECHA NACIMIENTO PADRE']}"
-        datos_padre.append(p)
-
-    # Datos de la madre
-    if campos.get("NOMBRE MADRE"):
-        m = f"MADRE: {campos.get('NOMBRE MADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
-        if campos.get("APODO MADRE"):
-            m += f" (apodo: {campos['APODO MADRE']})"
-        if campos.get("CI MADRE"):
-            m += f", CI: {campos['CI MADRE']}"
-        if campos.get("CELL MADRE"):
-            m += f", cel: {campos['CELL MADRE']}"
-        if campos.get("EMAIL MADRE"):
-            m += f", email: {campos['EMAIL MADRE']}"
-        if campos.get("FECHA NACIMIENTO MADRE"):
-            m += f", nac: {campos['FECHA NACIMIENTO MADRE']}"
-        datos_padre.append(m)
+    for t in tutores:
+        if not (t.get("nombre") or "").strip():
+            continue
+        _label = {"Papá": "PADRE", "Mamá": "MADRE"}.get(t.get("parentesco", ""), "TUTOR")
+        linea = f"{_label}: {t.get('nombre', '')} {t.get('apellido', '')}".strip()
+        if t.get("apodo"):
+            linea += f" (apodo: {t['apodo']})"
+        if t.get("ci"):
+            linea += f", CI: {t['ci']}"
+        if t.get("cell"):
+            linea += f", cel: {t['cell']}"
+        if t.get("email"):
+            linea += f", email: {t['email']}"
+        if t.get("fecha_nacimiento"):
+            linea += f", nac: {t['fecha_nacimiento']}"
+        datos_padre.append(linea)
 
     # Datos de los hijos
     hijos_raw = await obtener_ninos_de_familia(familia["id"])
@@ -2115,9 +2108,10 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         _hoy_str = _hoy_py.isoformat()
         _nombre_familia = campos.get("FAMILIA", "")
         if not _nombre_familia:
-            _ap_padre = campos.get("APELLIDO PADRE", "")
-            _ap_madre = campos.get("APELLIDO MADRE", "")
-            _nombre_familia = f"FAMILIA {_ap_padre} {_ap_madre}".strip()
+            _apellidos = " ".join(
+                (t.get("apellido") or "").strip() for t in tutores if (t.get("apellido") or "").strip()
+            )
+            _nombre_familia = f"FAMILIA {_apellidos}".strip()
         _formula = f"FIND('{_nombre_familia}', ARRAYJOIN({{FAMILIA}}))"
         _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=50)
         reservas_futuras = []
