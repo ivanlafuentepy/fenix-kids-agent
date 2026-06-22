@@ -7,6 +7,7 @@ import logging
 from agent.airtable_client import (
     buscar_familia_por_telefono,
     obtener_ninos_de_familia,
+    obtener_tutores_de_familia,
     obtener_o_crear_horario,
     crear_reserva,
     cancelar_reservas_familia_fecha,
@@ -147,8 +148,12 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
 
     nombre_familia = fam_record[0].get("fields", {}).get("FAMILIA", "")
     if not nombre_familia:
-        campos = fam_record[0].get("fields", {})
-        nombre_familia = f"FAMILIA {campos.get('APELLIDO PADRE', '')} {campos.get('APELLIDO MADRE', '')}".strip()
+        # Fallback: derivar el nombre de los apellidos de los tutores (TUTORES FENIX)
+        _tutores = await obtener_tutores_de_familia(familia_id)
+        _apellidos = " ".join(
+            (t.get("apellido") or "").strip() for t in _tutores if (t.get("apellido") or "").strip()
+        )
+        nombre_familia = f"FAMILIA {_apellidos}".strip()
 
     reservas = await _get_records(_RESERVAS, formula=f"FIND('{nombre_familia}', ARRAYJOIN({{FAMILIA}}))", max_records=50)
 

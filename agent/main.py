@@ -4673,15 +4673,18 @@ async def telegram_webhook(request: Request):
                 campos = familia.get("fields", {})
                 await guardar_familia_id(telefono, familia["id"])
 
-                # Nombre para saludar (apodo o primer nombre)
-                _es_padre = campos.get("CELL PADRE") == telefono or campos.get("CELL LIMPIO PADRE") == telefono
-                _es_madre = campos.get("CELL MADRE") == telefono or campos.get("CELL LIMPIO MADRE") == telefono
-                if _es_padre:
-                    _nombre_wa = campos.get("APODO PADRE", "").strip() or (campos.get("NOMBRE PADRE", "").strip().split()[0] if campos.get("NOMBRE PADRE") else "")
-                elif _es_madre:
-                    _nombre_wa = campos.get("APODO MADRE", "").strip() or (campos.get("NOMBRE MADRE", "").strip().split()[0] if campos.get("NOMBRE MADRE") else "")
+                # Nombre para saludar (apodo o primer nombre) — desde TUTORES FENIX
+                _tutores_wa = await obtener_tutores_de_familia(familia["id"])
+                _t_wa = next(
+                    (t for t in _tutores_wa if telefono in (t.get("cell"), t.get("cell_limpio"))),
+                    None,
+                ) or next((t for t in _tutores_wa if (t.get("nombre") or "").strip()), None)
+                if _t_wa:
+                    _ap_wa = (_t_wa.get("apodo") or "").strip()
+                    _no_wa = (_t_wa.get("nombre") or "").strip()
+                    _nombre_wa = _ap_wa or (_no_wa.split()[0] if _no_wa else "")
                 else:
-                    _nombre_wa = campos.get("NOMBRE PADRE", "").strip().split()[0] if campos.get("NOMBRE PADRE") else ""
+                    _nombre_wa = ""
 
                 # Armar resumen de datos para WhatsApp
                 hijos = await obtener_ninos_de_familia(familia["id"])
