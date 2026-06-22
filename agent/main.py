@@ -2146,26 +2146,40 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         logger.error(f"[AURORA] Error cargando reservas familia: {e}")
 
     # Total agendados por horario (inscriptos + prueba, sin nombres)
+    # Las consultas son independientes entre horarios → se corren en paralelo con un
+    # semáforo de 5 (límite de rate de Airtable: 5 req/s por base) para no recibir 429.
     try:
         from datetime import date as _date_cls
         from agent.airtable_client import _get_records, _PRUEBAS
         horarios = await obtener_horarios_disponibles(max_horarios=6)
         if horarios:
-            contexto += "\nTOTAL AGENDADOS POR HORARIO:\n"
-            for hor in horarios:
+            _sem_airtable = asyncio.Semaphore(5)
+
+            async def _contar_agendados(hor: dict):
                 fecha_iso = hor.get("fecha", "")
                 hora = hor.get("hora", "")
                 if not fecha_iso or not hora:
-                    continue
-                # Inscriptos (RESERVAS FENIX)
-                ninos_hor = await obtener_ninos_por_horario(fecha_iso, hora)
-                n_inscriptos = len(ninos_hor)
-                # Pruebas (PRUEBA FENIX)
+                    return None
                 _fd = _date_cls.fromisoformat(fecha_iso)
                 fecha_texto = f"{_fd.day}/{_fd.month}"
-                pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))", max_records=50)
-                pruebas2 = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))", max_records=50)
-                # Dedup por teléfono
+
+                async def _ninos():
+                    async with _sem_airtable:
+                        return await obtener_ninos_por_horario(fecha_iso, hora)
+
+                async def _pruebas(fecha: str):
+                    async with _sem_airtable:
+                        return await _get_records(
+                            _PRUEBAS,
+                            formula=f"AND({{FECHA RESERVA}}='{fecha}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))",
+                            max_records=50,
+                        )
+
+                # Inscriptos (RESERVAS FENIX) + pruebas (PRUEBA FENIX, dos formatos de fecha)
+                ninos_hor, pruebas, pruebas2 = await asyncio.gather(
+                    _ninos(), _pruebas(fecha_iso), _pruebas(fecha_texto)
+                )
+                # Dedup pruebas por teléfono
                 _tels_prueba = set()
                 n_prueba = 0
                 for p in pruebas + pruebas2:
@@ -2173,9 +2187,14 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                     if _tp not in _tels_prueba:
                         _tels_prueba.add(_tp)
                         n_prueba += 1
-                total = n_inscriptos + n_prueba
-                fecha_label = f"Sábado {fecha_texto}"
-                contexto += f"  {fecha_label} {hora}h: {total} agendados\n"
+                total = len(ninos_hor) + n_prueba
+                return f"  Sábado {fecha_texto} {hora}h: {total} agendados\n"
+
+            # gather preserva el orden de los horarios
+            _lineas = await asyncio.gather(*[_contar_agendados(h) for h in horarios])
+            _lineas = [l for l in _lineas if l]
+            if _lineas:
+                contexto += "\nTOTAL AGENDADOS POR HORARIO:\n" + "".join(_lineas)
     except Exception as e:
         logger.error(f"[AURORA] Error cargando agendados por horario: {e}")
 
