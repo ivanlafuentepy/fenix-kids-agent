@@ -398,8 +398,12 @@ def iniciar_contenido_social(proveedor):
     global _proveedor, _polling_task, _calendario_task
     _proveedor = proveedor
 
-    _polling_task = asyncio.create_task(_polling_loop())
-    _calendario_task = asyncio.create_task(_calendario_loop())
-    _recordatorio_task = asyncio.create_task(_recordatorio_viernes_loop())
+    # DESACTIVADO (2026-06-23): los broadcasts automáticos a familias se van a
+    # rearmar desde cero en otra sesión. No arrancamos los loops para que NINGUNA
+    # familia reciba saludos diarios / posteos / recordatorios automáticos.
+    # El código de los loops queda intacto como referencia para el rediseño.
+    # _polling_task = asyncio.create_task(_polling_loop())
+    # _calendario_task = asyncio.create_task(_calendario_loop())
+    # _recordatorio_task = asyncio.create_task(_recordatorio_viernes_loop())
 
-    logger.info("[CONTENIDO] Módulo de contenido social iniciado (polling + calendario + recordatorio viernes)")
+    logger.info("[CONTENIDO] Módulo cargado — broadcasts automáticos DESACTIVADOS (rediseño pendiente)")
