@@ -456,18 +456,13 @@ def _sin_acentos(texto: str) -> str:
     )
 
 
-# Fórmula Airtable para normalizar acentos en NOMBRE COMPLETO del padre/madre
-_NORM_PADRE = (
-    'SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE('
-    'LOWER(CONCATENATE({NOMBRE PADRE}," ",{APELLIDO PADRE}," ",{NOMBRE MADRE}," ",{APELLIDO MADRE}))'
-    ', "á", "a"), "é", "e"), "í", "i"), "ó", "o"), "ú", "u")'
-)
-
-
 async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | None:
     """
     Búsqueda fuzzy de FAMILIA por nombre (y opcionalmente apellido).
     Ignora acentos, no requiere nombre completo exacto.
+    EJE B: busca sobre BUSCAR NOMBRES TUTORES (nombres completos de los
+    tutores de la familia, texto plano ya normalizado a minúsculas sin
+    acentos) en vez de NOMBRE/APELLIDO PADRE/MADRE.
     Retorna el record con mejor match o None.
     """
     texto_busqueda = f"{nombre} {apellido}".strip()
@@ -476,13 +471,13 @@ async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | N
         return None
 
     # Búsqueda AND: todas las palabras deben matchear
-    condiciones_and = [f'SEARCH("{p}", {_NORM_PADRE})>0' for p in palabras]
+    condiciones_and = [f'SEARCH("{p}", {{BUSCAR NOMBRES TUTORES}})>0' for p in palabras]
     formula_and = f"AND({','.join(condiciones_and)})"
     records = await _get_records(_FAMILIAS, formula=formula_and, max_records=10)
 
     # Fallback OR: cualquier palabra matchea
     if not records:
-        condiciones_or = [f'SEARCH("{p}", {_NORM_PADRE})>0' for p in palabras]
+        condiciones_or = [f'SEARCH("{p}", {{BUSCAR NOMBRES TUTORES}})>0' for p in palabras]
         formula_or = f"OR({','.join(condiciones_or)})"
         records = await _get_records(_FAMILIAS, formula=formula_or, max_records=10)
 
@@ -494,10 +489,10 @@ async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | N
     # Scoring: elegir el mejor candidato
     def _nombre_completo_familia(rec: dict) -> str:
         f = rec.get("fields", {})
-        return _sin_acentos(
-            f"{f.get('NOMBRE PADRE', '')} {f.get('APELLIDO PADRE', '')} "
-            f"{f.get('NOMBRE MADRE', '')} {f.get('APELLIDO MADRE', '')}"
-        )
+        nombres = f.get("NOMBRES TUTORES", [])
+        if isinstance(nombres, list):
+            nombres = " ".join(nombres)
+        return _sin_acentos(nombres or "")
 
     def _puntaje(rec: dict) -> tuple[int, float, float]:
         candidato = _nombre_completo_familia(rec)
