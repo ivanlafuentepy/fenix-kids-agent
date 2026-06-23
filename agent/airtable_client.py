@@ -547,13 +547,12 @@ def familia_es_activa(familia: dict | None) -> bool:
     estado = (fields.get("ESTADO PLAN") or "").strip().upper()
     if estado == "A PRUEBA":
         return False
-    # Datos reales: hijos registrados o al menos nombre de padre/madre.
+    # Datos reales: hijos registrados o al menos un tutor con nombre.
+    # EJE B: la señal de "tiene nombre" sale del rollup NOMBRES TUTORES
+    # (de TUTORES FENIX) en vez de los campos NOMBRE PADRE/MADRE.
     tiene_hijos = bool(fields.get("NIÑOS FENIX"))
-    tiene_nombre = bool(
-        (fields.get("NOMBRE PADRE") or "").strip()
-        or (fields.get("NOMBRE MADRE") or "").strip()
-    )
-    return tiene_hijos or tiene_nombre
+    tiene_tutores = bool(fields.get("NOMBRES TUTORES"))
+    return tiene_hijos or tiene_tutores
 
 
 async def marcar_control_datos(familia_id: str) -> bool:
