@@ -2844,11 +2844,27 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _fam_tg = await buscar_familia_por_telefono(telefono)
             if _fam_tg:
                 _campos_tg = _fam_tg.get("fields", {})
-                if _campos_tg.get("CELL PADRE") == telefono or _campos_tg.get("CELL LIMPIO PADRE") == telefono:
-                    _n = f"{_campos_tg.get('NOMBRE PADRE', '')} {_campos_tg.get('APELLIDO PADRE', '')}".strip()
-                elif _campos_tg.get("CELL MADRE") == telefono or _campos_tg.get("CELL LIMPIO MADRE") == telefono:
-                    _n = f"{_campos_tg.get('NOMBRE MADRE', '')} {_campos_tg.get('APELLIDO MADRE', '')}".strip()
-                else:
+                # EJE B: el nombre del tutor sale de los rollups de TUTORES FENIX
+                # (ya vienen en el registro → 0 fetch extra). Los rollups NOMBRES
+                # TUTORES y CELLS LIMPIOS TUTORES están alineados por el mismo link.
+                _nombres_tg = _campos_tg.get("NOMBRES TUTORES", [])
+                _cells_tg = _campos_tg.get("CELLS LIMPIOS TUTORES", [])
+                if not isinstance(_nombres_tg, list):
+                    _nombres_tg = [_nombres_tg] if _nombres_tg else []
+                if not isinstance(_cells_tg, list):
+                    _cells_tg = [_cells_tg] if _cells_tg else []
+                _n = ""
+                # Tutor exacto que escribió: match por índice (solo si las listas
+                # alinean en largo; si no, no arriesgo desalineación).
+                if len(_nombres_tg) == len(_cells_tg):
+                    for _i, _c in enumerate(_cells_tg):
+                        if _c == telefono:
+                            _n = _nombres_tg[_i]
+                            break
+                # Fallback: primer tutor, luego nombre de familia.
+                if not _n and _nombres_tg:
+                    _n = _nombres_tg[0]
+                if not _n:
                     _n = _campos_tg.get("FAMILIA", "")
                 if _n:
                     _topic_nombre = f"📱 {_n}"
