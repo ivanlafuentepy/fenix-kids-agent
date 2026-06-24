@@ -2,15 +2,15 @@
 negocio:
   nombre: "FENIX KIDS ACADEMY"
   descripcion: >
-    Centro de entrenamiento funcional y emocional para niños de 3 a 12 años.
+    Centro de entrenamiento funcional y emocional para niños de 4 a 12 años.
     Entrenamiento al aire libre usando retos reales (trepar, correr, equilibrio)
     para generar cambios internos: autoestima, carácter y seguridad.
     Ubicado en el PARQUE FENIX dentro de LA CASONA LAFUENTE, Asunción, Paraguay.
   direccion: "Maestras Paraguayas 2056, Asunción"
   maps: "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
-  horario_clases: "Sábados: 9:30h | 11:00h | 15:30h"
+  horario_clases: "Sábados: 11:00h | 15:30h"
   duracion_clase: "80 minutos aproximadamente"
-  edad_minima: 3
+  edad_minima: 4
   edad_maxima: 12
 
 agentes:
@@ -24,22 +24,12 @@ agentes:
     tono: "amable, cálida, eficiente"
 
 precios:
-  clase_prueba: 90000
-  matricula:
-    con_mensual: 200000
-    con_trimestral: 140000
-  plan_quincenal:
-    mensual: 250000
-    trimestral: 450000
-  plan_semanal:
-    mensual: 350000
-    trimestral: 690000
-  # Totales con matrícula incluida (lo que paga el padre):
-  # Prueba: 90.000
-  # Quincenal mensual: 250.000 + 200.000 = 450.000
-  # Quincenal trimestral: 450.000 + 140.000 = 590.000
-  # Semanal mensual: 350.000 + 200.000 = 550.000
-  # Semanal trimestral: 690.000 + 140.000 = 830.000
+  clase_prueba: 100000      # 1 sábado, 1 hijo (+50.000 por cada hijo extra)
+  mensual: 240000           # 4 sábados, 1 hijo (+100.000 por cada hijo extra)
+  matricula_anual: 100000   # por niño
+  # Ejemplos mensual (cuota, sin matrícula): 1 hijo 240.000 | 2 hermanos 340.000 | 3 hermanos 440.000
+  # Ejemplos prueba: 1 hijo 100.000 | 2 hermanos 150.000 | 3 hermanos 200.000
+  # Matrícula anual: 100.000 por niño (se suma una vez al inscribirse)
 
 datos_bancarios:
   nombre: "Ivan Lafuente"
