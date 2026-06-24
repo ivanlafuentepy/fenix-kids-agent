@@ -87,8 +87,8 @@ _BOTON_LISTA = "Ver opciones"
 TEXTO_PRECIOS = (
     "🌳 *Probá FENIX (padres entran gratis):*\n\n"
     "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
-    "📅 *Mensual:* 230.000 Gs (4 sábados)\n"
-    "📋 *Matrícula anual:* 100.000 Gs (una vez por familia)"
+    "📅 *Mensual:* 240.000 Gs (4 sábados)\n"
+    "📋 *Matrícula anual:* 100.000 Gs por niño"
 )
 
 # Texto del combo hermanos (acompaña al afiche de hermanos). Tabla clara por hijo.
@@ -99,10 +99,10 @@ TEXTO_HERMANOS = (
     "2 hermanos: 150.000 Gs\n"
     "3 hermanos: 200.000 Gs\n\n"
     "*Mensual:*\n"
-    "1 hijo: 230.000 Gs\n"
-    "2 hermanos: 330.000 Gs\n"
-    "3 hermanos: 430.000 Gs\n\n"
-    "📋 *Matrícula anual:* 100.000 Gs (una sola vez por familia)"
+    "1 hijo: 240.000 Gs\n"
+    "2 hermanos: 340.000 Gs\n"
+    "3 hermanos: 440.000 Gs\n\n"
+    "📋 *Matrícula anual:* 100.000 Gs por niño"
 )
 
 # Texto de horarios (acompaña al afiche de horarios).

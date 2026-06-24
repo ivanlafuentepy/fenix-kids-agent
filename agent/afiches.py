@@ -132,9 +132,13 @@ async def _armar_followup_afiche(telefono: str) -> str:
 
 
 async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
-    """Envía el afiche HERMANOS + descuentos por hijo + CTA."""
+    """Envía el afiche de precios (incluye ejemplos de hermanos) + desglose por hijo + CTA.
+
+    Nota: usa _AFICHE_PATH (afiche de precios actual) porque el afiche_hermanos.png
+    quedó obsoleto (modelo viejo de paquetes 5/12 clases).
+    """
     try:
-        with open(_AFICHE_HERMANOS_PATH, "rb") as f:
+        with open(_AFICHE_PATH, "rb") as f:
             image_bytes = f.read()
 
         ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
@@ -152,10 +156,10 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
             "2 hermanos: 150.000 Gs\n"
             "3 hermanos: 200.000 Gs\n\n"
             "*Mensual (+100mil c/u extra):*\n"
-            "1 hijo: 230.000 Gs\n"
-            "2 hermanos: 330.000 Gs\n"
-            "3 hermanos: 430.000 Gs\n\n"
-            "📋 *Matrícula anual:* 100.000 Gs (una sola vez por familia)"
+            "1 hijo: 240.000 Gs\n"
+            "2 hermanos: 340.000 Gs\n"
+            "3 hermanos: 440.000 Gs\n\n"
+            "📋 *Matrícula anual:* 100.000 Gs por niño"
         )
         await proveedor.enviar_mensaje(telefono, msg_hermanos)
         await guardar_mensaje(telefono, "assistant", msg_hermanos)
@@ -174,7 +178,7 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
         logger.info(f"[AFICHE HERMANOS] Follow-up enviado a {telefono}")
 
     except FileNotFoundError:
-        logger.error(f"[AFICHE HERMANOS] Archivo no encontrado: {_AFICHE_HERMANOS_PATH}")
+        logger.error(f"[AFICHE HERMANOS] Archivo no encontrado: {_AFICHE_PATH}")
     except Exception as e:
         logger.error(f"[AFICHE HERMANOS] Error: {e}")
 
@@ -198,8 +202,8 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         msg_precios = (
             "🌳 *Probá FENIX (padres entran gratis):*\n\n"
             "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
-            "📅 *Mensual:* 230.000 Gs (4 sábados)\n"
-            "📋 *Matrícula anual:* 100.000 Gs (una vez por familia)\n\n"
+            "📅 *Mensual:* 240.000 Gs (4 sábados)\n"
+            "📋 *Matrícula anual:* 100.000 Gs por niño\n\n"
             "+50mil por hermano en prueba | +100mil por hermano en mensual\n\n"
             "¿Querés venir a probar o inscribirte de una?"
         )
