@@ -357,6 +357,60 @@ async def _horarios_mensuales_loop():
         await asyncio.sleep(3600)  # evitar doble disparo el mismo día
 
 
+# ── Keep-alive ventana 24h del admin ─────────────────────────────────────────
+
+async def _keepalive_ventana_admin_loop():
+    """Mantiene abierta la ventana de 24h de Meta hacia el WhatsApp del admin.
+
+    Meta solo permite enviar texto libre dentro de las 24h desde el último
+    mensaje del usuario. Las alertas urgentes al admin (padre quiere llamada,
+    Ivan no supo responder, monitor) son texto libre — si la ventana está
+    cerrada, NO llegan al WhatsApp y solo quedan en Telegram.
+
+    Para evitarlo, cada 20h mandamos un botón "Sí" al admin. Al apretarlo, el
+    admin genera un mensaje ENTRANTE que reabre la ventana de 24h (los 20h dan
+    4h de margen antes de que venza). Mientras el admin apriete el botón cada
+    día, todas las alertas le llegan por WhatsApp.
+
+    LIMITACIÓN (acordada con Ivan): el botón es un mensaje normal. Si la ventana
+    YA está cerrada (el admin no apretó el botón dentro de las 24h), este envío
+    falla y la cadena queda rota hasta que el admin le escriba "hola" al bot.
+    """
+    # Delay inicial post-deploy: no saturar al arrancar
+    await asyncio.sleep(300)
+
+    admin_phone = os.getenv("ADMIN_PHONE", "")
+    if not admin_phone:
+        logger.warning("[KEEPALIVE-VENTANA] ADMIN_PHONE no configurado — loop no arranca")
+        return
+
+    INTERVALO_SEG = 20 * 3600  # 20 horas (< 24h para dejar margen)
+    texto = (
+        "🔔 Ventana de alertas Fenix\n\n"
+        "Apretá *Sí* para seguir recibiendo las alertas urgentes "
+        "por WhatsApp las próximas 24h."
+    )
+    botones = [{"id": "activar_ventana", "title": "Sí"}]
+
+    while True:
+        try:
+            ok = await proveedor.enviar_botones(admin_phone, texto, botones)
+            if ok:
+                logger.info("[KEEPALIVE-VENTANA] Botón enviado al admin")
+            else:
+                logger.warning(
+                    "[KEEPALIVE-VENTANA] Botón NO salió (¿ventana cerrada?) — "
+                    "el admin debe escribir 'hola' al bot para reabrir la cadena"
+                )
+        except Exception as e:
+            logger.error(f"[KEEPALIVE-VENTANA] Error enviando botón: {e}")
+
+        try:
+            await asyncio.sleep(INTERVALO_SEG)
+        except asyncio.CancelledError:
+            return
+
+
 # ── Follow-up leads ──────────────────────────────────────────────────────────
 
 async def _resetear_seguimiento(telefono: str):

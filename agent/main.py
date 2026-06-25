@@ -138,6 +138,7 @@ from agent.loops import (
     _enviar_recordatorio, _recordatorios_loop,
     _resumen_diario_loop, _asistencia_auto_loop,
     _horarios_mensuales_loop,
+    _keepalive_ventana_admin_loop,
     _procesar_pendientes_noche,
     _followup_loop, _ejecutar_followup,
     _followup_fotos_oneshot, _followup_video_oneshot,
@@ -242,6 +243,10 @@ async def lifespan(app: FastAPI):
     _monitor_conv_task = _fire_and_forget(monitor_conversaciones_loop())
     _monitor_salud_task = _fire_and_forget(monitor_salud_loop())
 
+    # Keep-alive ventana 24h: cada 20h manda botón "Sí" al admin para que las
+    # alertas urgentes le lleguen por WhatsApp (Meta solo deja texto libre <24h)
+    _keepalive_ventana_task = _fire_and_forget(_keepalive_ventana_admin_loop())
+
     # Registrar todos los background tasks para que el monitor los vigile
     _monitor_bg_tasks.update({
         "recordatorios": _recordatorios_task,
@@ -251,6 +256,7 @@ async def lifespan(app: FastAPI):
         "horarios_mensuales": _horarios_task,
         "monitor_conv": _monitor_conv_task,
         "monitor_salud": _monitor_salud_task,
+        "keepalive_ventana": _keepalive_ventana_task,
     })
 
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
@@ -2767,6 +2773,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             btn_titulo = texto.lower().strip()
             # Botones de seguimiento (seg_enviado_recXXX / seg_descartado_recXXX)
             btn_raw_id = getattr(msg, 'btn_id', '') or ''
+            # Keep-alive ventana 24h: el admin apretó "Sí" → el mensaje entrante
+            # ya reabrió la ventana de Meta. Solo confirmamos y cortamos (no se
+            # procesa como lead ni se espeja a Telegram).
+            if btn_raw_id == "activar_ventana":
+                await proveedor.enviar_mensaje(
+                    telefono,
+                    "Ventana activa ✅ — vas a recibir las alertas urgentes por WhatsApp las próximas 24h."
+                )
+                logger.info("[KEEPALIVE-VENTANA] Admin reabrió la ventana 24h")
+                return
             if btn_raw_id.startswith("seg_enviado_") or btn_raw_id.startswith("seg_descartado_"):
                 await _procesar_boton_seguimiento(btn_raw_id)
                 return
