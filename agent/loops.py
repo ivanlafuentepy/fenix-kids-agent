@@ -367,24 +367,23 @@ async def _keepalive_ventana_admin_loop():
     Ivan no supo responder, monitor) son texto libre — si la ventana está
     cerrada, NO llegan al WhatsApp y solo quedan en Telegram.
 
-    Para evitarlo, cada 20h mandamos un botón "Sí" al admin. Al apretarlo, el
-    admin genera un mensaje ENTRANTE que reabre la ventana de 24h (los 20h dan
-    4h de margen antes de que venza). Mientras el admin apriete el botón cada
-    día, todas las alertas le llegan por WhatsApp.
+    Para evitarlo, todos los días a las 9:00 AM PY mandamos un botón "Sí" al
+    admin. Al apretarlo, el admin genera un mensaje ENTRANTE que reabre la
+    ventana de 24h. Va por reloj (no por intervalo): reiniciar el servidor NO
+    dispara un botón extra, solo sale a las 9 AM. Mientras el admin apriete el
+    botón cada día, todas las alertas le llegan por WhatsApp.
 
     LIMITACIÓN (acordada con Ivan): el botón es un mensaje normal. Si la ventana
     YA está cerrada (el admin no apretó el botón dentro de las 24h), este envío
     falla y la cadena queda rota hasta que el admin le escriba "hola" al bot.
     """
-    # Delay inicial post-deploy: no saturar al arrancar
-    await asyncio.sleep(300)
+    from datetime import datetime, timedelta
 
     admin_phone = os.getenv("ADMIN_PHONE", "")
     if not admin_phone:
         logger.warning("[KEEPALIVE-VENTANA] ADMIN_PHONE no configurado — loop no arranca")
         return
 
-    INTERVALO_SEG = 20 * 3600  # 20 horas (< 24h para dejar margen)
     texto = (
         "🔔 Ventana de alertas Fenix\n\n"
         "Apretá *Sí* para seguir recibiendo las alertas urgentes "
@@ -393,10 +392,23 @@ async def _keepalive_ventana_admin_loop():
     botones = [{"id": "activar_ventana", "title": "Sí"}]
 
     while True:
+        # Por reloj: próxima 9:00 AM PY (reiniciar el server NO dispara botón extra)
+        ahora = datetime.now(_TZ_PY)
+        target = ahora.replace(hour=9, minute=0, second=0, microsecond=0)
+        if ahora >= target:
+            target += timedelta(days=1)
+        delay = (target - ahora).total_seconds()
+        logger.info(f"[KEEPALIVE-VENTANA] Próximo botón en {delay:.0f}s ({target.strftime('%Y-%m-%d %H:%M')} PY)")
+
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+
         try:
             ok = await proveedor.enviar_botones(admin_phone, texto, botones)
             if ok:
-                logger.info("[KEEPALIVE-VENTANA] Botón enviado al admin")
+                logger.info("[KEEPALIVE-VENTANA] Botón enviado al admin (9 AM PY)")
             else:
                 logger.warning(
                     "[KEEPALIVE-VENTANA] Botón NO salió (¿ventana cerrada?) — "
@@ -405,10 +417,7 @@ async def _keepalive_ventana_admin_loop():
         except Exception as e:
             logger.error(f"[KEEPALIVE-VENTANA] Error enviando botón: {e}")
 
-        try:
-            await asyncio.sleep(INTERVALO_SEG)
-        except asyncio.CancelledError:
-            return
+        await asyncio.sleep(60)  # evitar doble ejecución
 
 
 # ── Follow-up leads ──────────────────────────────────────────────────────────

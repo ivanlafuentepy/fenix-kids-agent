@@ -243,8 +243,8 @@ async def lifespan(app: FastAPI):
     _monitor_conv_task = _fire_and_forget(monitor_conversaciones_loop())
     _monitor_salud_task = _fire_and_forget(monitor_salud_loop())
 
-    # Keep-alive ventana 24h: cada 20h manda botón "Sí" al admin para que las
-    # alertas urgentes le lleguen por WhatsApp (Meta solo deja texto libre <24h)
+    # Keep-alive ventana 24h: todos los días a las 9 AM PY manda botón "Sí" al admin
+    # para que las alertas urgentes le lleguen por WhatsApp (Meta solo deja texto libre <24h)
     _keepalive_ventana_task = _fire_and_forget(_keepalive_ventana_admin_loop())
 
     # Registrar todos los background tasks para que el monitor los vigile
