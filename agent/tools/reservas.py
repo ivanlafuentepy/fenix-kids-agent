@@ -237,6 +237,23 @@ async def _crear_reserva_real(telefono: str, fecha_iso: str, hora: str, reagenda
         logger.error(f"[A1] Error creando reserva real para {telefono}: {e}")
 
 
+async def _vincular_reservas_lead(telefono: str, reserva_ids: list[str]) -> None:
+    """Vincula las RESERVAS FENIX al LEAD (campo LEAD FENIX) para verlas desde
+    la tabla de leads. Aislado: nunca rompe la confirmación al padre."""
+    if not reserva_ids:
+        return
+    try:
+        from agent.airtable_client import _get_records, _patch, _LEADS, _RESERVAS
+        lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if not lr:
+            return
+        lead_id = lr[0]["id"]
+        for rid in reserva_ids:
+            await _patch(_RESERVAS, rid, {"LEAD FENIX": [lead_id]})
+    except Exception as e:
+        logger.error(f"[RESERVA] No pude vincular reservas al lead {telefono}: {e}")
+
+
 async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwargs) -> dict:
     """
     Confirma o crea una reserva de clase de prueba en PRUEBA FENIX.
@@ -282,17 +299,46 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
             "message": f"La fecha {fecha_iso} no es sábado.",
         }
 
-    # Buscar registros existentes
+    # Buscar registros existentes en PRUEBA FENIX (compat con el flujo viejo)
     pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
 
     if not pruebas:
+        # MIGRACIÓN: ya no dependemos de PRUEBA FENIX. La familia se crea al pagar
+        # (M1 / Fase 2.A), así que creamos la RESERVA real en RESERVAS FENIX desde
+        # la familia y la vinculamos al LEAD (para verla parada en la tabla de leads).
+        from agent.tools.agenda import gestionar_reserva
+        _res = await gestionar_reserva(telefono, "agendar", fecha=fecha_iso, hora=hora)
+        if _res.get("error"):
+            return {
+                "texto": "No pude confirmar la reserva. " + (_res.get("message") or ""),
+                "confirmada": False,
+                "error": True,
+                "error_category": _res.get("error_category", "business"),
+                "is_retryable": _res.get("is_retryable", False),
+                "message": _res.get("message", "No se pudo crear la reserva."),
+            }
+        _reserva_ids = _res.get("reserva_ids", [])
+        await _vincular_reservas_lead(telefono, _reserva_ids)
+        _meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+        _d = date.fromisoformat(fecha_iso)
+        _fecha_display = f"sábado {_d.day} de {_meses[_d.month - 1]}"
+        _hijos = _res.get("hijos", "")
         return {
-            "texto": "No encontré un registro de prueba para este número. El padre necesita completar el flujo primero.",
-            "confirmada": False,
-            "error": True,
-            "error_category": "business",
-            "is_retryable": False,
-            "message": "No hay registro PRUEBA FENIX para este teléfono.",
+            "texto": f"Reserva confirmada ✅ {_hijos} el {_fecha_display} a las {hora}h",
+            "confirmada": True,
+            "fecha": fecha_iso,
+            "fecha_display": _fecha_display,
+            "hora": hora,
+            "hijos": _hijos,
+            "reserva_ids": _reserva_ids,
+            "enviar_admin": True,
+            "mensaje_admin": (
+                f"✅ RESERVA CONFIRMADA\n"
+                f"👧 {_hijos}\n"
+                f"📅 {_fecha_display} a las {hora}h\n"
+                f"📱 https://wa.me/{telefono}"
+            ),
         }
 
     # Actualizar fecha y hora en todos los registros
