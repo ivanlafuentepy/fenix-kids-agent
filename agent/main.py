@@ -3830,6 +3830,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             rol = "PADRE"
                         await _patch(_FAMILIAS, fam_id, campos_fam)
                         logger.info(f"[REGISTRO] {rol} actualizado: {nombre_p} {apellido_p} → familia {fam_id}")
+                        # Escritura dual (EJE B) — reflejar en TUTORES FENIX. Aislado, nunca rompe el registro.
+                        try:
+                            from agent.airtable_client import crear_o_actualizar_tutor
+                            persona = {"nombre": nombre_p, "apellido": apellido_p, "telefono": telefono}
+                            await crear_o_actualizar_tutor(fam_id, persona, "Mamá" if es_madre else "Papá")
+                        except Exception as e:
+                            logger.error(f"[TUTORES] dual-write en registro inline falló: {e}")
             except Exception as e:
                 logger.error(f"[REGISTRO] Error actualizando nombre padre/madre: {e}")
 
