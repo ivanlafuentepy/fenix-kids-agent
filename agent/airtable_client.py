@@ -44,6 +44,7 @@ _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
 _PRUEBAS   = "PRUEBA FENIX"
+_PAGOS     = "PAGOS"
 _TUTORES   = "TUTORES FENIX"
 _CONTENIDO = "CONTENIDO FENIX"
 _ANUNCIOS  = "ANUNCIOS FENIX"
@@ -1238,6 +1239,60 @@ async def crear_familia_a_prueba(
 
     logger.info(f"[A PRUEBA] FAMILIA creada para {telefono}: familia={familia_id}, niños={nino_ids}")
     return familia_id, nino_ids
+
+
+async def registrar_pago_fenix(
+    familia_id: str,
+    monto: int,
+    concepto: str = "PRUEBA",
+    metodo: str = "TRANSFER",
+) -> str | None:
+    """Crea un registro de PAGO en la tabla PAGOS vinculado a la FAMILIA FENIX.
+
+    El código es la ÚNICA fuente del pago (reemplaza la automatización de Airtable
+    PRUEBA FENIX → PAGOS). Idempotente: si la familia ya tiene un PAGO de prueba
+    registrado HOY, no lo duplica.
+
+    Retorna el record_id del PAGO (nuevo o el existente) o None si falla.
+    """
+    if not familia_id or monto <= 0:
+        logger.warning(f"[PAGO] registrar_pago_fenix sin familia o monto<=0: familia={familia_id} monto={monto}")
+        return None
+
+    # Guard anti-duplicado: ¿la familia ya tiene un PAGO de prueba creado hoy?
+    fam = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
+    if fam:
+        pago_ids = fam[0].get("fields", {}).get("PAGOS", []) or []
+        if pago_ids:
+            _or = ",".join(f"RECORD_ID()='{pid}'" for pid in pago_ids)
+            _formula = f"OR({_or})" if len(pago_ids) > 1 else _or
+            pagos = await _get_records(_PAGOS, formula=_formula, max_records=len(pago_ids))
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+            for p in pagos:
+                pf = p.get("fields", {})
+                pconc = (pf.get("CONCEPTO") or "")
+                pfecha = (pf.get("FECHA") or "")[:10]
+                if pconc.startswith("PRUEBA") and pfecha == hoy:
+                    logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para familia {familia_id} → no duplico ({p['id']})")
+                    return p["id"]
+
+    record = await _post(_PAGOS, {
+        "MONTO": monto,
+        "METODO DE PAGO": metodo,
+        "CONCEPTO": concepto,
+        "ESTADO DE PAGO": "PAGADO",
+        "FUENTE": "FENIX KIDS ACADEMY",
+        "FAMILIA FENIX": [familia_id],
+        "EXCEL": True,
+    })
+    if record:
+        rid = record.get("id")
+        logger.info(f"[PAGO] Creado PAGO {concepto} {monto} para familia {familia_id} → {rid}")
+        return rid
+    logger.error(f"[PAGO] No se pudo crear PAGO para familia {familia_id}")
+    return None
 
 
 # ── PRUEBA FENIX (leads que agendan/pagan clase de prueba) ────────────────────

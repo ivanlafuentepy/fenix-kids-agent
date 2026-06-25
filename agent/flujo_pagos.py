@@ -9,6 +9,7 @@ from agent.memory import guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.ab_test import (
     obtener_agent_actual, obtener_estado_flags, actualizar_estado_flags,
+    obtener_familia_id,
 )
 from agent.telegram_bridge import (
     obtener_o_crear_topic, enviar_a_topic,
@@ -25,6 +26,7 @@ from agent.pagos import (
 )
 from agent.airtable_client import (
     actualizar_conversion_lead, crear_prueba_fenix, crear_familia_a_prueba,
+    buscar_familia_por_telefono, registrar_pago_fenix,
 )
 from agent.detectores_conv import (
     _extraer_nombre_del_historial, _extraer_nombre_hijo_historial,
@@ -101,6 +103,35 @@ async def _procesar_comprobante(
         logger.error(f"[PAGOS] Error actualizando conversión: {e}")
 
     # CONVERSION=PAGO ya se marcó arriba — follow-up loop lo excluye automáticamente
+
+    # ── Registrar el PAGO por código (única fuente — reemplaza la automatización ──
+    #    de Airtable PRUEBA FENIX → PAGOS). Solo pruebas con monto; la inscripción
+    #    crea sus PAGOS en inscripcion.py. Garantiza la FAMILIA antes de colgar el pago.
+    if tipo == "prueba" and monto > 0:
+        try:
+            _fam_id = await obtener_familia_id(telefono)
+            if not _fam_id:
+                _fam = await buscar_familia_por_telefono(telefono)
+                _fam_id = _fam["id"] if _fam else None
+            if not _fam_id:
+                # La familia todavía no existe (pago directo) → crearla A PRUEBA
+                # (idempotente) con los datos del historial para poder registrar el pago.
+                _pn = (nombre_padre or "").split()
+                _ninos_pago = []
+                if nombre_hijo and nombre_hijo != "no mencionó":
+                    _ninos_pago = [{"nombre": nombre_hijo}]
+                _fam_id, _ = await crear_familia_a_prueba(
+                    telefono=telefono,
+                    nombre_padre=_pn[0] if _pn else (nombre_padre or ""),
+                    apellido_padre=" ".join(_pn[1:]) if len(_pn) > 1 else "",
+                    ninos=_ninos_pago,
+                )
+            if _fam_id:
+                await registrar_pago_fenix(_fam_id, monto, concepto="PRUEBA", metodo="TRANSFER")
+            else:
+                logger.warning(f"[PAGOS] No se pudo registrar PAGO (sin familia) para {telefono}")
+        except Exception as e:
+            logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
 
     # CAPI: evento Purchase (comprobante confirmado)
     await enviar_evento_pago(telefono)
