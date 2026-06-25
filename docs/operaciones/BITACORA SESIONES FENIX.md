@@ -1966,3 +1966,29 @@ c1f2c14 fix(seguridad): META_VERIFY_TOKEN sin default + guard en validar_webhook
 fb3fe4e fix(seguridad): ADMIN_PHONE sin default hardcodeado
 ```
 Variables Railway (por CLI): cargadas `META_APP_SECRET`, `META_FIRMA_RECHAZAR=1`, `ADMIN_PHONE`; borrada basura `META_APP_SECRETGracias.`
+
+## 2026-06-25 (sesión 22) — migración pago/reserva al modelo nuevo + base Meta Flow
+
+**Ivan:** /endpoint 595992311715 — la persona agendó y pagó pero no se registró en ningún lado, ¿qué pasa?
+**Fenix:** Diagnóstico: el pago de prueba lo creaba una automatización de Airtable atada a PRUEBA FENIX, y el flujo de pago directo nunca creaba PRUEBA FENIX → ni pago ni reserva. La migración "sacar PRUEBA FENIX" estaba a medias.
+
+**Ivan:** que funcione la migración, el pago tiene que ir a PAGOS desde el código, sin automatización. Y el formulario tiene que ser un formulario de Meta.
+**Fenix:** M1 — nueva `registrar_pago_fenix()` crea el PAGO en PAGOS por código vinculado a FAMILIA FENIX (`c12bd6b`). Ivan apagó la automatización de Airtable. Después vinculé el pago al LEAD con un campo link nuevo (`de169a3`).
+
+**Ivan:** todo lo de PRUEBA FENIX tiene que verse desde el lead, se cambia el vínculo nada más.
+**Fenix:** creé campos link `LEAD FENIX` en PAGOS y RESERVAS FENIX. Arreglé `confirmar_reserva_prueba` para crear la reserva sin PRUEBA FENIX (`4a8b18c`). Caso Nayila cerrado: pago + reserva + familia, todo visible parado en el lead.
+
+**Ivan:** seguimos con el Meta Flow.
+**Fenix:** leí cómo lo hace Dorita, creé y publiqué el Flow `fenix_inscripcion` en el WABA de Salsa con el token de Dorita (`FENIX_FLOW_ID=2251423468936379`). Provider con `enviar_flow` + recepción `nfm_reply`. Falta handler+trigger (se prueba en WhatsApp real).
+
+**Ivan:** ¿por qué no leés la doc del proyecto antes de tocar? Fénix está dentro del WABA de Salsa.
+**Fenix:** tenía razón, me precipité consultando la Graph API. La doc (PROMO MADRE FENIX.md) ya decía que Fenix usa el WABA de Salsa con token diferente. Leí, corregí el approach y seguí.
+
+### Commits
+```
+c12bd6b feat(pagos): registrar PAGO por código al confirmar comprobante de prueba
+de169a3 feat(pagos): vincular el PAGO también al LEAD FENIX (campo link nuevo)
+4a8b18c feat(reservas): crear RESERVA FENIX sin depender de PRUEBA FENIX
+9aff944 ci: redeploy (build anterior falló por el builder de Railway)
+```
+Airtable (por API): campos link `LEAD FENIX` en PAGOS (`fldOInQY1k6FDIWiQ`) y RESERVAS FENIX (`fldxlP0ok74Bd1Sww`). Meta: Flow `fenix_inscripcion` publicado. Railway: `FENIX_FLOW_ID`, `FENIX_FLOW_SCREEN`. Automatización Airtable PRUEBA FENIX→PAGOS APAGADA por Ivan.
