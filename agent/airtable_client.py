@@ -1246,8 +1246,10 @@ async def registrar_pago_fenix(
     monto: int,
     concepto: str = "PRUEBA",
     metodo: str = "TRANSFER",
+    lead_id: str | None = None,
 ) -> str | None:
-    """Crea un registro de PAGO en la tabla PAGOS vinculado a la FAMILIA FENIX.
+    """Crea un registro de PAGO en la tabla PAGOS vinculado a la FAMILIA FENIX
+    (y al LEAD FENIX si se pasa lead_id, para verlo desde la tabla de leads).
 
     El código es la ÚNICA fuente del pago (reemplaza la automatización de Airtable
     PRUEBA FENIX → PAGOS). Idempotente: si la familia ya tiene un PAGO de prueba
@@ -1278,7 +1280,7 @@ async def registrar_pago_fenix(
                     logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para familia {familia_id} → no duplico ({p['id']})")
                     return p["id"]
 
-    record = await _post(_PAGOS, {
+    campos_pago = {
         "MONTO": monto,
         "METODO DE PAGO": metodo,
         "CONCEPTO": concepto,
@@ -1286,7 +1288,10 @@ async def registrar_pago_fenix(
         "FUENTE": "FENIX KIDS ACADEMY",
         "FAMILIA FENIX": [familia_id],
         "EXCEL": True,
-    })
+    }
+    if lead_id:
+        campos_pago["LEAD FENIX"] = [lead_id]
+    record = await _post(_PAGOS, campos_pago)
     if record:
         rid = record.get("id")
         logger.info(f"[PAGO] Creado PAGO {concepto} {monto} para familia {familia_id} → {rid}")

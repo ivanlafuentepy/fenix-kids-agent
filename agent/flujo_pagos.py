@@ -127,7 +127,11 @@ async def _procesar_comprobante(
                     ninos=_ninos_pago,
                 )
             if _fam_id:
-                await registrar_pago_fenix(_fam_id, monto, concepto="PRUEBA", metodo="TRANSFER")
+                # Resolver el LEAD para vincular el PAGO también al lead (verlo desde LEADS FENIX)
+                from agent.airtable_client import _get_records, _LEADS
+                _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+                _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
+                await registrar_pago_fenix(_fam_id, monto, concepto="PRUEBA", metodo="TRANSFER", lead_id=_lead_id_pago)
             else:
                 logger.warning(f"[PAGOS] No se pudo registrar PAGO (sin familia) para {telefono}")
         except Exception as e:
