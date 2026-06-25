@@ -95,6 +95,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                     media_id = None
                     es_boton = False
                     btn_id = None
+                    flow_data = None
                     _img_caption = ""
                     if tipo == "text":
                         texto = msg.get("text", {}).get("body", "")
@@ -109,10 +110,20 @@ class ProveedorMeta(ProveedorWhatsApp):
                         media_id = msg.get("audio", {}).get("id")
                         texto = "[audio]"
                     elif tipo == "interactive":
-                        # Respuesta a botón interactivo o ítem de lista
+                        # Respuesta a botón interactivo, ítem de lista o formulario (Flow)
                         _interactive = msg.get("interactive", {})
                         _int_type = _interactive.get("type", "")
-                        if _int_type == "list_reply":
+                        if _int_type == "nfm_reply":
+                            # Respuesta de un Meta Flow (formulario nativo)
+                            import json as _json
+                            _nfm = _interactive.get("nfm_reply", {})
+                            try:
+                                flow_data = _json.loads(_nfm.get("response_json", "{}"))
+                            except Exception:
+                                flow_data = {}
+                            texto = "[formulario]"
+                            btn_id = "flow_completado"
+                        elif _int_type == "list_reply":
                             # Ítem elegido en una lista desplegable
                             _list_reply = _interactive.get("list_reply", {})
                             texto = _list_reply.get("title", "") or _list_reply.get("id", "")
@@ -151,6 +162,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                             btn_id=btn_id,
                             ctwa_clid=_ctwa_clid,
                             ad_source_id=_ad_source_id,
+                            flow_data=flow_data,
                         ))
         return mensajes
 
@@ -236,6 +248,55 @@ class ProveedorMeta(ProveedorWhatsApp):
             r = await client.post(url, json=payload, headers=headers)
             if r.status_code != 200:
                 _registrar_fallo(r.status_code, r.text, "lista")
+            return r.status_code == 200
+
+    async def enviar_flow(
+        self,
+        telefono: str,
+        flow_id: str,
+        screen: str,
+        texto: str,
+        boton_texto: str = "Completar mis datos",
+        flow_token: str | None = None,
+    ) -> bool:
+        """Envía un Meta Flow (formulario nativo) en modo navigate.
+
+        flow_id: ID del Flow publicado en la WABA. screen: pantalla inicial (ej "FORMULARIO").
+        boton_texto: CTA que abre el formulario (máx 30 chars).
+        flow_token: correlación (default: el teléfono); vuelve en el nfm_reply.
+        """
+        if not self.access_token or not self.phone_number_id:
+            logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "interactive",
+            "interactive": {
+                "type": "flow",
+                "body": {"text": texto},
+                "action": {
+                    "name": "flow",
+                    "parameters": {
+                        "flow_message_version": "3",
+                        "flow_token": flow_token or telefono,
+                        "flow_id": flow_id,
+                        "flow_cta": boton_texto[:30],
+                        "flow_action": "navigate",
+                        "flow_action_payload": {"screen": screen},
+                    },
+                },
+            },
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                _registrar_fallo(r.status_code, r.text, "flow")
             return r.status_code == 200
 
     async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:

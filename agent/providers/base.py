@@ -24,6 +24,7 @@ class MensajeEntrante:
     btn_id: str | None = None     # ID del botón clickeado (para distinguir acciones)
     ctwa_clid: str | None = None   # Click ID del anuncio CTWA (para atribución Meta CAPI)
     ad_source_id: str | None = None  # ID del anuncio Meta (referral.source_id)
+    flow_data: dict | None = None    # Datos del formulario nativo de Meta (Flow / nfm_reply)
 
 
 class ProveedorWhatsApp(ABC):
@@ -51,6 +52,13 @@ class ProveedorWhatsApp(ABC):
         self, telefono: str, image_bytes: bytes, mime_type: str = "image/png", caption: str = ""
     ) -> bool:
         """Sube y envía una imagen desde bytes. Default: no soportado."""
+        return False
+
+    async def enviar_flow(
+        self, telefono: str, flow_id: str, screen: str, texto: str,
+        boton_texto: str = "Completar mis datos", flow_token: str | None = None,
+    ) -> bool:
+        """Envía un Meta Flow (formulario nativo). Default: no soportado."""
         return False
 
     async def validar_webhook(self, request: Request) -> dict | int | None:

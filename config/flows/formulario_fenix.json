@@ -1,0 +1,78 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "FORMULARIO",
+      "title": "Datos para la reserva",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Completá los datos"
+          },
+          {
+            "type": "TextBody",
+            "text": "Para terminar de agendar la clase de prueba."
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "nombre_responsable",
+                "label": "Tu nombre (mamá/papá)",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "apellido_responsable",
+                "label": "Tu apellido",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "nombre_hijo",
+                "label": "Nombre del hijo/a",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "apellido_hijo",
+                "label": "Apellido del hijo/a",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "DatePicker",
+                "name": "fecha_nacimiento_hijo",
+                "label": "Fecha de nacimiento del hijo/a",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Enviar",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "nombre_responsable": "${form.nombre_responsable}",
+                    "apellido_responsable": "${form.apellido_responsable}",
+                    "nombre_hijo": "${form.nombre_hijo}",
+                    "apellido_hijo": "${form.apellido_hijo}",
+                    "fecha_nacimiento_hijo": "${form.fecha_nacimiento_hijo}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
