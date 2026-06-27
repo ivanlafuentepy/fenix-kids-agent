@@ -271,7 +271,7 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
             "error": True,
             "error_category": "validation",
             "is_retryable": True,
-            "message": f"Hora '{hora}' no es válida. Opciones: 9:30, 11:00, 15:30.",
+            "message": f"Hora '{hora}' no es válida. Opciones: {', '.join(sorted(_HORARIOS_VALIDOS))}.",
         }
 
     # Parsear fecha
