@@ -1,0 +1,23 @@
+# proyecto.yaml — ficha de este repo para el cerebro central (lafuente-crm).
+# Fuente de verdad del CONTEXTO ESTABLE. Lo vivo (commits, fechas) lo calcula
+# el agregador desde git. Editá a mano lo que el draft no acertó.
+nombre: fenix-kids-agent
+alias: FENIX
+que_es: Agente de WhatsApp de Fenix Kids Academy. Mismo molde que Dorita, adaptado a
+  la academia de chicos.
+tipo: agente
+estado: produccion
+stack:
+- python
+- fastapi
+- postgres
+- docker
+deploy:
+  plataforma: railway
+  url: ''
+conexiones:
+- destino: whatsapp-agentkit
+  tipo: comparte-codigo
+  detalle: replica el molde plataforma AgentKit
+fuente_contexto: CLAUDE.md
+notas: ''
