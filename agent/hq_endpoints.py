@@ -162,7 +162,8 @@ async def hq_asistencia(payload: dict = Body(...), x_hq_key: str | None = Header
             nino_id=nino_id,
             familia_id=str(payload.get("familia_id", "")).strip(),
             telefono=str(payload.get("telefono", "")).strip(),
-            metodo="COMANDO",
+            # metodo por defecto "QR" (opción válida del singleSelect; el campo no
+            # tiene otras opciones y _post no usa typecast)
         )
         if not rec_id:
             raise HTTPException(status_code=502, detail="no se pudo crear la asistencia")
