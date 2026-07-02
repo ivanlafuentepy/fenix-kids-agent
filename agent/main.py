@@ -277,6 +277,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
 
+# Router aislado /hq para el Centro de Comando (enviar, media, silencio, asistencia)
+from agent.hq_endpoints import router as hq_router
+app.include_router(hq_router)
+
 # Servir archivos estaticos (catalogo de videos, afiches, etc.)
 _static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 app.mount("/static", StaticFiles(directory=_static_dir, html=True), name="static")
