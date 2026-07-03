@@ -1531,6 +1531,109 @@ async def restaurar_aurora(telefono: str, _: bool = Depends(_require_admin)):
     }
 
 
+@app.post("/pago-confirmado")
+async def pago_confirmado(request: Request):
+    """La pasarela (pagos-bancard) avisa que un pago con TARJETA se confirmó.
+    Dispara EL MISMO flujo que el comprobante de transferencia, con método
+    CREDIT CARD y el monto EXACTO que cobró Bancard (viene firmado).
+
+    Contrato con la pasarela: respondemos {"ok": true, "gestionado": true|false}.
+    gestionado=true → Aurora registra el PAGO en Airtable (como siempre) y la
+    pasarela NO registra (evita el pago doble). gestionado=false (sin Pedido —
+    ej. link del panel /admin de la pasarela) → confirmamos + avisamos al admin
+    y la pasarela registra ella en la caja central.
+    Firma HMAC(LINK_SECRET) + dedup por shop_process_id.
+    """
+    import hashlib
+    import hmac as _hmac
+    from agent.memory import obtener_pedido_activo, marcar_pedido_cargado
+    from agent.flujo_pagos import _procesar_comprobante
+
+    body = await request.body()
+    try:
+        data = json.loads(body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="body inválido")
+
+    telefono = str(data.get("telefono", "")).strip()
+    monto = int(data.get("monto", 0) or 0)
+    concepto = str(data.get("concepto", ""))
+    spid = str(data.get("shop_process_id", ""))
+    auth = str(data.get("authorization_number", ""))
+    sig = str(data.get("sig", ""))
+
+    # 1) firma
+    secret = os.getenv("LINK_SECRET", "")
+    esperada = _hmac.new(secret.encode(), f"{spid}:{telefono}:{monto}".encode(), hashlib.sha256).hexdigest()
+    if not (secret and sig and _hmac.compare_digest(esperada, sig)):
+        logger.warning(f"[PAGO-CONFIRMADO] firma inválida spid={spid} tel={telefono}")
+        raise HTTPException(status_code=403, detail="firma inválida")
+    if not telefono or not spid:
+        raise HTTPException(status_code=400, detail="faltan datos")
+
+    # 2) dedup (Bancard reintenta → la pasarela renotifica). gestionado=True en el
+    # duplicado: si ya lo procesamos antes, la pasarela no debe registrar de nuevo.
+    _dedup = f"pago-tarjeta:{spid}"
+    if await mensaje_ya_procesado(_dedup):
+        logger.info(f"[PAGO-CONFIRMADO] duplicado spid={spid}, ack")
+        return {"ok": True, "dedup": True, "gestionado": True}
+
+    logger.info(f"[PAGO-CONFIRMADO] tel={telefono} monto={monto} concepto={concepto} spid={spid}")
+    _monto_txt = f"{monto:,} Gs".replace(",", ".")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
+    gestionado = False
+
+    # 3) solo gestionamos pagos que Aurora inició (Pedido abierto al mandar el link)
+    _pedido = await obtener_pedido_activo(telefono)
+    if _pedido:
+        gestionado = True
+        try:
+            historial = await obtener_historial(telefono, limite=40)
+            _grupo = await grupo_telegram_para(telefono)
+            _nombre_topic = _extraer_nombre_del_historial(historial, "") or telefono
+            topic_id = await obtener_o_crear_topic(telefono, _nombre_topic, group_override=_grupo)
+            await _procesar_comprobante(
+                telefono, "[pago con tarjeta]", None, historial, topic_id,
+                group_override=_grupo,
+                metodo_pago="CREDIT CARD",
+                monto_override=monto,
+                tipo_override=_pedido.tipo,
+                concepto_pago=_pedido.concepto or "PRUEBA",
+                auth_number=auth,
+            )
+            await marcar_pedido_cargado(telefono)
+        except Exception as e:
+            logger.exception(f"[PAGO-CONFIRMADO] flujo falló para {telefono}: {e}")
+            gestionado = False
+            try:
+                await proveedor.enviar_mensaje(
+                    admin_phone,
+                    f"⚠️ Pago TARJETA de {telefono} ({_monto_txt}) confirmado "
+                    f"pero el flujo falló — revisar y cargar manual. spid {spid}")
+            except Exception:
+                pass
+
+    if not gestionado and not _pedido:
+        # Sin Pedido (link del panel /admin de la pasarela, etc.): confirmar +
+        # avisar al admin. La pasarela registra en la caja central (gestionado=false).
+        _msg = f"✅ ¡Pago confirmado! Recibimos tus *{_monto_txt}* 🎉 ¡Gracias!"
+        await guardar_mensaje(telefono, "assistant", _msg)
+        await proveedor.enviar_mensaje(telefono, _msg)
+        try:
+            await proveedor.enviar_mensaje(
+                admin_phone,
+                f"💳 *Pago con TARJETA confirmado* (sin pedido de Aurora)\n"
+                f"Tel: {telefono}\n{_monto_txt} — {concepto}\naut {auth}\n"
+                f"La pasarela lo registra en la caja central.",
+            )
+        except Exception:
+            pass
+
+    # marcar procesado AL FINAL: si algo falla antes, un reintento de la pasarela lo recupera
+    await registrar_mensaje_procesado(_dedup)
+    return {"ok": True, "gestionado": gestionado}
+
+
 @app.get("/diagnostico-audio")
 async def debug_diagnostico_audio(_: bool = Depends(_require_admin)):
     """Diagnostica paso a paso por qué los audios podrían fallar."""
@@ -3542,7 +3645,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append("La prueba es para venir a conocer el parque y entrenar en familia. No se descuenta de ningún paquete ni se devuelve. Si después se enganchan, compran un paquete aparte. Si no, no hay compromiso 🤝")
 
                 if _pide_efectivo:
-                    _partes.append("Para el sábado solo transferencia 😊 Si después se inscriben, aceptamos todos los medios de pago.")
+                    _partes.append("Podés pagar por transferencia o con tarjeta 💳 Al confirmar tu lugar te paso el alias y el link de pago 😊")
 
                 if _dice_ya_transfiri:
                     _partes.append("Genial! Mandame foto del comprobante así te confirmo 😊")

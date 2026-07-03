@@ -48,21 +48,33 @@ async def _procesar_comprobante(
     historial: list[dict],
     topic_id: int | None,
     group_override: int = 0,
+    metodo_pago: str = "TRANSFER",
+    monto_override: int | None = None,
+    tipo_override: str | None = None,
+    concepto_pago: str = "PRUEBA",
+    auth_number: str = "",
 ):
     """
-    Procesa un posible comprobante de pago:
+    Procesa un pago confirmado (comprobante de transferencia o tarjeta):
     1. Responde al lead "gracias, verificando"
     2. Detecta tipo de pago (prueba vs inscripción)
     3. Reenvía imagen al admin + botones confirmar/rechazar
     4. Notifica en Telegram
+
+    Con los defaults es el flujo de TRANSFERENCIA de siempre, intacto. El pago
+    con TARJETA (webhook /pago-confirmado de la pasarela) llama con
+    metodo_pago="CREDIT CARD" + monto_override/tipo_override del Pedido — el
+    monto viene EXACTO y firmado de la pasarela, no se adivina por regex.
     """
     admin_phone = os.getenv("ADMIN_PHONE", "")
     nombre_padre = _extraer_nombre_del_historial(historial, texto) or "Lead"
     nombre_hijo = _extraer_nombre_hijo_historial(historial)
-    tipo = detectar_tipo_pago(historial)
+    tipo = tipo_override or detectar_tipo_pago(historial)
 
     # Calcular monto correcto (multi-hijo)
-    if tipo == "prueba":
+    if monto_override:
+        monto = int(monto_override)
+    elif tipo == "prueba":
         monto = monto_prueba_por_hijos(historial)
     else:
         monto = 0
@@ -131,7 +143,7 @@ async def _procesar_comprobante(
                 from agent.airtable_client import _get_records, _LEADS
                 _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
                 _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
-                await registrar_pago_fenix(_fam_id, monto, concepto="PRUEBA", metodo="TRANSFER", lead_id=_lead_id_pago)
+                await registrar_pago_fenix(_fam_id, monto, concepto=concepto_pago, metodo=metodo_pago, lead_id=_lead_id_pago)
             else:
                 logger.warning(f"[PAGOS] No se pudo registrar PAGO (sin familia) para {telefono}")
         except Exception as e:
@@ -148,9 +160,15 @@ async def _procesar_comprobante(
         tg_link_admin = f"\n💬 https://t.me/c/{gid}/{topic_id}"
     # Link wa.me para hablar con el padre
     wa_link_pago = f"https://wa.me/{telefono}"
+    if metodo_pago == "TRANSFER":
+        _metodo_linea = ""
+    else:
+        _aut = f" (aut. {auth_number})" if auth_number else ""
+        _metodo_linea = f"💳 Método: TARJETA{_aut}\n"
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
         f"💰 Tipo: {tipo_label}\n"
+        f"{_metodo_linea}"
         f"📲 {wa_link_pago}"
         f"{tg_link_admin}"
     )
@@ -183,9 +201,10 @@ async def _procesar_comprobante(
 
     # Espejar en Telegram del lead
     if topic_id:
-        await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=telefono, group_override=group_override)
+        _metodo_topic = " 💳 TARJETA" if metodo_pago != "TRANSFER" else ""
+        await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}{_metodo_topic}", telefono=telefono, group_override=group_override)
 
-    logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo}")
+    logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo} metodo={metodo_pago}")
 
     # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
     try:
@@ -447,12 +466,30 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             )
         else:
             from agent.pagos import DATOS_BANCARIOS
+            from agent.pagos_tarjeta import link_pago_fenix, tarjeta_habilitada
             monto_fmt = f"{monto:,}".replace(",", ".")
+
+            # Pago con tarjeta: link firmado a la pasarela + Pedido abierto para
+            # que /pago-confirmado sepa que este cobro lo inició Aurora.
+            _linea_tarjeta = ""
+            if tarjeta_habilitada():
+                try:
+                    _link_tarjeta = link_pago_fenix(
+                        monto, concepto="Sábado en el parque", telefono=telefono)
+                    _linea_tarjeta = f"💳 Si preferís tarjeta, pagá acá:\n{_link_tarjeta}\n\n"
+                    from agent.memory import crear_o_actualizar_pedido
+                    await crear_o_actualizar_pedido(
+                        telefono, tipo="prueba", concepto=_concepto_pf, monto_total=monto)
+                except Exception as e:
+                    logger.error(f"[AGENDA] Error armando link de tarjeta: {e}")
+                    _linea_tarjeta = ""
+
             msg_whatsapp = (
                 f"{texto_form} 📋\n\n"
                 f"El monto del sábado en el parque es {monto_fmt} Gs\n\n"
                 f"{DATOS_BANCARIOS}\n\n"
-                f"Pasame nomas acá el comprobante de transferencia, muchas gracias {nombre_padre} 🤝"
+                f"{_linea_tarjeta}"
+                f"Si transferís, pasame nomas acá el comprobante, muchas gracias {nombre_padre} 🤝"
             )
 
         # Enviar al padre por WhatsApp
@@ -467,7 +504,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         await enviar_a_topic(
             thread_id,
             f"✅ Agenda cerrada — {creados} PRUEBA FENIX — {monto_label}\n"
-            f"📲 Mensaje enviado a {nombre_padre}{' con formulario + datos bancarios' if not es_gratis else ' (prueba gratis)'}\n"
+            f"📲 Mensaje enviado a {nombre_padre}{' con formulario + transferencia/tarjeta' if not es_gratis else ' (prueba gratis)'}\n"
             f"🔊 Agente reactivado (esperando comprobante)",
             telefono=telefono,
             group_override=group_override,

@@ -152,6 +152,31 @@ class MensajeProcesado(Base):
     procesado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Pedido(Base):
+    """Pedido de pago con TARJETA (pasarela Bancard) — se crea al mandar el link.
+
+    Aurora solo "gestiona" (gestionado=true en /pago-confirmado) pagos que ella
+    inició. Si el webhook llega sin pedido abierto para ese teléfono (ej. link
+    generado desde el panel /admin de la pasarela), responde gestionado=false y
+    la pasarela registra el pago en la caja central. Mismo patrón que Dorita.
+    """
+    __tablename__ = "pedidos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # NO unique: una familia puede tener varios pedidos en el tiempo. La unicidad
+    # operativa ("pedido activo") se resuelve por estado en las queries.
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    # esperando_pago | cargado | cancelado
+    estado: Mapped[str] = mapped_column(String(30), default="esperando_pago", index=True)
+    tipo: Mapped[str] = mapped_column(String(30))  # prueba | inscripcion
+    concepto: Mapped[str] = mapped_column(String(30), default="PRUEBA")  # opción CONCEPTO en PAGOS
+    monto_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 async def crear_recordatorio(telefono: str, tipo: str, programado_para: datetime, payload: str) -> int:
     """Inserta un recordatorio y retorna su ID."""
     async with async_session() as session:
@@ -377,6 +402,62 @@ async def resolver_pago_db(telefono: str, estado: str) -> dict | None:
         pago.resuelto_en = datetime.utcnow()
         await session.commit()
         return {"tipo": pago.tipo, "plan": pago.plan, "monto": pago.monto, "media_id": pago.media_id}
+
+
+# ── Pedidos de pago con tarjeta (pasarela Bancard) ───────────────────────────
+
+_PEDIDO_ESTADOS_ABIERTOS = ("esperando_pago",)
+
+
+async def crear_o_actualizar_pedido(
+    telefono: str, tipo: str, *, concepto: str = "PRUEBA", monto_total: int | None = None,
+) -> int:
+    """Crea un Pedido en 'esperando_pago' o actualiza el pedido abierto del lead.
+    Se llama al mandar el link de tarjeta (/agenda). Idempotente por teléfono."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Pedido)
+            .where(Pedido.telefono == telefono, Pedido.estado.in_(_PEDIDO_ESTADOS_ABIERTOS))
+            .order_by(Pedido.id.desc())
+        )
+        pedido = result.scalars().first()
+        if pedido is None:
+            pedido = Pedido(telefono=telefono, estado="esperando_pago", tipo=tipo)
+            session.add(pedido)
+        pedido.tipo = tipo
+        pedido.concepto = concepto
+        if monto_total is not None:
+            pedido.monto_total = monto_total
+        await session.commit()
+        return pedido.id
+
+
+async def obtener_pedido_activo(telefono: str) -> "Pedido | None":
+    """Devuelve el pedido abierto más reciente del teléfono, o None."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Pedido)
+            .where(Pedido.telefono == telefono, Pedido.estado.in_(_PEDIDO_ESTADOS_ABIERTOS))
+            .order_by(Pedido.id.desc())
+        )
+        return result.scalars().first()
+
+
+async def marcar_pedido_cargado(telefono: str) -> bool:
+    """Cierra el pedido abierto del lead (pago con tarjeta ya procesado).
+    Devuelve True si encontró un pedido para cerrar."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Pedido)
+            .where(Pedido.telefono == telefono, Pedido.estado.in_(_PEDIDO_ESTADOS_ABIERTOS))
+            .order_by(Pedido.id.desc())
+        )
+        pedido = result.scalars().first()
+        if pedido is None:
+            return False
+        pedido.estado = "cargado"
+        await session.commit()
+        return True
 
 
 # ── Deduplicación persistente ─────────────────────────────────────────────────
