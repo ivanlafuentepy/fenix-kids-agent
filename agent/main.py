@@ -3398,6 +3398,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Obtener historial (20 msgs — suficiente para contexto, reduce costos API)
         historial = await obtener_historial(telefono, limite=20)
+        # El mensaje actual ya se guardó arriba (early save) y brain.py lo agrega
+        # de nuevo al final de messages: sin este recorte, Claude veía el último
+        # mensaje del padre DUPLICADO en cada llamada, y la extracción de
+        # nombre/edad (que hace historial + [texto]) lo veía dos veces
+        # (auditoría 04-07-26 A1). historial = solo lo ANTERIOR al mensaje actual.
+        if historial and historial[-1].get("role") == "user" and historial[-1].get("content") == texto:
+            historial = historial[:-1]
 
         # ── Asignar variante (crea fila en ConversacionAB si no existe) ───
         _, es_nuevo = await asignar_variante(telefono)
@@ -3484,7 +3491,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 telefono, texto, proveedor,
                 btn_id=getattr(msg, "btn_id", None),
                 es_boton=getattr(msg, "es_boton", False),
-                es_primer_contacto=(len(historial) <= 1),
+                es_primer_contacto=(len(historial) == 0),
                 topic_id=topic_id,
                 tg_group=_tg_group,
             )
@@ -3516,7 +3523,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     familia=familia_existente,
                     btn_id=getattr(msg, "btn_id", None),
                     es_boton=getattr(msg, "es_boton", False),
-                    es_primer_contacto=(len(historial) <= 1),
+                    es_primer_contacto=(len(historial) == 0),
                     topic_id=topic_id,
                     tg_group=_tg_group,
                 )
@@ -3579,7 +3586,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # No llamamos a Claude — el mensaje está hardcodeado y es siempre igual.
         _interceptado = False
         _acciones_interceptadas = []  # lista de acciones a ejecutar post-respuesta
-        if es_nuevo and agent_actual == "ivan" and len(historial) <= 1:
+        if es_nuevo and agent_actual == "ivan" and len(historial) == 0:
             _interceptado = True
             respuesta = (
                 "Hola! Te saluda el profe Iván.\n\n"
