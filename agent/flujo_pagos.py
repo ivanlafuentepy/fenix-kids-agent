@@ -353,15 +353,16 @@ async def _procesar_boton_pago(btn_titulo: str):
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
 
-_MONTOS_AGENDA = {"90mil": 90_000, "100mil": 100_000, "120mil": 120_000, "150mil": 150_000, "180mil": 180_000, "gratis": 0}
+_MONTOS_AGENDA = {"90mil": 90_000, "100mil": 100_000, "120mil": 120_000, "150mil": 150_000, "180mil": 180_000, "200mil": 200_000, "gratis": 0}
 
 
 async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int, group_override: int = 0):
     """
-    /agenda 90mil Carolina   → 1 hijo, 90k
-    /agenda 120mil Carolina  → 2 hijos, 120k
-    /agenda 150mil Carolina  → 3 hijos, 150k
+    /agenda 100mil Carolina  → 1 hijo, 100k
+    /agenda 150mil Carolina  → 2 hijos, 150k
+    /agenda 200mil Carolina  → 3 hijos, 200k
     /agenda gratis Carolina  → prueba gratis (referidos/promo)
+    (90mil/120mil/180mil siguen aceptados por compatibilidad con precios viejos)
 
     Ivan usa esto cuando cierra la agenda por llamada telefónica.
     Crea PRUEBA FENIX, reactiva el agente, y le manda al padre
@@ -371,7 +372,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
     if len(partes) < 3 or partes[1].lower() not in _MONTOS_AGENDA:
         await enviar_a_topic(
             thread_id,
-            "⚠️ Uso: /agenda 90mil|120mil|150mil|gratis nombre\nEj: /agenda 90mil Carolina",
+            "⚠️ Uso: /agenda 100mil|150mil|200mil|gratis nombre\nEj: /agenda 100mil Carolina",
             telefono=telefono,
             group_override=group_override,
         )
