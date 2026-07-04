@@ -4161,8 +4161,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 except Exception as e:
                     logger.error(f"[LLAMADA] Error programando: {e}")
 
-        # ── Guardar respuesta (user ya guardado al inicio) ─────────────
-        await guardar_mensaje(telefono, "assistant", respuesta)
+        # ── (M3) La respuesta se guarda AL ENVIARSE, en cada rama de abajo.
+        # Antes se guardaba acá (pre-decisión) y el historial mentía: fila
+        # duplicada en el camino silencio, "Reserva confirmada" guardado con
+        # texto distinto al enviado, y respuesta guardada que nunca se envió
+        # en el camino afiche (auditoría 04-07-26 M3).
 
         # ── Marcar CONVERSION=CONTACTADO si Ivan mandó datos bancarios ──
         if agent_actual == "ivan" and CI_BANCARIO in respuesta:
@@ -4254,10 +4257,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             _fecha_part = f" el sábado {_fecha_form} a las {_hora_form}h" if _fecha_form else " el sábado"
             _verbo = "tienen" if " y " in _nombres_form else "tiene"
             respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
+            await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
         elif _interceptado:
             # Respuesta interceptada por código — enviar texto + afiches
+            await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
             # Ejecutar acciones (enviar afiches)
@@ -4272,10 +4277,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     await actualizar_estado_flags(telefono, afiche_horarios_enviado=True)
                     await _enviar_afiche_horarios(telefono, topic_id, _tg_group)
         elif _va_a_enviar_afiche:
-            # Post-diagnóstico interés → afiche precios (respuesta Claude se omite)
+            # Post-diagnóstico interés → afiche precios (el texto de Claude se
+            # omite, va la imagen). Se guarda igual el texto "te paso un afiche"
+            # porque _padre_ya_pidio_precios lo busca en el historial.
+            await guardar_mensaje(telefono, "assistant", respuesta)
             await actualizar_estado_flags(telefono, afiche_enviado=True)
             await _enviar_afiche_y_followup(telefono, topic_id, _tg_group)
         else:
+            await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
 
