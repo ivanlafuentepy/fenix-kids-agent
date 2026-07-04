@@ -2966,8 +2966,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         await _p2(_L2, _lr2, {"ULTIMO MENSAJE": datetime.now(timezone.utc).isoformat()})
                 except Exception:
                     pass
-                if topic_id:
-                    await enviar_a_topic(topic_id, f"👤 {texto} (esperando diagnóstico)", telefono=telefono, group_override=_tg_group)
+                # topic_id/_tg_group todavía NO existen acá (se asignan más abajo):
+                # usarlos directo crasheaba con UnboundLocalError y el except
+                # general borraba la dedup → mensaje duplicado (auditoría A17).
+                try:
+                    _tg_group_ack = await grupo_telegram_para(telefono)
+                    _topic_ack = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_tg_group_ack)
+                    if _topic_ack:
+                        await enviar_a_topic(_topic_ack, f"👤 {texto} (esperando diagnóstico)", telefono=telefono, group_override=_tg_group_ack)
+                except Exception:
+                    pass
                 logger.info(f"[DIAG] Padre dijo '{texto}' — ignorando, diagnóstico pendiente")
                 return
 
