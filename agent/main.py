@@ -2371,6 +2371,30 @@ async def _procesar_mensaje_webhook(msg):
       await _procesar_mensaje_interno(telefono, texto, msg)
 
 
+# Referral CTWA pendiente de persistir: el referral viene SOLO en el primer
+# mensaje del lead, pero guardar_ctwa_clid es no-op si la fila ConversacionAB
+# no existe todavía (se crea recién en asignar_variante) → la atribución de
+# anuncios se perdía para TODO lead nuevo (auditoría 04-07-26 A2). Se stashea
+# acá y se re-persiste después de asignar_variante.
+_referral_pendiente: dict[str, dict] = {}
+
+
+async def _flush_referral_pendiente(telefono: str):
+    """Persiste el referral stasheado una vez que la fila ConversacionAB existe."""
+    datos = _referral_pendiente.pop(telefono, None)
+    if not datos:
+        return
+    try:
+        from agent.memory import guardar_ctwa_clid, guardar_ad_source_id
+        if datos.get("ctwa"):
+            await guardar_ctwa_clid(telefono, datos["ctwa"])
+        if datos.get("ad"):
+            await guardar_ad_source_id(telefono, datos["ad"])
+        logger.info(f"[CAPI] Referral persistido post-asignación para {telefono}")
+    except Exception as e:
+        logger.error(f"[CAPI] Error persistiendo referral pendiente: {e}")
+
+
 async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
     """Procesamiento real del mensaje, protegido por lock de teléfono."""
     try:
@@ -2378,12 +2402,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if hasattr(msg, 'ctwa_clid') and msg.ctwa_clid:
             from agent.memory import guardar_ctwa_clid
             await guardar_ctwa_clid(msg.telefono, msg.ctwa_clid)
+            _referral_pendiente.setdefault(telefono, {})["ctwa"] = msg.ctwa_clid
             logger.info(f"[CAPI] ctwa_clid capturado para {msg.telefono}")
 
         # Capturar ad_source_id (ID del anuncio Meta) del referral
         if hasattr(msg, 'ad_source_id') and msg.ad_source_id:
             from agent.memory import guardar_ad_source_id
             await guardar_ad_source_id(msg.telefono, msg.ad_source_id)
+            _referral_pendiente.setdefault(telefono, {})["ad"] = msg.ad_source_id
             logger.info(f"[AD] ad_source_id capturado para {msg.telefono}: {msg.ad_source_id}")
 
         # ── Transcribir audio ANTES de todo (para que comandos y detectores usen texto real)
@@ -3402,6 +3428,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     if topic_id:
                         await enviar_a_topic(topic_id, f"🌙 IVAN: {MENSAJE_NOCHE}", telefono=telefono, group_override=_tg_group)
                 await asignar_variante(telefono)
+                await _flush_referral_pendiente(telefono)
                 await marcar_noche_pendiente(telefono)
                 return
 
@@ -3417,6 +3444,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Asignar variante (crea fila en ConversacionAB si no existe) ───
         _, es_nuevo = await asignar_variante(telefono)
+        # Persistir el referral CTWA capturado arriba (la fila recién ahora existe)
+        await _flush_referral_pendiente(telefono)
 
         # ── Estado de la conversación ─────────────────────────────────────
         agent_actual, modo_nixie = await obtener_agent_actual(telefono)
