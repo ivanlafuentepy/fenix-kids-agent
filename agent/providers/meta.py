@@ -323,6 +323,32 @@ class ProveedorMeta(ProveedorWhatsApp):
                 _registrar_fallo(r.status_code, r.text, "imagen")
             return r.status_code == 200
 
+    async def enviar_documento_url(
+        self, telefono: str, doc_url: str, filename: str = "documento.pdf", caption: str = ""
+    ) -> bool:
+        """Envía un documento por URL pública (ej. el PDF de factura desde Airtable)."""
+        if not self.access_token or not self.phone_number_id:
+            return False
+        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        doc_obj = {"link": doc_url, "filename": filename}
+        if caption:
+            doc_obj["caption"] = caption
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": telefono,
+            "type": "document",
+            "document": doc_obj,
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                _registrar_fallo(r.status_code, r.text, "documento")
+            return r.status_code == 200
+
     async def subir_media(self, image_bytes: bytes, mime_type: str = "image/png") -> str | None:
         """Sube un archivo a Meta y retorna el media_id."""
         if not self.access_token or not self.phone_number_id:

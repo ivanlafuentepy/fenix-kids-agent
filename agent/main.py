@@ -139,6 +139,7 @@ from agent.loops import (
     _resumen_diario_loop, _asistencia_auto_loop,
     _horarios_mensuales_loop,
     _keepalive_ventana_admin_loop,
+    _envio_facturas_fenix_loop,
     _procesar_pendientes_noche,
     _followup_loop, _ejecutar_followup,
     _followup_fotos_oneshot, _followup_video_oneshot,
@@ -247,6 +248,9 @@ async def lifespan(app: FastAPI):
     # para que las alertas urgentes le lleguen por WhatsApp (Meta solo deja texto libre <24h)
     _keepalive_ventana_task = _fire_and_forget(_keepalive_ventana_admin_loop())
 
+    # Facturas Fenix: reparte a la familia el PDF que emitió el robot facturador
+    _facturas_task = _fire_and_forget(_envio_facturas_fenix_loop())
+
     # Registrar todos los background tasks para que el monitor los vigile
     _monitor_bg_tasks.update({
         "recordatorios": _recordatorios_task,
@@ -257,6 +261,7 @@ async def lifespan(app: FastAPI):
         "monitor_conv": _monitor_conv_task,
         "monitor_salud": _monitor_salud_task,
         "keepalive_ventana": _keepalive_ventana_task,
+        "facturas_fenix": _facturas_task,
     })
 
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
@@ -3431,6 +3436,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Actualizar grupo Telegram si el router cambió el agente ──────
         _tg_group = group_id_para_agente(agent_actual or "ivan")
+
+        # ── Factura post-pago: interceptación determinística ──────────────
+        # El flag pago_esperando_factura convive con el flujo de agenda
+        # (modo_agenda fuerza gestionar_prueba en el brain) → la respuesta de
+        # factura (botón 🧾, la palabra "factura" o los datos de RUC) se corta
+        # ACÁ, antes de los menús y del brain. Señales ambiguas ("si", "no")
+        # siguen de largo: pueden ser respuesta a la agenda.
+        _flags_factura = await obtener_estado_flags(telefono)
+        if _flags_factura.get("pago_esperando_factura") or _flags_factura.get("factura_esperando_datos"):
+            from agent.facturas import manejar_respuesta_factura
+            _resp_factura = await manejar_respuesta_factura(
+                telefono, texto, getattr(msg, "btn_id", None), _flags_factura, proveedor)
+            if _resp_factura is not None:
+                await guardar_mensaje(telefono, "assistant", _resp_factura)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"🧾 AURORA: {_resp_factura}",
+                                         telefono=telefono, group_override=_tg_group)
+                logger.info(f"[FACTURA] {telefono}: respuesta de factura interceptada")
+                return {"status": "ok"}
 
         # ── Menú de botones para leads nuevos (Aurora, estilo Dorita) ─────
         # Reemplaza la apertura conversacional del lead: primer contacto →

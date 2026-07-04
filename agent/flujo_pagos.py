@@ -119,6 +119,8 @@ async def _procesar_comprobante(
     # ── Registrar el PAGO por código (única fuente — reemplaza la automatización ──
     #    de Airtable PRUEBA FENIX → PAGOS). Solo pruebas con monto; la inscripción
     #    crea sus PAGOS en inscripcion.py. Garantiza la FAMILIA antes de colgar el pago.
+    _pago_rid_factura = None
+    _fam_id_factura = None
     if tipo == "prueba" and monto > 0:
         try:
             _fam_id = await obtener_familia_id(telefono)
@@ -143,11 +145,33 @@ async def _procesar_comprobante(
                 from agent.airtable_client import _get_records, _LEADS
                 _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
                 _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
-                await registrar_pago_fenix(_fam_id, monto, concepto=concepto_pago, metodo=metodo_pago, lead_id=_lead_id_pago)
+                _pago_rid_factura = await registrar_pago_fenix(_fam_id, monto, concepto=concepto_pago, metodo=metodo_pago, lead_id=_lead_id_pago)
+                _fam_id_factura = _fam_id
             else:
                 logger.warning(f"[PAGOS] No se pudo registrar PAGO (sin familia) para {telefono}")
         except Exception as e:
             logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
+
+    # ── Ofrecer factura (espejo Dorita): el PAGO ya quedó cargado, la factura ──
+    #    es un extra opcional encima. El botón se atiende en main.py con el flag
+    #    pago_esperando_factura (interceptación temprana, antes del brain).
+    if _pago_rid_factura:
+        try:
+            from agent.facturas import BOTONES_FACTURA
+            await actualizar_estado_flags(
+                telefono,
+                pago_esperando_factura=True,
+                factura_esperando_datos=False,
+                factura_pago_rid=_pago_rid_factura,
+                factura_familia_id=_fam_id_factura or "",
+                factura_monto=monto,
+                factura_concepto=concepto_pago,
+            )
+            _msg_factura = "🧾 ¿Necesitás factura?"
+            await guardar_mensaje(telefono, "assistant", _msg_factura)
+            await proveedor.enviar_botones(telefono, _msg_factura, BOTONES_FACTURA)
+        except Exception as e:
+            logger.error(f"[FACTURA] Error ofreciendo factura a {telefono}: {e}")
 
     # CAPI: evento Purchase (comprobante confirmado)
     await enviar_evento_pago(telefono)

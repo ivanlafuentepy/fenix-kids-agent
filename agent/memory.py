@@ -346,6 +346,26 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
         ]
 
 
+async def ventana_abierta(telefono: str, horas: int = 24) -> bool:
+    """True si el contacto ENVIÓ un mensaje en las últimas `horas` (ventana de
+    servicio de 24h de Meta). Abierta → se puede mandar mensaje libre (gratis);
+    cerrada → hace falta una plantilla aprobada (business-initiated)."""
+    from datetime import timedelta as _td
+    cutoff = datetime.utcnow() - _td(hours=horas)
+    async with async_session() as session:
+        result = await session.execute(
+            select(Mensaje.timestamp)
+            .where(
+                Mensaje.telefono == telefono,
+                Mensaje.role == "user",
+                Mensaje.timestamp >= cutoff,
+            )
+            .order_by(Mensaje.timestamp.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+
 # ── Pagos persistentes ────────────────────────────────────────────────────────
 
 async def registrar_pago_pendiente_db(

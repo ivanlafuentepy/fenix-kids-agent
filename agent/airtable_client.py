@@ -50,6 +50,7 @@ _CONTENIDO = "CONTENIDO FENIX"
 _ANUNCIOS  = "ANUNCIOS FENIX"
 _REDES     = "REDES FENIX"
 _ASISTENCIA = "ASISTENCIA FENIX"
+_FACTURAS  = "FACTURAS"  # compartida con Salsa — las de Fenix llevan link FAMILIA FENIX
 
 
 # ── Deducción de género por nombre ────────────────────────────────────────────
@@ -1691,3 +1692,48 @@ async def obtener_nombre_nino(nino_id: str) -> dict | None:
             pass
         logger.error(f"GET NIÑO/PRUEBA {nino_id}: no encontrado")
     return None
+
+
+# ── FACTURAS (facturación a familias — flujo espejo del de Dorita) ────────────
+
+async def listar_facturas_fenix_para_enviar() -> list[dict]:
+    """Facturas de FENIX emitidas por el robot facturador (FACTURADO=True +
+    COMPROBANTE SET + PDF cargado) que todavía no se enviaron a la familia.
+    El filtro FAMILIA FENIX!='' separa las de Fenix: las de Salsa (link ALUMNO)
+    las reparte Dorita con su propio loop."""
+    formula = ("AND({FACTURADO}=TRUE(), {ENVIADO}=FALSE(), "
+               "{COMPROBANTE SET}!='', {FAMILIA FENIX}!='')")
+    records = await _get_records(_FACTURAS, formula=formula, max_records=20)
+    out = []
+    for r in records:
+        f = r.get("fields", {})
+        adj = f.get("FACTURA PDF") or []
+        out.append({
+            "record_id": r["id"],
+            "familia_ids": f.get("FAMILIA FENIX") or [],
+            "pdf_url": adj[0].get("url", "") if adj else "",
+            "pdf_filename": (adj[0].get("filename") or "factura.pdf") if adj else "factura.pdf",
+        })
+    return out
+
+
+async def obtener_contacto_familia(familia_id: str) -> tuple[str, str]:
+    """(telefono, nombre) del responsable de la familia — para mandarle la factura.
+    Usa las fórmulas CELL LIMPIO (formato 595XXXXXXXXX) con fallback al crudo."""
+    if not familia_id:
+        return "", ""
+    recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
+    if not recs:
+        return "", ""
+    f = recs[0].get("fields", {})
+    tel = (f.get("CELL LIMPIO PADRE") or f.get("CELL LIMPIO MADRE")
+           or f.get("CELL PADRE") or f.get("CELL MADRE") or "")
+    tel = "".join(c for c in str(tel) if c.isdigit())
+    nombre = (f.get("APODO PADRE") or f.get("NOMBRE PADRE")
+              or f.get("APODO MADRE") or f.get("NOMBRE MADRE") or "").strip()
+    return tel, nombre
+
+
+async def marcar_factura_fenix_enviada(record_id: str) -> bool:
+    """Marca ENVIADO=True — la familia ya recibió su PDF por WhatsApp."""
+    return await _patch(_FACTURAS, record_id, {"ENVIADO": True})

@@ -858,3 +858,73 @@ async def _followup_video_oneshot():
             logger.error(f"[FOLLOWUP-VIDEO] Error con {telefono}: {e}")
 
     logger.info(f"[FOLLOWUP-VIDEO] Completado: {enviados}/{len(telefonos_ventana)} enviados")
+
+
+# ── Envío de facturas Fenix ───────────────────────────────────────────────────
+
+async def _envio_facturas_fenix_loop():
+    """Cada 90s: factura de FENIX emitida por el robot facturador (FACTURADO +
+    COMPROBANTE SET + PDF en FACTURA PDF) que aún NO se envió a la familia →
+    manda el PDF (LIBRE si la ventana 24h está abierta, plantilla
+    factura_electronica_fenix con header documento si está cerrada) → ENVIADO.
+
+    Espejo del loop de Dorita. Solo toma facturas con link FAMILIA FENIX;
+    las de Salsa (link ALUMNO) las reparte Dorita."""
+    from agent.memory import ventana_abierta
+    from agent.airtable_client import (
+        listar_facturas_fenix_para_enviar, obtener_contacto_familia,
+        marcar_factura_fenix_enviada,
+    )
+    from agent.telegram_bridge import grupo_telegram_para
+
+    logger.info("[FACTURA-ENVIO] Loop iniciado — polling cada 90s")
+    _CAPTION = "Acá tenés tu factura 😊 ¡Muchas gracias por tu pago! 🔥"
+    while True:
+        try:
+            pendientes = await listar_facturas_fenix_para_enviar()
+            for fac in pendientes:
+                try:
+                    if not fac.get("familia_ids") or not fac.get("pdf_url"):
+                        continue
+                    tel, nombre = await obtener_contacto_familia(fac["familia_ids"][0])
+                    if not tel:
+                        logger.info(f"[FACTURA-ENVIO] rec {fac['record_id']} sin teléfono, salteo")
+                        continue
+                    abierta = await ventana_abierta(tel)
+                    if abierta:
+                        ok = await proveedor.enviar_documento_url(
+                            tel, fac["pdf_url"], fac["pdf_filename"], _CAPTION)
+                    else:
+                        ok = await proveedor.enviar_plantilla(
+                            tel, "factura_electronica_fenix",
+                            componentes=[
+                                {"type": "header", "parameters": [
+                                    {"type": "document",
+                                     "document": {"link": fac["pdf_url"], "filename": fac["pdf_filename"]}}]},
+                                {"type": "body", "parameters": [
+                                    {"type": "text", "parameter_name": "nombre", "text": nombre or "familia"}]},
+                            ],
+                            language="es_AR",  # la plantilla está aprobada en es_AR (default del método es "es")
+                        )
+                    _metodo = "MENSAJE NORMAL (ventana abierta)" if abierta else "PLANTILLA (ventana cerrada)"
+                    if ok:
+                        await marcar_factura_fenix_enviada(fac["record_id"])
+                        await guardar_mensaje(tel, "assistant", f"🧾 Factura enviada ({_metodo})")
+                        logger.info(f"[FACTURA-ENVIO] ✅ enviada a {tel} por {_metodo} (rec {fac['record_id']})")
+                        # Espejo a Telegram en el topic de la familia
+                        try:
+                            _grp = await grupo_telegram_para(tel)
+                            _topic = await obtener_o_crear_topic(tel, nombre or tel, group_override=_grp)
+                            if _topic:
+                                await enviar_a_topic(_topic, f"🧾 Factura enviada a {nombre or tel} por {_metodo}",
+                                                     telefono=tel, group_override=_grp)
+                        except Exception as e:
+                            logger.error(f"[FACTURA-ENVIO] error espejo Telegram: {e}")
+                    else:
+                        logger.error(f"[FACTURA-ENVIO] ❌ falló envío a {tel} por {_metodo} (rec {fac['record_id']})")
+                    await asyncio.sleep(1.2)  # throttle Meta
+                except Exception as e:
+                    logger.error(f"[FACTURA-ENVIO] error rec {fac.get('record_id')}: {e}")
+        except Exception as e:
+            logger.error(f"[FACTURA-ENVIO] error loop: {e}")
+        await asyncio.sleep(90)
