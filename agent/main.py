@@ -142,7 +142,6 @@ from agent.loops import (
     _envio_facturas_fenix_loop,
     _procesar_pendientes_noche,
     _followup_loop, _ejecutar_followup,
-    _followup_fotos_oneshot, _followup_video_oneshot,
     _resetear_seguimiento, _incrementar_seguimiento,
 )
 
@@ -222,10 +221,9 @@ async def lifespan(app: FastAPI):
     # Follow-up leads: DESACTIVADO — Ivan prepara y envía manualmente a las 6am
     # _followup_task = _fire_and_forget(_followup_loop())
 
-    # Follow-up masivo fotos: ONE-SHOT (ya ejecutado 5/5)
-    _followup_fotos_task = _fire_and_forget(_followup_fotos_oneshot())
-    # Follow-up video: ONE-SHOT 6:00 AM PY 2026-05-06
-    _followup_video_task = _fire_and_forget(_followup_video_oneshot())
+    # Follow-up masivos fotos/video: ONE-SHOTs de mayo 2026, YA ejecutados.
+    # Se lanzaban en cada boot y solo la fecha vencida los frenaba — retirados
+    # del lifespan (las funciones quedan en loops.py como patrón reutilizable).
 
     # Resumen diario 8:00 AM PY: anuncios + reservas (reemplaza keepalive)
     _keepalive_task = _fire_and_forget(_resumen_diario_loop())
@@ -1913,9 +1911,8 @@ async def conversacion_completa(telefono: str, _: bool = Depends(_require_admin)
 
 # ── Detectores de conversación (extraído a agent/detectores_conv.py) ──
 from agent.detectores_conv import (
-    _detectar_activacion_aurora, _detectar_handoff_ivan_aurora,
     _cancelar_diagnostico_pendiente, _diagnostico_pendiente, _DELAY_DIAGNOSTICO,
-    _detectar_respuesta_edad, _diagnostico_ya_enviado, _padre_muestra_interes,
+    _diagnostico_ya_enviado, _padre_muestra_interes,
     _padre_ya_pidio_precios, _detectar_pedido_llamada,
     _extraer_nombre_del_historial, _es_nombre_hijo_valido,
     _extraer_nombre_hijo_historial, _extraer_edad_historial,

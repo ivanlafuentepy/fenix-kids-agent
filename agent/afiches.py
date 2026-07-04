@@ -17,7 +17,6 @@ proveedor = obtener_proveedor()
 # ── Afiche de precios ────────────────────────────────────────────────────────
 
 _AFICHE_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_fenix.png")
-_AFICHE_HERMANOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_hermanos.png")
 _AFICHE_HORARIOS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "afiche_horarios.png")
 # Guard: afiche_horarios_enviado → persistido en estado_json (DB)
 

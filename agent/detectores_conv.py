@@ -13,23 +13,6 @@ logger = logging.getLogger("agentkit")
 
 # ── Detección de activación / handoff / confirmación ────────────────────────
 
-_CLAVES_AURORA = [
-    "nixi", "hola nixi", "quiero hablar con nixi",
-    "quiero reservar con nixi", "quiero agendar con nixi",
-    "hablar con aurora", "reservar con aurora", "agendar con aurora",
-]
-
-
-def _detectar_activacion_aurora(texto: str) -> bool:
-    """El padre escribió directamente a Aurora."""
-    t = texto.lower()
-    return any(k in t for k in _CLAVES_AURORA)
-
-
-def _detectar_handoff_ivan_aurora(respuesta: str) -> bool:
-    """Ivan dijo 'En breve te contacta AURORA' — señal de transferencia."""
-    t = respuesta.lower()
-    return "en breve te contacta aurora" in t or "te contacta aurora" in t
 
 
 # ── Diagnóstico diferido (delay 3 min después de recibir edad) ────────────────
@@ -44,25 +27,6 @@ def _cancelar_diagnostico_pendiente(telefono: str):
     if task and not task.done():
         task.cancel()
         logger.info(f"[DIAG] Diagnóstico pendiente cancelado para {telefono}")
-
-
-def _detectar_respuesta_edad(texto: str, historial: list[dict]) -> bool:
-    """Detecta si el padre está respondiendo a la pregunta de edad de Ivan."""
-    if not historial:
-        return False
-    ultimo = historial[-1]
-    if ultimo.get("role") != "assistant":
-        return False
-    contenido = ultimo.get("content", "").lower()
-    if not re.search(r'cu[aá]ntos\s+a[ñn]os', contenido):
-        return False
-    # El padre respondió con número o "X años"
-    t = texto.strip()
-    if re.fullmatch(r'\d{1,2}', t) and 2 <= int(t) <= 15:
-        return True
-    if re.search(r'\b\d{1,2}\s*(?:años|añitos|a[ñn]os)', t, re.IGNORECASE):
-        return True
-    return False
 
 
 def _diagnostico_ya_enviado(historial: list[dict]) -> bool:
