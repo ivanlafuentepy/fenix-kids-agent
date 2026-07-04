@@ -3682,7 +3682,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_horarios")
                     _partes.append("Entrenamos todos los sábados 🌳 Te paso el afiche con los horarios")
                 elif _pide_horarios:
-                    _partes.append("11:00h | 15:30h — ¿cuál te viene bien? 🤝")
+                    # OJO: no invitar a ELEGIR horario pre-pago (regla: cobrar
+                    # primero, agendar después — auditoría 04-07-26 A13)
+                    _partes.append("Turnos de los sábados: 11:00h | 15:30h 🌳 El horario lo confirmamos al reservar — ¿te paso los datos para asegurar el lugar? 🤝")
 
                 if _pide_ubicacion:
                     _partes.append(
