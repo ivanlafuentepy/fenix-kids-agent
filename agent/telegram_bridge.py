@@ -680,14 +680,21 @@ async def notificar_llamada_urgente(telefono: str, nombre: str, wa_link: str) ->
 
 
 async def configurar_webhook(url_base: str) -> dict:
-    """Registra el webhook de Telegram."""
+    """Registra el webhook de Telegram. Si TELEGRAM_WEBHOOK_SECRET está seteado,
+    Telegram lo manda en cada update (header X-Telegram-Bot-Api-Secret-Token)
+    y main.py rechaza los POST que no lo traigan — nadie más puede inyectar
+    updates falsos al endpoint público."""
     webhook_url = f"{url_base.rstrip('/')}/telegram/webhook"
     url = _api_url("setWebhook")
+    payload = {
+        "url": webhook_url,
+        "allowed_updates": ["message"],
+    }
+    _secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    if _secret:
+        payload["secret_token"] = _secret
     async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.post(url, json={
-            "url": webhook_url,
-            "allowed_updates": ["message"],
-        })
+        r = await client.post(url, json=payload)
         data = r.json()
         logger.info(f"[Telegram] setWebhook → {data}")
         return data

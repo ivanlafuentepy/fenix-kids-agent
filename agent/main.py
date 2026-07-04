@@ -4758,8 +4758,23 @@ async def telegram_webhook(request: Request):
     """
     Recibe mensajes del bot de Telegram y los reenvía al WhatsApp del lead.
     Permite a Ivan responder manualmente desde Telegram.
+    Auth: si TELEGRAM_WEBHOOK_SECRET está seteado, se exige el header
+    X-Telegram-Bot-Api-Secret-Token (Telegram lo manda desde que el webhook
+    se registró con secret_token). Sin la variable → fail-open con warning,
+    para no romper prod antes de cargarla (mismo patrón que la firma Meta).
     """
     try:
+        _tg_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+        if _tg_secret:
+            import hmac as _hmac_tg
+            _header = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if not _hmac_tg.compare_digest(_header, _tg_secret):
+                logger.warning("[TELEGRAM] webhook rechazado: secret token inválido o ausente")
+                from fastapi.responses import JSONResponse
+                return JSONResponse(status_code=403, content={"error": "forbidden"})
+        else:
+            logger.warning("[TELEGRAM] TELEGRAM_WEBHOOK_SECRET no configurado — webhook SIN auth (cargar la variable y re-registrar via /telegram/setup)")
+
         body = await request.json()
         message = body.get("message") or body.get("edited_message")
         if not message:
