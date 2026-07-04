@@ -66,7 +66,7 @@ _TOOLS_CON_HORA = {
 
 
 async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dict | None:
-    """Valida hora ∈ {9:30, 11:00, 15:30}, fecha es sábado futuro. Normaliza fecha a ISO."""
+    """Valida hora ∈ _HORARIOS_VALIDOS, fecha es sábado futuro. Normaliza fecha a ISO."""
     if tool_name not in _TOOLS_CON_HORA:
         return None
 
@@ -77,7 +77,7 @@ async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dic
             "error": True,
             "error_category": "validation",
             "is_retryable": False,
-            "message": f"Hora '{hora}' no es válida. Los horarios son: 9:30, 11:00 y 15:30.",
+            "message": f"Hora '{hora}' no es válida. Los horarios son: {' y '.join(sorted(_HORARIOS_VALIDOS))}.",
         }
 
     # Validar y normalizar fecha
