@@ -3383,18 +3383,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Padres inscriptos no tienen restricción nocturna
             _familia_nocturno = await buscar_familia_por_telefono(telefono)
             if not familia_es_activa(_familia_nocturno):
-                historial_noche = await obtener_historial(telefono, limite=5)
-                _tiene_actividad = len(historial_noche) > 0
-                if not _tiene_actividad or not await tiene_noche_pendiente(telefono):
-                    if not await tiene_noche_pendiente(telefono):
-                        await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
-                        await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
-                        # Espejar mensaje nocturno a Telegram
-                        if topic_id:
-                            await enviar_a_topic(topic_id, f"🌙 IVAN: {MENSAJE_NOCHE}", telefono=telefono, group_override=_tg_group)
-                    await asignar_variante(telefono)
-                    await marcar_noche_pendiente(telefono)
-                    return
+                # De noche el lead SIEMPRE corta acá: antes, el 2do mensaje de la
+                # noche (con noche_pendiente ya marcado) caía al flujo normal y
+                # Claude respondía a las 2:30 AM — y night_mode respondía OTRA vez
+                # a las 06:00 (auditoría 04-07-26 A16). El mensaje "te respondo a
+                # las 06:00" sale solo la primera vez; los siguientes solo se
+                # guardan (early save) y los responde night_mode a la mañana.
+                if not await tiene_noche_pendiente(telefono):
+                    await proveedor.enviar_mensaje(telefono, MENSAJE_NOCHE)
+                    await guardar_mensaje(telefono, "assistant", MENSAJE_NOCHE)
+                    # Espejar mensaje nocturno a Telegram
+                    if topic_id:
+                        await enviar_a_topic(topic_id, f"🌙 IVAN: {MENSAJE_NOCHE}", telefono=telefono, group_override=_tg_group)
+                await asignar_variante(telefono)
+                await marcar_noche_pendiente(telefono)
+                return
 
         # ── Obtener historial (20 msgs — suficiente para contexto, reduce costos API)
         historial = await obtener_historial(telefono, limite=20)
