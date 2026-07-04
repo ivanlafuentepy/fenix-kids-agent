@@ -211,15 +211,38 @@ async def _resumen_diario_loop():
 
 
 async def _recordatorios_loop():
-    """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía."""
+    """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía.
+    Marca ENVIADO solo si el envío salió (antes un 4xx de Meta lo marcaba igual
+    y el recordatorio se perdía en silencio — auditoría 04-07-26 A19); si falla,
+    reintenta máx 3 ciclos y se rinde (no spamear el log para siempre).
+    _enviados_sin_marcar evita el duplicado si el envío salió pero el marcado
+    en DB falló (se reintenta solo el marcado, no el envío)."""
     _ciclo = 0
+    _reintentos_envio: dict[int, int] = {}
+    _enviados_sin_marcar: set[int] = set()
     while True:
         try:
             pendientes = await obtener_recordatorios_pendientes(datetime.utcnow())
             for rec in pendientes:
                 try:
-                    await _enviar_recordatorio(rec)
+                    if rec.id in _enviados_sin_marcar:
+                        await marcar_recordatorio_enviado(rec.id)
+                        _enviados_sin_marcar.discard(rec.id)
+                        continue
+                    ok = await _enviar_recordatorio(rec)
+                    if not ok:
+                        _reintentos_envio[rec.id] = _reintentos_envio.get(rec.id, 0) + 1
+                        if _reintentos_envio[rec.id] >= 3:
+                            await marcar_recordatorio_enviado(rec.id)
+                            _reintentos_envio.pop(rec.id, None)
+                            logger.error(f"[RECORDATORIO] id={rec.id} descartado tras 3 envíos fallidos (¿ventana 24h cerrada?)")
+                        else:
+                            logger.warning(f"[RECORDATORIO] Envío falló id={rec.id} — reintento {_reintentos_envio[rec.id]}/3 en el próximo ciclo")
+                        continue
+                    _reintentos_envio.pop(rec.id, None)
+                    _enviados_sin_marcar.add(rec.id)
                     await marcar_recordatorio_enviado(rec.id)
+                    _enviados_sin_marcar.discard(rec.id)
                     logger.info(f"[RECORDATORIO] Enviado id={rec.id} a {rec.telefono}")
                 except Exception as e:
                     logger.error(f"[RECORDATORIO] Error enviando id={rec.id}: {e}")
@@ -880,12 +903,21 @@ async def _envio_facturas_fenix_loop():
 
     logger.info("[FACTURA-ENVIO] Loop iniciado — polling cada 90s")
     _CAPTION = "Acá tenés tu factura 😊 ¡Muchas gracias por tu pago! 🔥"
+    # Guard anti-doble-PDF: si el envío salió pero marcar_factura_fenix_enviada
+    # falló (Airtable caído), sin esto la familia recibía el PDF de nuevo cada
+    # 90s hasta que Airtable respondiera (auditoría 04-07-26 A19).
+    _enviadas_sin_marcar: set[str] = set()
     while True:
         try:
             pendientes = await listar_facturas_fenix_para_enviar()
             for fac in pendientes:
                 try:
                     if not fac.get("familia_ids") or not fac.get("pdf_url"):
+                        continue
+                    if fac["record_id"] in _enviadas_sin_marcar:
+                        # Ya se envió — solo reintentar el marcado, no el PDF
+                        await marcar_factura_fenix_enviada(fac["record_id"])
+                        _enviadas_sin_marcar.discard(fac["record_id"])
                         continue
                     tel, nombre = await obtener_contacto_familia(fac["familia_ids"][0])
                     if not tel:
@@ -909,7 +941,9 @@ async def _envio_facturas_fenix_loop():
                         )
                     _metodo = "MENSAJE NORMAL (ventana abierta)" if abierta else "PLANTILLA (ventana cerrada)"
                     if ok:
+                        _enviadas_sin_marcar.add(fac["record_id"])
                         await marcar_factura_fenix_enviada(fac["record_id"])
+                        _enviadas_sin_marcar.discard(fac["record_id"])
                         await guardar_mensaje(tel, "assistant", f"🧾 Factura enviada ({_metodo})")
                         logger.info(f"[FACTURA-ENVIO] ✅ enviada a {tel} por {_metodo} (rec {fac['record_id']})")
                         # Espejo a Telegram en el topic de la familia
