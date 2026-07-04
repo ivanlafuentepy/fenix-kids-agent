@@ -16,8 +16,11 @@ def _obtener_lock(telefono: str) -> asyncio.Lock:
     """Retorna un lock exclusivo por teléfono (evita procesamiento paralelo)."""
     if telefono not in _locks_telefono:
         if len(_locks_telefono) > _MAX_LOCKS:
-            # Limpiar los más viejos
-            oldest = list(_locks_telefono.keys())[:50]
+            # Limpiar los más viejos — pero NUNCA un lock tomado: si se borra
+            # mientras alguien lo tiene, el próximo mensaje del mismo teléfono
+            # crea un lock nuevo y los dos se procesan EN PARALELO (historial
+            # desordenado, flags pisados — auditoría 04-07-26 M2).
+            oldest = [k for k in list(_locks_telefono.keys()) if not _locks_telefono[k].locked()][:50]
             for k in oldest:
                 _locks_telefono.pop(k, None)
         _locks_telefono[telefono] = asyncio.Lock()
