@@ -77,8 +77,10 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
 
     hora_actual = reservas_info[0]["hora"] if reservas_info else "?"
 
-    # Si no especificó hora → retornar reservas actuales + opciones
-    if not hora_nueva:
+    # Si no especificó NI hora NI fecha → retornar reservas actuales + opciones
+    # (antes exigía hora: "pasanos al sábado 11, mismo horario" era imposible
+    # de reagendar — auditoría 04-07-26 A14)
+    if not hora_nueva and not fecha_nueva:
         opciones = sorted(h for h in _HORARIOS_VALIDOS if h != hora_actual)
         info_txt = "\n".join(f"• {r['hijo']} → {r['fecha']} {r['hora']}" for r in reservas_info)
         return {
@@ -88,15 +90,17 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
             "texto": f"Reserva actual:\n{info_txt}\n\nHorarios disponibles: {' | '.join(opciones)}",
         }
 
-    # Validar hora
-    if hora_nueva not in _HORARIOS_VALIDOS:
+    # Validar hora (solo si vino: puede reagendar cambiando solo la fecha)
+    if hora_nueva and hora_nueva not in _HORARIOS_VALIDOS:
         return {
             "texto": f"Horario no válido. Los horarios son: {' | '.join(sorted(_HORARIOS_VALIDOS))}",
             "reagendado": False,
         }
 
-    # Si ya tiene esa hora → no hacer nada
-    if hora_nueva == hora_actual:
+    # Misma hora Y sin fecha nueva → no hay nada que cambiar.
+    # (Antes este early-return ignoraba fecha_nueva: "mismo horario, otro
+    # sábado" respondía "no hay cambio" y dejaba la fecha vieja — A14.)
+    if hora_nueva == hora_actual and not fecha_nueva:
         return {
             "texto": f"Ya está reservado a las {hora_nueva}h, no hay cambio.",
             "reagendado": False,
@@ -121,12 +125,15 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
         prueba_ids.append(r["record_id"])
         logger.info(f"[REAGENDAR-TOOL] {r['hijo']} ({telefono}): {r['fecha']} {r['hora']} → {fecha_nueva or r['fecha']} {hora_nueva or r['hora']}")
 
-    # A1: reagendar la RESERVA FENIX real (dual-write). Fecha: la nueva si vino, si no la actual.
+    # A1: reagendar la RESERVA FENIX real (dual-write). Fecha/hora: la nueva
+    # si vino, si no la actual (cubre el reagendamiento solo-fecha).
     _fecha_real = _parsear_fecha(fecha_nueva) if fecha_nueva else _parsear_fecha(reservas_info[0]["fecha"])
-    if _fecha_real and hora_nueva:
-        await _crear_reserva_real(telefono, _fecha_real, hora_nueva, reagendar=True)
+    _hora_real = hora_nueva or hora_actual
+    if _fecha_real and _hora_real in _HORARIOS_VALIDOS:
+        await _crear_reserva_real(telefono, _fecha_real, _hora_real, reagendar=True)
 
     hijos_txt = ", ".join(hijos_reagendados)
+    _fecha_display = campos_update.get("FECHA RESERVA") or reservas_info[0]["fecha"]
 
     # Notificar admin por WhatsApp
     nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
@@ -137,17 +144,17 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
             f"🔄 REAGENDAMIENTO\n"
             f"👤 {nombre_resp}\n"
             f"👧 {hijos_txt}\n"
-            f"❌ De: {hora_actual}\n"
-            f"✅ A: {hora_nueva}\n"
+            f"❌ De: {reservas_info[0]['fecha']} {hora_actual}\n"
+            f"✅ A: {_fecha_display} {_hora_real}\n"
             f"📱 https://wa.me/{telefono}"
         ),
     }
 
     return {
-        "texto": f"Listo! Cambié a las {hora_nueva or r['hora']}h ✅ — {hijos_txt}",
+        "texto": f"Listo! Reserva actualizada ✅ — {hijos_txt} → {_fecha_display} {_hora_real}h",
         "reagendado": True,
         "hora_anterior": hora_actual,
-        "hora_nueva": hora_nueva,
+        "hora_nueva": _hora_real,
         "hijos": hijos_txt,
         "prueba_ids": prueba_ids,
         **notificacion_admin,
