@@ -2099,18 +2099,22 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
-            # Deduplicación: registrar ANTES en PostgreSQL + procesar en background
-            # Si el procesamiento falla, se borra la dedup para permitir reintento.
-            # IMPORTANTE: responder 200 rápido (<5s) para que Meta no reintente.
-            if msg.mensaje_id:
-                if await mensaje_ya_procesado(msg.mensaje_id):
-                    continue
-                await registrar_mensaje_procesado(msg.mensaje_id)
+            # Deduplicación: skip si ya se procesó (Meta reenvía duplicados)
+            if msg.mensaje_id and await mensaje_ya_procesado(msg.mensaje_id):
+                continue
 
-            # Rate limit por teléfono
+            # Rate limit por teléfono — ANTES de registrar la dedup: si el mensaje
+            # se descarta acá, no debe quedar marcado como procesado (un comprobante
+            # descartado quedaba perdido para siempre — auditoría 04-07-26 C3).
             if _check_rate_limit(msg.telefono):
                 logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
                 continue
+
+            # Registrar dedup en PostgreSQL + procesar en background.
+            # Si el procesamiento falla, se borra la dedup para permitir reintento.
+            # IMPORTANTE: responder 200 rápido (<5s) para que Meta no reintente.
+            if msg.mensaje_id:
+                await registrar_mensaje_procesado(msg.mensaje_id)
 
             # Procesamiento en background — responder 200 rápido a Meta
             _fire_and_forget(_procesar_mensaje_webhook(msg))
