@@ -39,11 +39,14 @@ PRECIOS = {
 }
 
 
-def monto_prueba_por_hijos(historial: list[dict]) -> int:
+def monto_prueba_por_hijos_detallado(historial: list[dict]) -> tuple[int, bool]:
     """
     Extrae el monto de prueba que Ivan confirmó en la conversación.
     Busca el último mensaje de Ivan con "Transferencia: X Gs" o monto explícito
-    cerca de datos bancarios. Fallback: 100K (Plan Invierno).
+    cerca de datos bancarios.
+    Retorna (monto, adivinado): adivinado=True si NINGUNA regex matcheó y se
+    usó el fallback de 100K — el llamador debe avisar al admin para verificar
+    (una familia de 2 que pagó 150k quedaba registrada con 100k en silencio).
     """
     import re
     # Buscar en mensajes de Ivan (de más reciente a más antiguo)
@@ -58,42 +61,49 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
         # Patrón: "Transferencia: 120.000 Gs" o "A transferir: 120.000 Gs" (tolera **markdown**)
         match = re.search(r"[Tt]ransfer(?:ir|encia)\**[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "Monto: **150.000 Gs**" o "Monto: 150.000 Gs" (tolera **markdown**)
         match = re.search(r"[Mm]onto[:\s]*\**\s*(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "Son 150.000 Gs" (confirmación directa de monto)
         match = re.search(r"[Ss]on\s+\**(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "Prueba/Evaluación 2 hijos: 120.000" o "Evaluación: 90.000"
         match = re.search(r"(?:[Pp]rueba|[Ee]valuaci[oó]n)[^:)]*[:\)]\s*(\d{2,3})[.\s]?(\d{3})", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "120.000 Gs (prueba/evaluación" o "120.000 Gs (2 sábados"
         match = re.search(r"(\d{2,3})[.\s](\d{3})\s*[Gg]s\**\s*\((?:prueba|evaluaci|\d+\s*s[aá]bado)", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "150.000 Gs por 2 sábados de prueba" (monto + sábados + prueba en mismo mensaje)
         match = re.search(r"(\d{2,3})[.\s](\d{3})\s*[Gg]s\**\s*(?:por\s+\d+\s*s[aá]bado)", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "Pagás al llegar: 150.000 Gs"
         match = re.search(r"[Pp]ag[aá]s al llegar[:\s]*\**(\d{2,3})[.\s](\d{3})\s*[Gg]s", contenido)
         if match:
-            return int(match.group(1)) * 1000 + int(match.group(2))
+            return int(match.group(1)) * 1000 + int(match.group(2)), False
         # Patrón: "90mil Gs" o "120mil" (sin punto de miles)
         match = re.search(r"(\d{2,3})\s*mil\s*[Gg]s", contenido)
         if match:
-            return int(match.group(1)) * 1000
+            return int(match.group(1)) * 1000, False
         # Mensaje con datos bancarios → buscar cualquier monto en el mismo mensaje
         if any(kw in contenido.lower() for kw in ["banco", "cta", "alias", "comprobante"]):
             match = re.search(r"\**(\d{2,3})[.\s](\d{3})\s*(?:[Gg]s)?\**", contenido)
             if match:
-                return int(match.group(1)) * 1000 + int(match.group(2))
-    # Fallback: 1 hijo = 100mil (Plan Invierno)
-    return 100_000
+                return int(match.group(1)) * 1000 + int(match.group(2)), False
+    # Fallback: 1 hijo = 100mil (Plan Invierno) — ADIVINADO, avisar
+    return 100_000, True
+
+
+def monto_prueba_por_hijos(historial: list[dict]) -> int:
+    """Wrapper compatible: solo el monto (ver monto_prueba_por_hijos_detallado)."""
+    monto, _ = monto_prueba_por_hijos_detallado(historial)
+    return monto
+
 
 # ── Detección de comprobante ─────────────────────────────────────────────────
 

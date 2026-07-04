@@ -20,7 +20,7 @@ from agent.meta_capi import enviar_evento_pago
 from agent.pagos import (
     detectar_tipo_pago,
     registrar_pago_pendiente, confirmar_pago,
-    formatear_monto, monto_prueba_por_hijos,
+    formatear_monto, monto_prueba_por_hijos_detallado,
 )
 from agent.airtable_client import (
     actualizar_conversion_lead, crear_prueba_fenix, crear_familia_a_prueba,
@@ -70,10 +70,11 @@ async def _procesar_comprobante(
     tipo = tipo_override or detectar_tipo_pago(historial)
 
     # Calcular monto correcto (multi-hijo)
+    _monto_adivinado = False
     if monto_override:
         monto = int(monto_override)
     elif tipo == "prueba":
-        monto = monto_prueba_por_hijos(historial)
+        monto, _monto_adivinado = monto_prueba_por_hijos_detallado(historial)
     else:
         monto = 0
 
@@ -218,6 +219,13 @@ async def _procesar_comprobante(
         "\n⚠️ INSCRIPCIÓN: el PAGO no se registra solo — corré 'cargar familia'."
         if tipo != "prueba" else ""
     )
+    # Monto adivinado: ninguna regex encontró el monto acordado en el chat y
+    # se registró el fallback de 100k — el admin tiene que verificar (A4).
+    _aviso_monto = (
+        f"\n⚠️ Monto ADIVINADO (no encontré el acordado en el chat) — "
+        f"verificá el comprobante vs {formatear_monto(monto)} registrados."
+        if _monto_adivinado else ""
+    )
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
         f"💰 Tipo: {tipo_label}\n"
@@ -225,6 +233,7 @@ async def _procesar_comprobante(
         f"📲 {wa_link_pago}"
         f"{tg_link_admin}"
         f"{_aviso_inscripcion}"
+        f"{_aviso_monto}"
     )
     # Reenviar imagen al admin (si hay media_id)
     if media_id:
