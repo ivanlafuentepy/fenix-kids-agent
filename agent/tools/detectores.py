@@ -52,7 +52,10 @@ def padre_pregunta_ubicacion(texto: str) -> bool:
         "ubicacion", "ubicación", "donde queda", "dónde queda",
         "donde es", "dónde es", "direccion", "dirección",
         "donde están", "donde estan", "dónde están",
-        "como llego", "cómo llego", "lugar", "mapa",
+        "como llego", "cómo llego", "mapa",
+        # OJO: "lugar" suelto NO va — "¿hay lugar para el sábado?" es cupo,
+        # no dirección (auditoría 04-07-26 A9)
+        "que lugar queda", "qué lugar queda", "en que lugar", "en qué lugar",
     ]
     return any(p in t for p in patrones)
 
@@ -108,7 +111,11 @@ def padre_dice_ya_transfiri(texto: str) -> bool:
     patrones = [
         "ya transferi", "ya transferí", "ya hice la transferencia",
         "ya pague", "ya pagué", "ya deposite", "ya deposité",
-        "ya envie", "ya envié", "listo ya pague", "listo ya pagué",
+        # "ya envie" suelto NO va — "ya te envié los datos de mi hijo" pedía
+        # el comprobante de nuevo (auditoría 04-07-26 A12). Solo con objeto de pago:
+        "ya envie la transferencia", "ya envié la transferencia",
+        "ya envie el pago", "ya envié el pago",
+        "listo ya pague", "listo ya pagué",
     ]
     return any(p in t for p in patrones)
 

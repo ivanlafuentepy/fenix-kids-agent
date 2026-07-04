@@ -146,8 +146,9 @@ _PATRONES_LLAMADA = [
     r"\bprefiero\s+(?:llamar|que me llam)",
     r"\bllamame",
     r"\bllam[aá]me",
-    r"\bla\s+segunda",
-    r"\bla\s+2da",
+    # "la segunda"/"la 2da" se retiraron: post-pago el sistema ofrece
+    # "11:00 | 15:30" y el padre que elige "la segunda" (15:30) caía acá
+    # y recibía "te llamo" en vez de agendar (auditoría 04-07-26 A10).
     r"\bsi\s*,?\s*llamame",
     r"\bdale\s+llamame",
     r"\bsi\s*,?\s*(?:podemos|podes)\s+hablar",
