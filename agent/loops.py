@@ -188,8 +188,9 @@ async def _enviar_recordatorio(rec):
 
 async def _resumen_diario_loop():
     """Envía resumen anuncios + resumen reservas al admin todos los días a las 8:00 AM PY."""
-    from datetime import datetime, timezone, timedelta
-    _PY = timezone(timedelta(hours=-4))
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    _PY = ZoneInfo("America/Asuncion")  # UTC-3 fijo — el -4 viejo mandaba el "8 AM" a las 9
     admin_phone = os.getenv("ADMIN_PHONE", "")
     while True:
         ahora = datetime.now(_PY)

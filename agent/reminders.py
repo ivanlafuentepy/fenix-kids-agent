@@ -24,8 +24,9 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger("agentkit")
 
-# Zona horaria de Paraguay: UTC-4 (sin horario de verano)
-_PARAGUAY_OFFSET_H = -4
+# Zona horaria de Paraguay: UTC-3 FIJO desde que se abolió el DST (Ley 2024).
+# El -4 viejo corría la ventana 08-21 una hora (mandaba hasta las 22h reales).
+_PARAGUAY_OFFSET_H = -3
 _HORA_INICIO = 8    # 08:00 local
 _HORA_FIN    = 21   # 21:00 local
 

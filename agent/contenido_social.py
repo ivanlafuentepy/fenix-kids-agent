@@ -25,8 +25,8 @@ from agent.airtable_client import (
 
 logger = logging.getLogger("agentkit")
 
-# Zona horaria Paraguay: UTC-4
-_PARAGUAY_OFFSET_H = -4
+# Zona horaria Paraguay: UTC-3 FIJO (sin DST desde 2024)
+_PARAGUAY_OFFSET_H = -3
 _HORA_ENVIO_DIARIO = 10  # 10:00 AM hora Paraguay
 
 # Calendario semanal: día de la semana (0=lunes) → red social
