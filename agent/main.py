@@ -3276,7 +3276,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Detección de comprobante de pago ───────���─────────────────────
-        historial_pago = await obtener_historial(telefono)
+        # Ventana amplia (50): la detección exige el CI bancario en el historial;
+        # si el padre chateó 20+ mensajes tras recibir los datos, el CI salía de
+        # la ventana default y el comprobante no se detectaba (auditoría A6).
+        historial_pago = await obtener_historial(telefono, limite=50)
         if es_posible_comprobante(texto, historial_pago):
             await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
             return
