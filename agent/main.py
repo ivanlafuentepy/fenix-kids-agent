@@ -3644,15 +3644,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append(
                         "👦👦 *Hermanos:*\n"
                         "Prueba: 100mil +50mil c/u extra\n"
-                        "Mensual: 230mil +100mil c/u extra\n"
-                        "Matrícula: 100mil (una vez por familia)\n"
+                        "Mensual: 240mil +100mil c/u extra\n"
+                        "Matrícula: 100mil por niño\n"
                         "¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
                     )
                 elif _pide_precios and not _ya_envio_afiche:
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Prueba: 100mil (1 sábado). Mensual: 230mil (4 sábados) + matrícula 100mil. +50mil/+100mil por hermano 🌳 Padres entran gratis")
+                    _partes.append("Prueba: 100mil (1 sábado). Mensual: 240mil (4 sábados) + matrícula 100mil por niño. +50mil/+100mil por hermano 🌳 Padres entran gratis")
 
                 if _pide_horarios and not _ya_envio_horarios:
                     _acciones_interceptadas.append("afiche_horarios")
