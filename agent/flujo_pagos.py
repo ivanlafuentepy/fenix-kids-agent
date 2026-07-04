@@ -157,6 +157,19 @@ async def _procesar_comprobante(
         except Exception as e:
             logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
 
+    # ── Cerrar Pedido de tarjeta abierto (si pagó por TRANSFERENCIA) ─────
+    # Si Aurora mandó el link de tarjeta pero el padre transfirió, el Pedido
+    # quedaba 'esperando_pago' para siempre: meses después, cualquier pago con
+    # tarjeta de ese teléfono se clasificaba como esta prueba (auditoría M6).
+    # En tarjeta lo cierra el webhook /pago-confirmado; acá cubrimos transferencia.
+    if metodo_pago == "TRANSFER":
+        try:
+            from agent.memory import marcar_pedido_cargado
+            if await marcar_pedido_cargado(telefono):
+                logger.info(f"[PAGOS] Pedido de tarjeta abierto cerrado (pagó por transferencia) {telefono}")
+        except Exception as e:
+            logger.error(f"[PAGOS] Error cerrando Pedido abierto de {telefono}: {e}")
+
     # ── Ofrecer factura (espejo Dorita): el PAGO ya quedó cargado, la factura ──
     #    es un extra opcional encima. El botón se atiende en main.py con el flag
     #    pago_esperando_factura (interceptación temprana, antes del brain).
