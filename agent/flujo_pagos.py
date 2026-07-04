@@ -93,10 +93,17 @@ async def _procesar_comprobante(
     )
     await confirmar_pago(telefono)
 
-    # Mensaje al lead: pago confirmado directo
+    # Mensaje al lead: pago confirmado directo. Best-effort: si el envío
+    # revienta (red caída, token muerto), el flujo SIGUE — antes abortaba acá
+    # con "Pago confirmado!" ya guardado en historial → sin PAGO en Airtable,
+    # sin aviso al admin, y el guard ya_pago bloqueaba reprocesar el
+    # comprobante: limbo irrecuperable (auditoría 04-07-26 A3).
     msg_lead = "Pago confirmado! 🎉"
-    await guardar_mensaje(telefono, "assistant", msg_lead)
-    await proveedor.enviar_mensaje(telefono, msg_lead)
+    try:
+        await guardar_mensaje(telefono, "assistant", msg_lead)
+        await proveedor.enviar_mensaje(telefono, msg_lead)
+    except Exception as e:
+        logger.error(f"[PAGOS] Error enviando 'Pago confirmado' a {telefono}: {e}")
 
     # Actualizar conversión en Airtable + registrar en qué FU pagó
     try:
@@ -171,8 +178,13 @@ async def _procesar_comprobante(
         except Exception as e:
             logger.error(f"[FACTURA] Error ofreciendo factura a {telefono}: {e}")
 
-    # CAPI: evento Purchase (comprobante confirmado)
-    await enviar_evento_pago(telefono)
+    # CAPI: evento Purchase (comprobante confirmado) — best-effort: una
+    # excepción acá (query ctwa a la DB) abortaba lo que queda del flujo y,
+    # en tarjeta, hacía que la pasarela registrara el pago DE NUEVO (C7).
+    try:
+        await enviar_evento_pago(telefono)
+    except Exception as e:
+        logger.error(f"[PAGOS] Error CAPI Purchase para {telefono}: {e}")
 
     # Notificar al admin (solo informativo, sin botones)
     # Link al topic de Telegram de este lead
