@@ -4,6 +4,7 @@
 import json
 import random
 import logging
+import asyncio
 from datetime import datetime
 from sqlalchemy import select
 from agent.memory import async_session, ConversacionAB
@@ -289,20 +290,39 @@ async def obtener_estado_flags(telefono: str) -> dict:
         return {}
 
 
+# Serializa el read-modify-write de estado_json por teléfono: dos escritores
+# concurrentes (flujo del mensaje vs loops de background: facturas, afiches)
+# leían el mismo JSON y el commit del segundo pisaba el flag del primero
+# (auditoría 04-07-26 M5). Todos los escritores viven en este proceso →
+# un asyncio.Lock alcanza.
+_flags_locks: dict[str, asyncio.Lock] = {}
+
+
+def _lock_flags(telefono: str) -> asyncio.Lock:
+    if telefono not in _flags_locks:
+        if len(_flags_locks) > 500:
+            _libres = [k for k in list(_flags_locks) if not _flags_locks[k].locked()][:100]
+            for k in _libres:
+                _flags_locks.pop(k, None)
+        _flags_locks[telefono] = asyncio.Lock()
+    return _flags_locks[telefono]
+
+
 async def actualizar_estado_flags(telefono: str, **kwargs):
     """Actualiza flags persistentes (merge, no reemplaza)."""
-    async with async_session() as session:
-        result = await session.execute(
-            select(ConversacionAB).where(ConversacionAB.telefono == telefono)
-        )
-        conv = result.scalar_one_or_none()
-        if conv:
-            actual = {}
-            if conv.estado_json:
-                try:
-                    actual = json.loads(conv.estado_json)
-                except (json.JSONDecodeError, TypeError):
-                    actual = {}
-            actual.update(kwargs)
-            conv.estado_json = json.dumps(actual)
-            await session.commit()
+    async with _lock_flags(telefono):
+        async with async_session() as session:
+            result = await session.execute(
+                select(ConversacionAB).where(ConversacionAB.telefono == telefono)
+            )
+            conv = result.scalar_one_or_none()
+            if conv:
+                actual = {}
+                if conv.estado_json:
+                    try:
+                        actual = json.loads(conv.estado_json)
+                    except (json.JSONDecodeError, TypeError):
+                        actual = {}
+                actual.update(kwargs)
+                conv.estado_json = json.dumps(actual)
+                await session.commit()
