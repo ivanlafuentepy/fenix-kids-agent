@@ -1576,10 +1576,13 @@ async def pago_confirmado(request: Request):
     if not telefono or not spid:
         raise HTTPException(status_code=400, detail="faltan datos")
 
-    # 2) dedup (Bancard reintenta → la pasarela renotifica). gestionado=True en el
-    # duplicado: si ya lo procesamos antes, la pasarela no debe registrar de nuevo.
+    # 2) dedup ATÓMICA (Bancard reintenta → la pasarela renotifica): el primer
+    # webhook inserta y procesa; un reintento concurrente ve False y hace ack.
+    # gestionado=True en el duplicado: la pasarela no debe registrar de nuevo.
+    # Si el flujo falla más abajo, respondemos gestionado=False y la pasarela
+    # registra en la caja central + se alerta al admin (no hace falta reintento).
     _dedup = f"pago-tarjeta:{spid}"
-    if await mensaje_ya_procesado(_dedup):
+    if not await registrar_mensaje_procesado(_dedup):
         logger.info(f"[PAGO-CONFIRMADO] duplicado spid={spid}, ack")
         return {"ok": True, "dedup": True, "gestionado": True}
 
@@ -1588,54 +1591,55 @@ async def pago_confirmado(request: Request):
     admin_phone = os.getenv("ADMIN_PHONE", "")
     gestionado = False
 
-    # 3) solo gestionamos pagos que Aurora inició (Pedido abierto al mandar el link)
-    _pedido = await obtener_pedido_activo(telefono)
-    if _pedido:
-        gestionado = True
-        try:
-            historial = await obtener_historial(telefono, limite=40)
-            _grupo = await grupo_telegram_para(telefono)
-            _nombre_topic = _extraer_nombre_del_historial(historial, "") or telefono
-            topic_id = await obtener_o_crear_topic(telefono, _nombre_topic, group_override=_grupo)
-            await _procesar_comprobante(
-                telefono, "[pago con tarjeta]", None, historial, topic_id,
-                group_override=_grupo,
-                metodo_pago="CREDIT CARD",
-                monto_override=monto,
-                tipo_override=_pedido.tipo,
-                concepto_pago=_pedido.concepto or "PRUEBA",
-                auth_number=auth,
-            )
-            await marcar_pedido_cargado(telefono)
-        except Exception as e:
-            logger.exception(f"[PAGO-CONFIRMADO] flujo falló para {telefono}: {e}")
-            gestionado = False
+    # 3) solo gestionamos pagos que Aurora inició (Pedido abierto al mandar el link).
+    # Lock por teléfono: que el flujo del pago no corra en paralelo con un
+    # mensaje entrante del mismo lead (mismo candado que el webhook de Meta).
+    async with _obtener_lock(telefono):
+        _pedido = await obtener_pedido_activo(telefono)
+        if _pedido:
+            gestionado = True
+            try:
+                historial = await obtener_historial(telefono, limite=40)
+                _grupo = await grupo_telegram_para(telefono)
+                _nombre_topic = _extraer_nombre_del_historial(historial, "") or telefono
+                topic_id = await obtener_o_crear_topic(telefono, _nombre_topic, group_override=_grupo)
+                await _procesar_comprobante(
+                    telefono, "[pago con tarjeta]", None, historial, topic_id,
+                    group_override=_grupo,
+                    metodo_pago="CREDIT CARD",
+                    monto_override=monto,
+                    tipo_override=_pedido.tipo,
+                    concepto_pago=_pedido.concepto or "PRUEBA",
+                    auth_number=auth,
+                )
+                await marcar_pedido_cargado(telefono)
+            except Exception as e:
+                logger.exception(f"[PAGO-CONFIRMADO] flujo falló para {telefono}: {e}")
+                gestionado = False
+                try:
+                    await proveedor.enviar_mensaje(
+                        admin_phone,
+                        f"⚠️ Pago TARJETA de {telefono} ({_monto_txt}) confirmado "
+                        f"pero el flujo falló — revisar y cargar manual. spid {spid}")
+                except Exception:
+                    pass
+
+        if not gestionado and not _pedido:
+            # Sin Pedido (link del panel /admin de la pasarela, etc.): confirmar +
+            # avisar al admin. La pasarela registra en la caja central (gestionado=false).
+            _msg = f"✅ ¡Pago confirmado! Recibimos tus *{_monto_txt}* 🎉 ¡Gracias!"
+            await guardar_mensaje(telefono, "assistant", _msg)
+            await proveedor.enviar_mensaje(telefono, _msg)
             try:
                 await proveedor.enviar_mensaje(
                     admin_phone,
-                    f"⚠️ Pago TARJETA de {telefono} ({_monto_txt}) confirmado "
-                    f"pero el flujo falló — revisar y cargar manual. spid {spid}")
+                    f"💳 *Pago con TARJETA confirmado* (sin pedido de Aurora)\n"
+                    f"Tel: {telefono}\n{_monto_txt} — {concepto}\naut {auth}\n"
+                    f"La pasarela lo registra en la caja central.",
+                )
             except Exception:
                 pass
 
-    if not gestionado and not _pedido:
-        # Sin Pedido (link del panel /admin de la pasarela, etc.): confirmar +
-        # avisar al admin. La pasarela registra en la caja central (gestionado=false).
-        _msg = f"✅ ¡Pago confirmado! Recibimos tus *{_monto_txt}* 🎉 ¡Gracias!"
-        await guardar_mensaje(telefono, "assistant", _msg)
-        await proveedor.enviar_mensaje(telefono, _msg)
-        try:
-            await proveedor.enviar_mensaje(
-                admin_phone,
-                f"💳 *Pago con TARJETA confirmado* (sin pedido de Aurora)\n"
-                f"Tel: {telefono}\n{_monto_txt} — {concepto}\naut {auth}\n"
-                f"La pasarela lo registra en la caja central.",
-            )
-        except Exception:
-            pass
-
-    # marcar procesado AL FINAL: si algo falla antes, un reintento de la pasarela lo recupera
-    await registrar_mensaje_procesado(_dedup)
     return {"ok": True, "gestionado": gestionado}
 
 

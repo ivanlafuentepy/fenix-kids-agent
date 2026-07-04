@@ -491,14 +491,18 @@ async def mensaje_ya_procesado(mensaje_id: str) -> bool:
         return result.scalar_one_or_none() is not None
 
 
-async def registrar_mensaje_procesado(mensaje_id: str):
-    """Registra un mensaje como procesado."""
+async def registrar_mensaje_procesado(mensaje_id: str) -> bool:
+    """Registra un mensaje como procesado. Retorna True si lo registró ESTE
+    llamado, False si ya estaba (el índice único actúa de candado atómico
+    contra webhooks duplicados concurrentes)."""
     async with async_session() as session:
         try:
             session.add(MensajeProcesado(mensaje_id=mensaje_id))
             await session.commit()
+            return True
         except Exception:
             await session.rollback()  # duplicado — OK, ya estaba
+            return False
 
 
 async def borrar_mensaje_procesado(mensaje_id: str):
