@@ -212,12 +212,19 @@ async def _procesar_comprobante(
     else:
         _aut = f" (aut. {auth_number})" if auth_number else ""
         _metodo_linea = f"💳 Método: TARJETA{_aut}\n"
+    # Inscripción: el PAGO en Airtable lo crea 'cargar familia' (inscripcion.py),
+    # no este flujo — sin este aviso quedaba sin registrar y nadie se enteraba (M9).
+    _aviso_inscripcion = (
+        "\n⚠️ INSCRIPCIÓN: el PAGO no se registra solo — corré 'cargar familia'."
+        if tipo != "prueba" else ""
+    )
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
         f"💰 Tipo: {tipo_label}\n"
         f"{_metodo_linea}"
         f"📲 {wa_link_pago}"
         f"{tg_link_admin}"
+        f"{_aviso_inscripcion}"
     )
     # Reenviar imagen al admin (si hay media_id)
     if media_id:
@@ -254,17 +261,20 @@ async def _procesar_comprobante(
     logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo} metodo={metodo_pago}")
 
     # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
-    try:
-        await asyncio.sleep(3)
-        msg_agenda = await _armar_mensaje_agenda_post_pago()
-        await guardar_mensaje(telefono, "assistant", msg_agenda)
-        await proveedor.enviar_mensaje(telefono, msg_agenda)
-        await actualizar_estado_flags(telefono, modo_agenda=True)
-        if topic_id:
-            await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
-        logger.info(f"[PAGOS] Modo agenda activado para {telefono}")
-    except Exception as e:
-        logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
+    # SOLO para prueba: la inscripción recibía el mensaje de agenda de CLASE DE
+    # PRUEBA aunque estaba pagando el plan mensual (auditoría 04-07-26 M9).
+    if tipo == "prueba":
+        try:
+            await asyncio.sleep(3)
+            msg_agenda = await _armar_mensaje_agenda_post_pago()
+            await guardar_mensaje(telefono, "assistant", msg_agenda)
+            await proveedor.enviar_mensaje(telefono, msg_agenda)
+            await actualizar_estado_flags(telefono, modo_agenda=True)
+            if topic_id:
+                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
+            logger.info(f"[PAGOS] Modo agenda activado para {telefono}")
+        except Exception as e:
+            logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
 
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
