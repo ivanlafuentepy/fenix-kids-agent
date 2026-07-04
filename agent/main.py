@@ -2114,11 +2114,14 @@ async def webhook_handler(request: Request):
                 logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
                 continue
 
-            # Registrar dedup en PostgreSQL + procesar en background.
+            # Registrar dedup en PostgreSQL (insert-como-candado: si dos webhooks
+            # duplicados llegan casi juntos, ambos pasaban el check de arriba y el
+            # lead recibía la respuesta DOS veces — auditoría 04-07-26 M1; el
+            # índice único garantiza que solo uno procesa).
             # Si el procesamiento falla, se borra la dedup para permitir reintento.
             # IMPORTANTE: responder 200 rápido (<5s) para que Meta no reintente.
-            if msg.mensaje_id:
-                await registrar_mensaje_procesado(msg.mensaje_id)
+            if msg.mensaje_id and not await registrar_mensaje_procesado(msg.mensaje_id):
+                continue  # otro webhook concurrente ya lo tomó
 
             # Procesamiento en background — responder 200 rápido a Meta
             _fire_and_forget(_procesar_mensaje_webhook(msg))
