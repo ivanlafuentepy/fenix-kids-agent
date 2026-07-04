@@ -8,20 +8,18 @@ import logging
 from agent.memory import guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.ab_test import (
-    obtener_agent_actual, obtener_estado_flags, actualizar_estado_flags,
+    obtener_estado_flags, actualizar_estado_flags,
     obtener_familia_id,
 )
 from agent.telegram_bridge import (
-    obtener_o_crear_topic, enviar_a_topic,
+    enviar_a_topic,
     notificar_pago_telegram,
-    group_id_para_agente,
     reactivar_dorita,
 )
 from agent.meta_capi import enviar_evento_pago
 from agent.pagos import (
     detectar_tipo_pago,
-    registrar_pago_pendiente, obtener_pago_pendiente,
-    confirmar_pago, rechazar_pago,
+    registrar_pago_pendiente, confirmar_pago,
     formatear_monto, monto_prueba_por_hijos,
 )
 from agent.airtable_client import (
@@ -242,113 +240,6 @@ async def _procesar_comprobante(
         logger.info(f"[PAGOS] Modo agenda activado para {telefono}")
     except Exception as e:
         logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
-
-
-async def _procesar_boton_pago(btn_titulo: str):
-    """
-    Procesa la respuesta del admin (confirmar/rechazar) a un comprobante.
-    Busca el pago pendiente más reciente y actúa según el botón.
-    """
-    admin_phone = os.getenv("ADMIN_PHONE", "")
-
-    tel_lead, datos = await obtener_pago_pendiente()
-    if not tel_lead or not datos:
-        await proveedor.enviar_mensaje(admin_phone, "No hay pagos pendientes de confirmar.")
-        return
-
-    tipo = datos.get("tipo", "prueba")
-    tipo_label = "PRUEBA 90K" if tipo == "prueba" else "INSCRIPCIÓN"
-    topic_id = None
-
-    if "confirmar" in btn_titulo:
-        # ── Confirmar pago ────────────────────────────────────────────────
-        await confirmar_pago(tel_lead)
-
-        # Mensaje al admin
-        await proveedor.enviar_mensaje(admin_phone, f"✅ Pago de {tel_lead} confirmado.")
-
-        # Mensaje al lead
-        msg_lead = "Pago confirmado! 🎉"
-        await proveedor.enviar_mensaje(tel_lead, msg_lead)
-        await guardar_mensaje(tel_lead, "assistant", msg_lead)
-
-        # Actualizar conversión en Airtable
-        try:
-            await actualizar_conversion_lead(tel_lead, "PAGO")
-        except Exception as e:
-            logger.error(f"[PAGOS] Error actualizando conversión: {e}")
-
-        # CAPI: evento Purchase (botón admin confirmó)
-        await enviar_evento_pago(tel_lead)
-
-        # Notificar en Telegram
-        _ag_pago, _ = await obtener_agent_actual(tel_lead)
-        _grp_pago = group_id_para_agente(_ag_pago or "ivan")
-        topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}", group_override=_grp_pago)
-        if topic_id:
-            await enviar_a_topic(topic_id, f"✅ PAGO CONFIRMADO — {tipo_label}", telefono=tel_lead, group_override=_grp_pago)
-
-        try:
-            historial = await obtener_historial(tel_lead)
-            nombre = _extraer_nombre_del_historial(historial) or "Lead"
-            await notificar_pago_telegram(
-                telefono=tel_lead,
-                nombre=nombre,
-                estado="confirmado",
-                tipo=tipo_label,
-                monto=datos.get("monto", 0),
-            )
-        except Exception as e:
-            logger.error(f"[PAGOS] Error notificando Telegram confirmación: {e}")
-
-        logger.info(f"[PAGOS] Pago CONFIRMADO para {tel_lead}")
-
-        # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
-        try:
-            await asyncio.sleep(3)
-            msg_agenda = await _armar_mensaje_agenda_post_pago()
-            await guardar_mensaje(tel_lead, "assistant", msg_agenda)
-            await proveedor.enviar_mensaje(tel_lead, msg_agenda)
-            await actualizar_estado_flags(tel_lead, modo_agenda=True)
-            if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=tel_lead, group_override=_grp_pago)
-            logger.info(f"[PAGOS] Modo agenda activado para {tel_lead}")
-        except Exception as e:
-            logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
-
-    elif "rechazar" in btn_titulo:
-        # ── Rechazar pago ─────────────────────────────────────────────────
-        await rechazar_pago(tel_lead)
-
-        # Mensaje al admin
-        await proveedor.enviar_mensaje(admin_phone, f"❌ Pago de {tel_lead} rechazado.")
-
-        # Mensaje al lead
-        msg_lead = "Hubo un problema con la transferencia. ¿Podrías verificar y reenviar el comprobante? 😊"
-        await proveedor.enviar_mensaje(tel_lead, msg_lead)
-        await guardar_mensaje(tel_lead, "assistant", msg_lead)
-
-        # Notificar en Telegram (reusar _grp_pago si existe, sino resolver)
-        if not topic_id:
-            _ag_r, _ = await obtener_agent_actual(tel_lead)
-            _grp_r = group_id_para_agente(_ag_r or "ivan")
-            topic_id = await obtener_o_crear_topic(tel_lead, f"📱 {tel_lead}", group_override=_grp_r)
-        if topic_id:
-            await enviar_a_topic(topic_id, f"❌ PAGO RECHAZADO — {tipo_label}", telefono=tel_lead)
-
-        try:
-            historial = await obtener_historial(tel_lead)
-            nombre = _extraer_nombre_del_historial(historial) or "Lead"
-            await notificar_pago_telegram(
-                telefono=tel_lead,
-                nombre=nombre,
-                estado="rechazado",
-                tipo=tipo_label,
-            )
-        except Exception as e:
-            logger.error(f"[PAGOS] Error notificando Telegram rechazo: {e}")
-
-        logger.info(f"[PAGOS] Pago RECHAZADO para {tel_lead}")
 
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────

@@ -2884,9 +2884,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await enviar_a_topic(topic_alumno, "⚙️ MODO ALUMNO — reset conversación sin tocar Airtable", telefono=telefono)
             return
 
-        # ── Botones del admin (confirmar/rechazar pago) ────────────────────
+        # ── Botones del admin ──────────────────────────────────────────────
         if telefono == admin_phone and msg.es_boton:
-            btn_titulo = texto.lower().strip()
             # Botones de seguimiento (seg_enviado_recXXX / seg_descartado_recXXX)
             btn_raw_id = getattr(msg, 'btn_id', '') or ''
             # Keep-alive ventana 24h: el admin apretó "Sí" → el mensaje entrante
@@ -2902,9 +2901,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if btn_raw_id.startswith("seg_enviado_") or btn_raw_id.startswith("seg_descartado_"):
                 await _procesar_boton_seguimiento(btn_raw_id)
                 return
-            if "confirmar" in btn_titulo or "rechazar" in btn_titulo:
-                await _procesar_boton_pago(btn_titulo)
-                return
+            # NOTA: el botón legacy "confirmar/rechazar pago" se retiró (auditoría
+            # 04-07-26 C2): confirmaba el pago pendiente MÁS RECIENTE de cualquier
+            # teléfono. El pago se auto-confirma en _procesar_comprobante desde
+            # el flujo actual — un botón viejo ya no dispara nada.
 
         # ── Modo secre: admin siempre en modo comando, no responde como agente ─
         # Si el admin escribe algo que no matcheó ningún comando arriba, ignorar.
@@ -4743,7 +4743,7 @@ async def _procesar_confirmacion_reserva(
 
 # ── Flujo de pagos → extraído a agent/flujo_pagos.py ──
 from agent.flujo_pagos import (
-    _procesar_comprobante, _procesar_boton_pago, _cerrar_agenda_desde_telegram,
+    _procesar_comprobante, _cerrar_agenda_desde_telegram,
 )
 
 
