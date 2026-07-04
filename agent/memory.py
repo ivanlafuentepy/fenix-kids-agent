@@ -405,6 +405,17 @@ async def tiene_pago_pendiente_db(telefono: str | None = None) -> bool:
     return tel is not None
 
 
+async def tiene_pago_confirmado_db(telefono: str) -> bool:
+    """True si el teléfono tiene al menos un pago confirmado."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(PagoPendiente)
+            .where(PagoPendiente.telefono == telefono, PagoPendiente.estado == "confirmado")
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+
 async def resolver_pago_db(telefono: str, estado: str) -> dict | None:
     """Confirma o rechaza un pago (estado='confirmado' o 'rechazado'). Retorna datos o None."""
     async with async_session() as session:

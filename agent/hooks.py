@@ -123,6 +123,68 @@ async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dic
     return None
 
 
+async def validar_pago_antes_de_prueba(tool_name: str, params: dict, context: dict) -> dict | None:
+    """Bloquea gestionar_prueba(confirmar) si el lead NO pagó — regla FENIX:
+    cobrar PRIMERO, agendar DESPUÉS. El prompt ya lo dice, pero la descripción
+    de la tool empuja a Haiku a usarla "SIEMPRE": sin este hook, un lead
+    insistente conseguía reserva real + QR sin pagar (auditoría 04-07-26 C5).
+    Fail-open ante errores de infraestructura (el prompt sigue de guardia)."""
+    if tool_name != "gestionar_prueba":
+        return None
+    if (params.get("accion") or "").lower() == "reagendar":
+        return None  # reagendar implica reserva previa; la tool valida si no hay
+    telefono = context.get("telefono", "")
+    if not telefono:
+        return None
+    # Cada fuente con su propio guard: si una falla, las otras igual se consultan.
+    _alguna_fuente_ok = False
+    try:
+        from agent.ab_test import obtener_estado_flags
+        flags = await obtener_estado_flags(telefono)
+        _alguna_fuente_ok = True
+        if flags.get("modo_agenda"):
+            return None  # post-pago: el sistema mismo fuerza esta tool
+    except Exception as e:
+        logger.error(f"[HOOK-PRE] validar_pago_antes_de_prueba (flags): {e}")
+
+    try:
+        from agent.memory import tiene_pago_confirmado_db
+        if await tiene_pago_confirmado_db(telefono):
+            return None
+        _alguna_fuente_ok = True
+    except Exception as e:
+        logger.error(f"[HOOK-PRE] validar_pago_antes_de_prueba (pagos DB): {e}")
+
+    try:
+        # GRATIS (/agenda gratis) y estados pagados viven en Airtable
+        from agent.airtable_client import _get_records, _LEADS
+        lr = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+        if lr:
+            conv = (lr[0].get("fields", {}).get("CONVERSION") or "").upper()
+            if conv in ("PAGO", "GRATIS", "INSCRIPTO"):
+                return None
+            _alguna_fuente_ok = True
+    except Exception as e:
+        logger.error(f"[HOOK-PRE] validar_pago_antes_de_prueba (Airtable): {e}")
+
+    if not _alguna_fuente_ok:
+        # Todas las fuentes fallaron o no hay datos → fail-open (el prompt sigue de guardia)
+        return None
+
+    return {
+        "error": True,
+        "error_category": "business",
+        "is_retryable": False,
+        "message": (
+            "BLOQUEADO: este lead todavía NO tiene pago confirmado. "
+            "Regla FENIX: cobrar PRIMERO, agendar DESPUÉS. NO confirmes reserva ni "
+            "ofrezcas horarios: pasale los datos bancarios (Alias CI 1604338 | Itaú | "
+            "Iván Lafuente) y pedile la foto del comprobante. "
+            "El agendamiento es automático después del pago."
+        ),
+    }
+
+
 # Anti-escalación spam: max 1 por teléfono por hora
 _escalaciones_recientes: dict[str, float] = {}  # telefono -> timestamp
 
@@ -211,6 +273,7 @@ async def enviar_capi_event(tool_name: str, params: dict, result: dict, context:
 # ══════════════════════════════════════════════════════════════════
 
 registrar_pre_hook(validar_fecha_hora)
+registrar_pre_hook(validar_pago_antes_de_prueba)
 registrar_pre_hook(anti_escalacion_spam)
 registrar_post_hook(notificar_telegram)
 registrar_post_hook(enviar_capi_event)
