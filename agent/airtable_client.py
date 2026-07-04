@@ -23,6 +23,7 @@ Variables de entorno:
 """
 
 import os
+import asyncio
 import logging
 import unicodedata
 from difflib import SequenceMatcher
@@ -108,6 +109,23 @@ def _headers() -> dict:
     }
 
 
+async def _request_con_reintento_429(client: httpx.AsyncClient, metodo: str, url: str, **kwargs):
+    """Ejecuta un request a Airtable; ante 429 espera Retry-After y reintenta
+    UNA vez. Airtable limita 5 req/s POR BASE (compartida con Dorita) y penaliza
+    ~30s tras un 429. Sin esto, un 429 en un guard "buscar antes de crear" se
+    veía como 'no existe' → PAGO/FAMILIA duplicados (auditoría 04-07-26 C4)."""
+    r = await client.request(metodo, url, **kwargs)
+    if r.status_code == 429:
+        try:
+            espera = min(float(r.headers.get("Retry-After") or 30), 35.0)
+        except (TypeError, ValueError):
+            espera = 30.0
+        logger.warning(f"[Airtable] 429 rate limit ({metodo} {url.rsplit('/v0/', 1)[-1]}) — reintento en {espera:.0f}s")
+        await asyncio.sleep(espera)
+        r = await client.request(metodo, url, **kwargs)
+    return r
+
+
 async def _post(table: str, campos: dict) -> dict | None:
     """Crea un registro nuevo. Retorna el registro creado o None."""
     if not AIRTABLE_API_KEY:
@@ -116,7 +134,7 @@ async def _post(table: str, campos: dict) -> dict | None:
     url = f"{_BASE_URL}/{table}"
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.post(url, json={"fields": campos}, headers=_headers(), timeout=10)
+            r = await _request_con_reintento_429(client, "POST", url, json={"fields": campos}, headers=_headers(), timeout=10)
             if r.status_code in (200, 201):
                 return r.json()
             logger.error(f"POST {table} → {r.status_code}: {r.text[:200]}")
@@ -175,7 +193,7 @@ async def _patch(table: str, record_id: str, campos: dict) -> bool:
     url = f"{_BASE_URL}/{table}/{record_id}"
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.patch(url, json={"fields": campos}, headers=_headers(), timeout=10)
+            r = await _request_con_reintento_429(client, "PATCH", url, json={"fields": campos}, headers=_headers(), timeout=10)
             if r.status_code == 200:
                 return True
             logger.error(f"PATCH {table}/{record_id} → {r.status_code}: {r.text[:200]}")
@@ -204,7 +222,7 @@ async def _get_records(table: str, formula: str = "", max_records: int = 10) -> 
                 p = dict(params)
                 if offset:
                     p["offset"] = offset
-                r = await client.get(url, params=p, headers=_headers(), timeout=10)
+                r = await _request_con_reintento_429(client, "GET", url, params=p, headers=_headers(), timeout=10)
                 if r.status_code != 200:
                     logger.error(f"GET {table} → {r.status_code}: {r.text[:200]}")
                     break
