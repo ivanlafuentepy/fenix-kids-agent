@@ -185,22 +185,37 @@ async def _patch(table: str, record_id: str, campos: dict) -> bool:
 
 
 async def _get_records(table: str, formula: str = "", max_records: int = 10) -> list[dict]:
-    """Busca registros con un filtro formula. Retorna lista de records."""
+    """Busca registros con un filtro formula. Retorna lista de records.
+    Pagina siguiendo `offset` (Airtable devuelve máx 100 por página): antes
+    max_records>100 truncaba silenciosamente a 100 — ya duplicó tutores y
+    dejaba familias/pagos invisibles. Si falla a mitad de la paginación,
+    retorna lo acumulado (mismo contrato de siempre: lista, nunca excepción)."""
     if not AIRTABLE_API_KEY:
         return []
     url = f"{_BASE_URL}/{table}"
-    params = {"maxRecords": max_records}
+    params = {"maxRecords": max_records, "pageSize": min(max_records, 100)}
     if formula:
         params["filterByFormula"] = formula
+    registros: list[dict] = []
+    offset = None
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.get(url, params=params, headers=_headers(), timeout=10)
-            if r.status_code == 200:
-                return r.json().get("records", [])
-            logger.error(f"GET {table} → {r.status_code}: {r.text[:200]}")
+            while True:
+                p = dict(params)
+                if offset:
+                    p["offset"] = offset
+                r = await client.get(url, params=p, headers=_headers(), timeout=10)
+                if r.status_code != 200:
+                    logger.error(f"GET {table} → {r.status_code}: {r.text[:200]}")
+                    break
+                data = r.json()
+                registros.extend(data.get("records", []))
+                offset = data.get("offset")
+                if not offset or len(registros) >= max_records:
+                    break
         except Exception as e:
             logger.error(f"GET {table} error: {e}")
-    return []
+    return registros
 
 
 async def _delete(table: str, record_id: str) -> bool:
