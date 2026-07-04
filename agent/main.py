@@ -3901,6 +3901,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # NO appendar preguntas automáticamente — eso pisaba la respuesta de Claude.
             respuesta = re.sub(r'\n{3,}', '\n\n', respuesta).strip()
 
+            # Guard: si la limpieza dejó la respuesta VACÍA (Claude solo repitió
+            # la pregunta que se recortó), no mandar "" a Meta (400 silencioso,
+            # lead sin respuesta — auditoría 04-07-26 M4). Fallback neutro.
+            if not respuesta:
+                respuesta = "Contame en qué te puedo ayudar 😊"
+                logger.warning(f"[ANTI-REP] Respuesta quedó vacía tras limpieza para {telefono} — fallback")
+
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
         #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
 
