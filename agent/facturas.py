@@ -64,15 +64,29 @@ async def crear_factura_fenix(
     return None
 
 
-async def _familia_tiene_datos_fiscales(familia_id: str) -> bool:
-    """True si la familia ya tiene datos para facturar (campo FACTURA o CI PADRE)."""
+async def _asegurar_datos_fiscales(familia_id: str) -> bool:
+    """True si la familia queda con datos para facturar en FAMILIAS FENIX.FACTURA.
+
+    El robot facturador lee SOLO el lookup FLIA FENIX RUC (= campo FACTURA de la
+    familia). Si FACTURA está vacío pero hay CI PADRE, se escribe FACTURA con el
+    CI + nombre — así la factura nunca queda invisible para el robot."""
     if not familia_id:
         return False
     recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
     if not recs:
         return False
     f = recs[0].get("fields", {})
-    return bool((f.get("FACTURA") or "").strip() or (f.get("CI PADRE") or "").strip())
+    if (f.get("FACTURA") or "").strip():
+        return True
+    ci = (f.get("CI PADRE") or "").strip()
+    if not ci:
+        return False
+    nombre = " ".join(x for x in ((f.get("NOMBRE PADRE") or "").strip(),
+                                  (f.get("APELLIDO PADRE") or "").strip()) if x)
+    datos = f"CI {ci}" + (f" - {nombre}" if nombre else "")
+    await _patch(_FAMILIAS, familia_id, {"FACTURA": datos})
+    logger.info(f"[FACTURA] FACTURA de familia {familia_id} completado desde CI PADRE: '{datos}'")
+    return True
 
 
 async def _limpiar_flags_factura(telefono: str):
@@ -131,7 +145,7 @@ async def manejar_respuesta_factura(
     elif btn_id == "factura_si" or _menciona_factura:
         # Quiere factura. Dorita no pide RUC porque el alumno ya tiene CI en su
         # ficha; acá la familia a prueba suele no tenerlo → pedirlo si falta.
-        if await _familia_tiene_datos_fiscales(familia_id):
+        if await _asegurar_datos_fiscales(familia_id):
             _rid = await crear_factura_fenix(pago_rid, familia_id, monto, concepto)
             await _limpiar_flags_factura(telefono)
             resp = ("¡Listo! Te envío tu factura en breve 😊"
