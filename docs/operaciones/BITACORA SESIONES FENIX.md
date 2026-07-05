@@ -1992,3 +1992,58 @@ de169a3 feat(pagos): vincular el PAGO también al LEAD FENIX (campo link nuevo)
 9aff944 ci: redeploy (build anterior falló por el builder de Railway)
 ```
 Airtable (por API): campos link `LEAD FENIX` en PAGOS (`fldOInQY1k6FDIWiQ`) y RESERVAS FENIX (`fldxlP0ok74Bd1Sww`). Meta: Flow `fenix_inscripcion` publicado. Railway: `FENIX_FLOW_ID`, `FENIX_FLOW_SCREEN`. Automatización Airtable PRUEBA FENIX→PAGOS APAGADA por Ivan.
+
+
+## 2026-07-04 (sesión 23 — AUDITORÍA COMPLETA + 33 fixes deployados)
+
+**Ivan:** hacemos una auditoria completa de este proyecto, de sus flujos por whatsapp, encontramos bugs, y vemos como podemos mejorarlos y que esta pendiente solucionar
+**Fenix:** Lancé 4 agentes de auditoría en paralelo (núcleo webhook, flujo de dinero, capa conversacional, loops/periféricos) sobre todo el código. ~60 hallazgos verificados con archivo:línea: 7 críticos (webhook Telegram SIN auth, botón que confirmaba el pago del lead equivocado, comprobante perdible por rate limit, 429 Airtable creando pagos duplicados, reserva+QR sin pagar vía tool, prompt Aurora con tools inexistentes, Bancard doble registro) + ~20 altos + ~25 medios/bajos + código muerto. Informe en el Vault: estado/AUDITORIA COMPLETA 04-07-26.md.
+
+**Ivan:** vamos con todo
+**Fenix:** Tanda 1 (seguridad y dinero) + tanda 2 (Airtable robusto) + tanda 3 (conversacional): 17 commits uno por uno, cada uno con /pre-cambio, test con asserts, deploy verificado SUCCESS + health 200. Incluye: secret token en webhook Telegram (generado, cargado en Railway vía GraphQL, servicio redeployado, webhook re-registrado, POST forjado → 403 verificado), paginación real de _get_records (probada con los 107 tutores — cierra el bug conocido), pre-hook de pago para gestionar_prueba (Tool Use está ACTIVO en prod), fix del mensaje duplicado a Claude (que además reparó la captura de nombre tras "con quién tengo el gusto", rota desde siempre), regex frágiles retirados, precios 230→240 en interceptores, /agenda 200mil, modo nocturno, offsets -4. Falso positivo detectado: la disponibilidad de Aurora SÍ llega por contexto (no se tocó).
+
+**Ivan:** seguimos con todo hasta terminar
+**Fenix:** Segunda tanda: 16 commits más con el mismo protocolo. Dedup atómica en Meta y Bancard, flujo de comprobante sobrevive fallas de envío/CAPI (adiós limbo irrecuperable), Pedido de tarjeta se cierra al pagar por transferencia, inscripción ya no recibe agenda de prueba, monto adivinado avisa al admin, ventana de comprobante a 50 mensajes, QR solo-si-envío-OK + todos los QR para hermanos, recordatorios/facturas marcan ENVIADO solo si salió, respuesta vacía con fallback, reagendar solo-fecha, eviction de locks segura, race de flags serializada, ctwa_clid ya no se pierde, facturas validan documento real + fallback CI MADRE/TUTORES, historial guarda EXACTAMENTE lo enviado, y limpieza de −903 líneas de código muerto (calendar_google + 3 deps google, tools.py, business.yaml, info.py con precios viejos, oneshots de mayo que corrían en cada boot, afiche_hermanos, 3 detectores sin uso).
+
+**Commits de la sesión (33, todos deployados SUCCESS + health 200):**
+```
+4d49df2 fix(pagos): /agenda acepta 200mil (precio vigente de 3 hermanos)
+2d2224d fix(webhook): rate limit se chequea ANTES de registrar la dedup
+3420d58 fix(pagos): retirar boton legacy confirmar/rechazar que confirmaba el pago equivocado
+c40c4b1 fix(pagos-bancard): dedup atomica al inicio + lock por telefono en /pago-confirmado
+f3463e3 fix(telegram): webhook con secret token — cierra la inyeccion de updates falsos
+57aacf4 fix(airtable): _get_records pagina siguiendo offset (antes truncaba a 100)
+56b2755 fix(airtable): reintento ante 429 en GET/POST/PATCH (rate limit 5 req/s por base)
+f0fe531 fix(detectores): retirar 3 patrones fragiles que rompian conversaciones reales
+075aa62 fix(precios): interceptores cotizaban mensual 230mil y matricula por familia
+a985cee fix(prompts): Aurora usa la tool real gestionar_reserva + montos y medios de pago al dia
+97e02e9 feat(hooks): pre-hook bloquea gestionar_prueba(confirmar) sin pago confirmado
+2b37c79 fix: UnboundLocalError al espejar ok con diagnostico pendiente
+9d502ae fix: el mensaje actual del padre iba DUPLICADO a Claude en cada llamada
+950ae50 fix(hooks): mensaje de hora invalida ofrecia el turno inexistente 9:30
+2047798 fix(noche): el 2do mensaje nocturno ya no se responde a las 2:30 AM ni doble a las 06:00
+53b9cca fix(tz): offsets -4 hardcodeados corregidos — Paraguay es UTC-3 fijo desde 2024
+08ac169 fix(webhook): dedup de Meta como candado atomico (insert-first)
+f91e867 fix(pagos): el flujo del comprobante sobrevive fallas de envio/CAPI
+dcfe20c fix(pagos): cerrar el Pedido de tarjeta abierto cuando el lead paga por transferencia
+15357b2 fix(pagos): comprobante de INSCRIPCION ya no recibe la agenda de prueba + aviso al admin
+b602ff3 fix(pagos): avisar al admin cuando el monto del PAGO fue ADIVINADO (fallback 100k)
+3aa07f0 fix(pagos): detectar comprobante con ventana de 50 mensajes (antes 20)
+a140802 fix(qr): marcar QR ENVIADO solo si el envio salio + todos los QR para hermanos
+3d1d976 fix(loops): recordatorios y facturas marcan ENVIADO solo si el envio salio
+86bed65 fix: guard de respuesta vacia tras la limpieza anti-repeticion
+0876965 fix(flujo): interceptor de horarios ya no invita a elegir horario ANTES del pago
+5cadd5d fix(reservas): reagendar cambiando solo la FECHA ahora funciona
+5978ebb fix(concurrencia): la eviction de locks nunca borra un lock TOMADO
+3d9e64b fix(flags): serializar el read-modify-write de estado_json por telefono
+ff0d927 fix(capi): ctwa_clid/ad_source_id ya no se pierden para leads nuevos
+dbc6747 fix(facturas): validar datos fiscales antes de guardar + fallback CI MADRE/TUTORES
+a809c73 fix: el historial guarda EXACTAMENTE lo que se envia (una vez, por rama)
+5b0d43b refactor: limpieza de codigo muerto identificado por la auditoria
+```
+
+### Pendiente próxima sesión
+- Verificación en vivo: (a) Ivan manda un mensaje desde Telegram en un topic (probar el secret), (b) /endpoint de un lead real (fix historial A1).
+- DECISIONES de Ivan: seguimientos +15min/+2h/+6h (hoy NO existen — reactivar en tabla recordatorios vs borrar reminders.py), /api/* de menores sin auth ¿intencional?, borrar bloque PROMO MADRE, silencios (spam mudo para siempre / silencio manual expira 5 min).
+- Proyectos: rediseño detectar_tipo_pago por estado, reporte diario de inconsistencias, Meta Flow handler+trigger, 2.B/2.C de PRUEBA FENIX.
+- OJO: quedó sin trackear docs/JUEGO-CASONA-SPEC.md (no es de esta sesión, no se tocó).
