@@ -144,6 +144,12 @@ sentido, estatus y recompensa.
 - Retención: niños con juego activo vs sin juego (churn mensual).
 - Si el MVP WhatsApp supera esas metas 4 semanas seguidas → construir la PWA.
 
+## PLAN MAESTRO DE LA APP (05/07/2026)
+Existe `mundo-fenix/PLAN-MAESTRO.md`: todos los módulos y funciones de la app (3 productos:
+App PWA + Panel admin + Motor), modelo de datos Airtable, integraciones con Aurora/QR,
+economía de brasas con números, fases F0-F6 y decisiones abiertas. Es LA referencia para
+construir; este spec queda como el documento del modelo de negocio.
+
 ## ESTADO DEL PROTOTIPO (05/07/2026)
 - Vive en: `mundo-fenix/index.html` (dentro del repo fenix-kids-agent). Self-contained, PWA,
   un solo archivo, dark ember. Persiste en localStorage (key `mundofenix_v2`).
