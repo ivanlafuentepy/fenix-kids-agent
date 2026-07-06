@@ -214,9 +214,13 @@ Reutiliza el patrón Command Center (PWA protegida con clave).
   una app y pasa a ser un momento público que todos ven. Estatus puro.
 
 ### 5.3c OJOS DE LA CASONA — 32 cámaras HikVision + pulseras (idea Iván 06/07, fase F7)
-- **Infra existente:** 32 cámaras HikVision por toda La Casona (verificar NVR/modelo). La API
-  ISAPI de HikVision permite buscar/descargar grabaciones por cámara+rango de tiempo y ver
-  streams — factible con credenciales propias en LAN.
+- **Infra existente (VERIFICADO 06/07):** 32 cámaras HikVision **analógicas/HD-TVI** (coaxial)
+  sobre un **DVR HikVision `DS-7232HGHI-M2`** (Turbo HD, 32 canales, 2 bahías SATA, SN GD2379556).
+  NO es NVR IP → no hay IP por cámara; único punto de acceso = el DVR. Alimentación por fuentes
+  `DS-2FA1205-C8` (8 canales c/u). El DVR soporta **RTSP** (`rtsp://IP:554/Streaming/Channels/N01`
+  para live) e **ISAPI** (buscar/descargar grabaciones por canal + rango de tiempo = el VAR).
+  Acceso actual: Hik-Connect (celular, hay salida a internet) + salida HDMI directa a una TV.
+  Piloto F7 = LAN local. **PENDIENTE:** IP local del DVR (Menú→Config→Red) + credenciales admin.
 - **Tracker:** GPS indoor no sirve; lo realista es pulsera BLE (tipo parque acuático) +
   receptores por zona → ubicación a NIVEL ZONA (pileta/cancha/circuito/árbol). Suficiente.
 - **EL ORO — clips por EVENTO (no vigilancia):** evento de la app (vuelta/tesoro/desafío, con
@@ -236,6 +240,20 @@ Reutiliza el patrón Command Center (PWA protegida con clave).
 - **Roadmap:** requiere F2 (backend). CONFIRMADO por Iván: se implementa. La planificación
   técnica (NVR, zona piloto, pulseras, replay en TV) queda para una sesión propia dedicada.
   Piloto: 1 zona (circuito) + 2-3 cámaras mapeadas + clips semi-manuales → después las 32.
+- **✅ PIPELINE VERIFICADO EN VIVO (06/07/2026) — el VAR ya funciona con hardware real.**
+  Prueba de punta a punta ejecutada contra el DVR real: ISAPI autenticado → buscar grabación
+  por cámara+hora (`POST /ISAPI/ContentMgmt/search`) → descargar segmento
+  (`POST /ISAPI/ContentMgmt/download`) → convertir IMKH→MP4/H.264 + recortar con FFmpeg →
+  clip de 30s de la cámara 31 reproducible. Dejó de ser teoría: es código que corre.
+  Credenciales y datos del DVR viven en `CLAUDE.local.md` (no-git). Hallazgos técnicos:
+  (1) descarga en formato propietario **IMKH** → siempre convertir con FFmpeg a H.264;
+  (2) el recorte por API se ignora → recortar en FFmpeg localmente;
+  (3) **DHCP mueve la IP del DVR** → PENDIENTE fijarla (IP fija + usuario dedicado, se puede
+  por API ya sin teclado); (4) disco lleno en overwrite → bajar el clip el MISMO día;
+  (5) cámaras con nombres genéricos → renombrar por zona (mapa zona→cámara);
+  (6) trackID = canal*100+1 (cam31=3101); FFmpeg 8.1 ya instalado en la PC de Iván.
+  **Próximo:** fijar IP + usuario dedicado por API, renombrar cámaras por zona, y armar el
+  pipeline RTSP+FFmpeg para recorte por evento con hora exacta.
 
 ### 5.4 Hosting
 - **Repo propio** (`mundo-fenix-app`) + **Cloudflare Pages** (patrón de las 5 webs: git
