@@ -110,6 +110,37 @@ Cuando detectes alguna de estas intenciones (del usuario o propia), SUGERÍ o IN
 
 **Acción:** Ya existe y funciona. Invocar `/fusabado`.
 
+### Página de aviso masivo → `/pagina`
+
+**Triggers:**
+- Ivan quiere avisar algo a todas las familias/leads (cambio de horario, evento, broadcast)
+- Necesidad de una página personalizada en fenixkidsacademy-web.pages.dev
+
+**Acción:** Invocar `/pagina [slug]`. Si es follow-up post-prueba, usar `/fusabado` en su lugar.
+
+### Plantilla Meta WhatsApp → `/plantilla`
+
+**Triggers:**
+- Ivan quiere crear o conectar una plantilla de WhatsApp (fuera de ventana 24h)
+- Necesidad de mensaje proactivo aprobado por Meta
+
+**Acción:** Invocar `/plantilla` — guía completa de creación, aprobación y conexión a Aurora.
+
+### Envío masivo → `/masivo`
+
+**Triggers:**
+- Ivan quiere mandar un mensaje/video/afiche a MUCHOS números (FU, promo, aviso)
+- Cualquier script de envío en loop
+
+**Acción:** Invocar `/masivo` — pre-flight de token, test a 1 número, OK explícito, rate limit, bitácora. NUNCA correr un script de FU viejo sin este skill.
+
+### Envío de WhatsApp real → memoria + permiso
+
+**Triggers:**
+- Cualquier intención de mandar un mensaje a un número real (lead, padre, admin)
+
+**Acción:** SIEMPRE via `/test-envio/` de Railway (nunca curl directo a Meta) y SIEMPRE con OK explícito de Ivan antes de enviar a leads/padres.
+
 ---
 
 ## Regla de oro
