@@ -14,7 +14,7 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
    - Si descubriste cosas estructurales nuevas (campos de Airtable, flows, archivos), actualizar la sección correspondiente
    - NO reescribas todo el documento — solo lo que cambió
 
-3. **Actualizar `CONVERSACIONES_FENIX.md` en Obsidian** (`C:/Users/IVAN LAFUENTE/IVAN VAULT/FENIX KIDS/CONVERSACIONES_FENIX.md`):
+3. **Actualizar `docs/sesiones/CONVERSACIONES_FENIX.md`** (en este repo — Obsidian ya no se usa, decisión 2026-07-07; si el archivo no existe, crearlo):
    - Agregar una sección con la fecha de hoy (`## YYYY-MM-DD`)
    - Por cada intercambio relevante de la sesión, escribir:
      - **Ivan:** lo que pidió (textual o parafraseado, en sus palabras)
