@@ -91,6 +91,135 @@ async def juego_evento(payload: dict = Body(...), x_juego_key: str | None = Head
     return {"ok": True, "id": ev_id}
 
 
+# ═══════════════════ MUNDO FENIX APP — F2: identidad de familia (link mágico) ═══════════════════
+# Tablas creadas 07/07 vía MCP. Regla: la app NUNCA escribe Airtable directo — solo Railway.
+
+_T_GUARDIANES = "GUARDIANES FENIX"
+_T_MOVIMIENTOS = "MOVIMIENTOS BRASAS FENIX"
+_T_DESAFIOS = "DESAFIOS CUMPLIDOS FENIX"
+APP_URL = "https://mundo-fenix.pages.dev"
+
+# alfabeto sin ambiguos (0/O, 1/I/L) — el código lo tipean padres en un celular
+_ALFA_CODIGO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _limpiar_codigo(codigo: str) -> str:
+    return "".join(c for c in str(codigo).upper() if c.isalnum())[:12]
+
+
+async def _familia_por_codigo(codigo: str) -> dict | None:
+    from agent.airtable_client import _get_records, _FAMILIAS
+    codigo = _limpiar_codigo(codigo)
+    if len(codigo) < 4:
+        return None
+    recs = await _get_records(_FAMILIAS, formula=f"{{CODIGO FENIX}}='{codigo}'", max_records=1)
+    return recs[0] if recs else None
+
+
+async def _guardian_de_nino(nino_id: str, nombre: str) -> dict | None:
+    """Busca (o crea stub) la fila GUARDIANES del niño. Filtra por NINO ID texto
+    (los campos link no se pueden filtrar — regla airtable-seguro)."""
+    from agent.airtable_client import _get_records, _post
+    recs = await _get_records(_T_GUARDIANES, formula=f"{{NINO ID}}='{nino_id}'", max_records=1)
+    if recs:
+        return recs[0]
+    return await _post(_T_GUARDIANES, {
+        "NOMBRE": nombre, "NINO ID": nino_id, "NIÑO": [nino_id],
+        "STAGE": "builder", "ORO": 0, "PLATA": 0, "DRAGONES TOTAL": 0,
+        "RETO DIA": 1, "RETO DONE": 0, "MES": 1, "ESTADO JSON": "{}",
+    })
+
+
+def _guardian_publico(g: dict) -> dict:
+    """Proyección del guardian para la app (sin nada sensible)."""
+    f = g.get("fields", {})
+    try:
+        estado = json.loads(f.get("ESTADO JSON") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        estado = {}
+    return {
+        "guardian_id": g.get("id", ""),
+        "robot": f.get("ROBOT") or None,
+        "stage": f.get("STAGE") or "builder",
+        "oro": int(f.get("ORO") or 0),
+        "plata": int(f.get("PLATA") or 0),
+        "dragones_total": int(f.get("DRAGONES TOTAL") or 0),
+        "reto_dia": int(f.get("RETO DIA") or 1),
+        "reto_done": int(f.get("RETO DONE") or 0),
+        "mes": int(f.get("MES") or 1),
+        "estado": estado,
+    }
+
+
+@router.post("/juego/familia-codigo")
+async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
+    """Genera (o devuelve) el link mágico de una familia. Body: {familia_id | telefono}."""
+    _auth(x_juego_key)
+    from agent.airtable_client import _get_records, _patch, _FAMILIAS, _BASE_URL, _headers, buscar_familia_por_telefono
+    import httpx, secrets
+
+    familia = None
+    if payload.get("familia_id"):
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{_BASE_URL}/{_FAMILIAS}/{payload['familia_id']}", headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                familia = r.json()
+    elif payload.get("telefono"):
+        familia = await buscar_familia_por_telefono(str(payload["telefono"]))
+    if not familia:
+        raise HTTPException(status_code=404, detail="familia no encontrada")
+
+    codigo = (familia.get("fields", {}).get("CODIGO FENIX") or "").strip()
+    if not codigo:
+        for _ in range(5):  # colisión improbable (31^6) pero verificamos
+            candidato = "".join(secrets.choice(_ALFA_CODIGO) for _ in range(6))
+            if not await _familia_por_codigo(candidato):
+                codigo = candidato
+                break
+        if not codigo:
+            raise HTTPException(status_code=500, detail="no pude generar código único")
+        ok = await _patch(_FAMILIAS, familia["id"], {"CODIGO FENIX": codigo})
+        if not ok:
+            raise HTTPException(status_code=502, detail="no pude guardar el código")
+        logger.info(f"[JUEGO] código {codigo} → familia {familia['id']}")
+    return {"ok": True, "codigo": codigo, "url": f"{APP_URL}/?f={codigo}"}
+
+
+@router.get("/juego/familia/{codigo}")
+async def juego_familia(codigo: str):
+    """La app arranca acá: código → familia → hijos con su guardian (stub si es nuevo).
+    Público con CORS — el código ES la auth de la familia. Sin datos sensibles."""
+    familia = await _familia_por_codigo(codigo)
+    if not familia:
+        return JSONResponse(content={"ok": False, "motivo": "codigo_invalido"}, status_code=404, headers=_CORS)
+
+    from agent.airtable_client import obtener_ninos_de_familia
+    from zoneinfo import ZoneInfo
+    hoy = datetime.now(ZoneInfo("America/Asuncion")).date()
+    hijos = []
+    for nino in await obtener_ninos_de_familia(familia["id"]):
+        if not nino.get("nombre"):
+            continue
+        edad = None
+        if nino.get("fecha_nacimiento"):
+            try:
+                nac = datetime.fromisoformat(nino["fecha_nacimiento"]).date()
+                edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
+            except (ValueError, TypeError):
+                pass
+        g = await _guardian_de_nino(nino["id"], nino["nombre"])
+        if not g:
+            continue
+        hijos.append({"nino_id": nino["id"], "nombre": nino["nombre"],
+                      "apodo": nino.get("apodo") or "", "edad": edad,
+                      "guardian": _guardian_publico(g)})
+    return JSONResponse(content={
+        "ok": True, "codigo": _limpiar_codigo(codigo),
+        "familia": familia.get("fields", {}).get("FAMILIA") or "Familia",
+        "hijos": hijos,
+    }, headers=_CORS)
+
+
 # ═══════════════════════ CIRCUITO NFC (Fase N1, SPEC-NFC-CIRCUITO) ═══════════════════════
 # v1: pulseras/pasadas/vueltas en Postgres. La plata se emite como evento;
 # el ledger migra a Airtable cuando exista F2 (los endpoints no cambian).
