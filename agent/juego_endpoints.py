@@ -442,6 +442,54 @@ async def _juego_accion_inner(payload: dict):
                                  "guardian": _guardian_publico(guardian)}, headers=_CORS)
 
 
+# ═══════════════════ MUNDO FENIX APP — F3/P5: video del reto (acreditación inmediata) ═══════════════════
+
+@router.post("/juego/reto-video")
+async def juego_reto_video(payload: dict = Body(...)):
+    """La app ya subió el video a R2 (Function de Cloudflare) y acá lo registra:
+    checks automáticos → DESAFIO CUMPLIDO + acreditación inmediata (+50/+250) →
+    muestreo espejado a Telegram. La IA de control llega en iteración 2."""
+    try:
+        return await _juego_reto_video_inner(payload)
+    except HTTPException as e:
+        return JSONResponse(content={"ok": False, "detail": e.detail},
+                            status_code=e.status_code, headers=_CORS)
+
+
+async def _juego_reto_video_inner(payload: dict):
+    codigo = _limpiar_codigo(payload.get("codigo", ""))
+    nino_id = str(payload.get("nino_id", "")).strip()
+    video_key = str(payload.get("video_key", "")).strip()
+    if not codigo or not nino_id or not video_key:
+        raise HTTPException(status_code=422, detail="codigo, nino_id y video_key requeridos")
+    # el key DEBE ser de esta familia y este niño (la Function lo generó así)
+    if not video_key.startswith(f"videos/{codigo}/{nino_id}/"):
+        raise HTTPException(status_code=403, detail="video_key_no_corresponde")
+
+    familia, guardian = await _validar_nino_de_familia(codigo, nino_id)
+    resultado = await _accion_reto_dia(guardian, video_key)   # 1/día + bonus + ledger adentro
+    nombre = guardian.get("fields", {}).get("NOMBRE") or ""
+
+    # muestreo: espejo a Telegram con el link del video (best-effort, jamás rompe la acreditación)
+    try:
+        cells = familia.get("fields", {}).get("CELLS LIMPIOS TUTORES") or []
+        telefono = str(cells[0]) if isinstance(cells, list) and cells else ""
+        if telefono:
+            from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
+            link = f"{APP_URL}/api/video/{video_key}?f={codigo}"
+            topic = await obtener_o_crear_topic(telefono, f"📱 {telefono}")
+            tid = topic.topic_id if hasattr(topic, "topic_id") else topic
+            if tid:
+                await enviar_a_topic(tid, f"🎬 Video Reto Día {resultado['reto_done']} de {nombre}"
+                                          f" (+{resultado['plata_acreditada']} 🥈 acreditadas)\n{link}",
+                                     telefono=telefono)
+    except Exception as e:
+        logger.warning(f"[JUEGO] muestreo Telegram falló: {e}")
+
+    return JSONResponse(content={"ok": True, **resultado,
+                                 "guardian": _guardian_publico(guardian)}, headers=_CORS)
+
+
 # ═══════════════════════ CIRCUITO NFC (Fase N1, SPEC-NFC-CIRCUITO) ═══════════════════════
 # v1: pulseras/pasadas/vueltas en Postgres. La plata se emite como evento;
 # el ledger migra a Airtable cuando exista F2 (los endpoints no cambian).
