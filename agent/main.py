@@ -284,6 +284,10 @@ app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", l
 from agent.hq_endpoints import router as hq_router
 app.include_router(hq_router)
 
+# Router aislado /juego para Mundo Fenix (eventos de tótem/TV/profe/circuito NFC)
+from agent.juego_endpoints import router as juego_router
+app.include_router(juego_router)
+
 # Servir archivos estaticos (catalogo de videos, afiches, etc.)
 _static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 app.mount("/static", StaticFiles(directory=_static_dir, html=True), name="static")
