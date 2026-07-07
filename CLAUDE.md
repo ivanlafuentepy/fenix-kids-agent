@@ -171,6 +171,10 @@ No hay excusas ni "es un cambio chico".
 | Ivan se despide (chau/bs/ns) | `/cierre` | Ofrecer ritual de cierre de sesión |
 | Follow-up post-sábado | `/fusabado` | Después de clase de prueba |
 | Plantilla Meta nueva | `/plantilla` | Guía de creación + conexión al agente |
+| Página de aviso masivo | `/pagina` | Broadcast/aviso en fenixkidsacademy-web.pages.dev |
+| Envío masivo de WhatsApp | `/masivo` | Pre-flight de token + test a 1 + OK explícito + bitácora |
+| Token Meta muerto / 401 | `renovar-token-meta` (skill global) | Diagnóstico + renovación + restart Railway |
+| Cualquier operación Airtable | `airtable-seguro` (skill global) | GET antes de POST, selects exactos, paginación |
 
 Además: `docs/CHECKLIST.md` se ejecuta COMPLETO antes de cualquier cambio en
 prompts/flujo/deploy, mostrando los resultados a Ivan ANTES de implementar.
