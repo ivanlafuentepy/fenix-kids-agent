@@ -36,8 +36,10 @@ JUEGO_API_KEY = os.getenv("JUEGO_API_KEY", "")
 # Tipos de evento que la TV sabe celebrar (+ los del circuito NFC)
 TIPOS_VALIDOS = {"llegada", "vuelta", "dragon", "tesoro", "estacion", "progreso"}
 
-# CORS: la TV/mapa viven en otro origen (Cloudflare Pages / localhost)
+# CORS: la TV/mapa/app viven en otro origen (Cloudflare Pages / localhost)
 _CORS = {"Access-Control-Allow-Origin": "*"}
+_CORS_PREFLIGHT = {**_CORS, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                   "Access-Control-Allow-Headers": "Content-Type, X-JUEGO-KEY"}
 
 
 class JuegoEvento(Base):
@@ -218,6 +220,226 @@ async def juego_familia(codigo: str):
         "familia": familia.get("fields", {}).get("FAMILIA") or "Familia",
         "hijos": hijos,
     }, headers=_CORS)
+
+
+# ═══════════════════ MUNDO FENIX APP — F2/P3: acciones del juego (el dinero vive acá) ═══════════════════
+# Montos del PLAN-MAESTRO §6. La app manda {codigo, nino_id, accion, detalle} y repinta
+# con la verdad del servidor. Anti-duplicado diario en ESTADO JSON (fecha PY).
+
+ROBOTS_VALIDOS = {"mamba", "sophie", "apolo", "furia", "maikol", "nina",
+                  "drakon", "flash", "shakira", "aura"}
+DRAGONES_IDS = {"pigrus", "timor", "khaos", "dubius"}
+PLATA_RETO_DIA = 50
+BONUS_RETO_5 = 250
+ENTRADA_CEREMONIA = 500
+PLATA_MISION_CASA = 50
+PLATA_PISTA = 50
+PLATA_TESORO = 300
+PLATA_DRAGON = 200
+CASA_META = 3
+
+
+def _hoy_py() -> str:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+
+
+async def _validar_nino_de_familia(codigo: str, nino_id: str):
+    """codigo → familia; el niño DEBE pertenecerle. Devuelve (familia, guardian)."""
+    familia = await _familia_por_codigo(codigo)
+    if not familia:
+        raise HTTPException(status_code=404, detail="codigo_invalido")
+    if nino_id not in (familia.get("fields", {}).get("NIÑOS FENIX") or []):
+        raise HTTPException(status_code=403, detail="nino_no_es_de_esta_familia")
+    from agent.airtable_client import _get_records
+    recs = await _get_records(_T_GUARDIANES, formula=f"{{NINO ID}}='{nino_id}'", max_records=1)
+    if not recs:
+        raise HTTPException(status_code=404, detail="guardian_no_existe")
+    return familia, recs[0]
+
+
+async def _acreditar(guardian: dict, moneda: str, monto: int, motivo: str,
+                     cambios_extra: dict | None = None, desafio: dict | None = None) -> dict:
+    """Única puerta al dinero: PATCH saldo en GUARDIANES + fila en MOVIMIENTOS
+    (+DESAFIOS si aplica). Devuelve los fields actualizados."""
+    from agent.airtable_client import _patch, _post
+    f = guardian.get("fields", {})
+    campo = "ORO" if moneda == "oro" else "PLATA"
+    nuevo_saldo = int(f.get(campo) or 0) + monto
+    if nuevo_saldo < 0:
+        raise HTTPException(status_code=409, detail=f"saldo_insuficiente_{moneda}")
+    cambios = {campo: nuevo_saldo}
+    if cambios_extra:
+        cambios.update(cambios_extra)
+    ok = await _patch(_T_GUARDIANES, guardian["id"], cambios)
+    if not ok:
+        raise HTTPException(status_code=502, detail="airtable_no_respondio")
+    await _post(_T_MOVIMIENTOS, {"MOTIVO": motivo, "GUARDIAN": [guardian["id"]],
+                                 "GUARDIAN ID": guardian["id"], "MONEDA": moneda, "MONTO": monto})
+    if desafio:
+        await _post(_T_DESAFIOS, {**desafio, "GUARDIAN": [guardian["id"]],
+                                  "GUARDIAN ID": guardian["id"], "ESTADO": "acreditado"})
+    f.update(cambios)
+    return f
+
+
+def _estado_de(guardian: dict) -> dict:
+    try:
+        return json.loads(guardian.get("fields", {}).get("ESTADO JSON") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+async def _guardar_estado(guardian: dict, estado: dict, extra: dict | None = None):
+    from agent.airtable_client import _patch
+    cambios = {"ESTADO JSON": json.dumps(estado, ensure_ascii=False)}
+    if extra:
+        cambios.update(extra)
+    await _patch(_T_GUARDIANES, guardian["id"], cambios)
+    guardian.get("fields", {}).update(cambios)
+
+
+async def _accion_reto_dia(guardian: dict, video_key: str) -> dict:
+    """Un día del reto cumplido (la llama reto-video en P5 — SIEMPRE con video).
+    +50 plata, +250 bonus al 5to. Máx 1 por día PY."""
+    f = guardian.get("fields", {})
+    estado = _estado_de(guardian)
+    done = int(f.get("RETO DONE") or 0)
+    if done >= 5:
+        raise HTTPException(status_code=409, detail="reto_ya_completo")
+    if estado.get("ult_reto_dia") == _hoy_py():
+        raise HTTPException(status_code=409, detail="ya_entrenaste_hoy")
+    done += 1
+    estado["ult_reto_dia"] = _hoy_py()
+    monto = PLATA_RETO_DIA + (BONUS_RETO_5 if done == 5 else 0)
+    motivo = f"Reto día {done}" + (" + bonus 5 seguidos" if done == 5 else "")
+    await _acreditar(guardian, "plata", monto, motivo,
+                     cambios_extra={"RETO DONE": done, "RETO DIA": min(done + 1, 5),
+                                    "ESTADO JSON": json.dumps(estado, ensure_ascii=False),
+                                    **({"STAGE": "reto"} if f.get("STAGE") == "builder" else {})},
+                     desafio={"DETALLE": f"Reto día {done}", "TIPO": "reto-dia", "VIDEO KEY": video_key})
+    return {"reto_done": done, "plata_acreditada": monto, "reto_completo": done == 5}
+
+
+@router.options("/juego/{_resto:path}")
+async def juego_preflight(_resto: str):
+    """Preflight CORS de la app (POST con JSON desde pages.dev)."""
+    return JSONResponse(content={}, headers=_CORS_PREFLIGHT)
+
+
+@router.post("/juego/accion")
+async def juego_accion(payload: dict = Body(...)):
+    """Acciones del juego desde la app. Auth = el código de familia. Una acción por request.
+    TODAS las respuestas (éxito y error) llevan CORS — el navegador no lee errores sin eso."""
+    try:
+        return await _juego_accion_inner(payload)
+    except HTTPException as e:
+        return JSONResponse(content={"ok": False, "detail": e.detail},
+                            status_code=e.status_code, headers=_CORS)
+
+
+async def _juego_accion_inner(payload: dict):
+    codigo = _limpiar_codigo(payload.get("codigo", ""))
+    nino_id = str(payload.get("nino_id", "")).strip()
+    accion = str(payload.get("accion", "")).strip().lower()
+    detalle = str(payload.get("detalle", "") or "").strip().lower()
+    if not codigo or not nino_id or not accion:
+        raise HTTPException(status_code=422, detail="codigo, nino_id y accion requeridos")
+
+    familia, guardian = await _validar_nino_de_familia(codigo, nino_id)
+    f = guardian.get("fields", {})
+    estado = _estado_de(guardian)
+    nombre = f.get("NOMBRE") or ""
+    robot = f.get("ROBOT") or None
+    acreditado = {}
+
+    if accion == "elegir-robot":
+        if detalle not in ROBOTS_VALIDOS:
+            raise HTTPException(status_code=422, detail="robot_invalido")
+        await _guardar_estado(guardian, estado, extra={
+            "ROBOT": detalle, **({"STAGE": "reto"} if f.get("STAGE") == "builder" else {})})
+
+    elif accion == "entrada-ceremonia":
+        if int(f.get("RETO DONE") or 0) < 5:
+            raise HTTPException(status_code=409, detail="reto_incompleto")
+        if f.get("STAGE") == "in":
+            raise HTTPException(status_code=409, detail="ya_entraste")
+        await _acreditar(guardian, "plata", -ENTRADA_CEREMONIA, "Entrada al entrenamiento (ceremonia)",
+                         cambios_extra={"STAGE": "in"})
+        acreditado = {"plata": -ENTRADA_CEREMONIA}
+
+    elif accion == "mision-casa":
+        if detalle not in DRAGONES_IDS:
+            raise HTTPException(status_code=422, detail="dragon_invalido")
+        drag = estado.setdefault("dragones", {}).setdefault(detalle, {"casa": 0, "venc": False})
+        if drag["venc"]:
+            raise HTTPException(status_code=409, detail="dragon_ya_vencido")
+        if drag["casa"] >= CASA_META:
+            raise HTTPException(status_code=409, detail="misiones_completas")
+        if estado.get(f"ult_mision_{detalle}") == _hoy_py():
+            raise HTTPException(status_code=409, detail="ya_hiciste_la_mision_hoy")
+        drag["casa"] += 1
+        estado[f"ult_mision_{detalle}"] = _hoy_py()
+        await _acreditar(guardian, "plata", PLATA_MISION_CASA, f"Misión en casa vs {detalle} ({drag['casa']}/3)",
+                         cambios_extra={"ESTADO JSON": json.dumps(estado, ensure_ascii=False)},
+                         desafio={"DETALLE": f"Misión {detalle} {drag['casa']}/3", "TIPO": "mision-casa", "VIDEO KEY": ""})
+        acreditado = {"plata": PLATA_MISION_CASA}
+
+    elif accion == "pista":
+        try:
+            idx = int(detalle)
+            assert 0 <= idx <= 2
+        except (ValueError, AssertionError):
+            raise HTTPException(status_code=422, detail="pista_invalida")
+        tesoro = estado.setdefault("tesoro", {"p": [False, False, False], "hallado": False})
+        if tesoro["p"][idx]:
+            raise HTTPException(status_code=409, detail="pista_ya_resuelta")
+        tesoro["p"][idx] = True
+        await _acreditar(guardian, "plata", PLATA_PISTA, f"Pista {idx+1} del tesoro",
+                         cambios_extra={"ESTADO JSON": json.dumps(estado, ensure_ascii=False)},
+                         desafio={"DETALLE": f"Pista {idx+1}", "TIPO": "pista", "VIDEO KEY": ""})
+        acreditado = {"plata": PLATA_PISTA}
+
+    elif accion == "tesoro":
+        tesoro = estado.setdefault("tesoro", {"p": [False, False, False], "hallado": False})
+        if not all(tesoro["p"]):
+            raise HTTPException(status_code=409, detail="faltan_pistas")
+        if tesoro["hallado"]:
+            raise HTTPException(status_code=409, detail="tesoro_ya_hallado")
+        tesoro["hallado"] = True
+        await _acreditar(guardian, "plata", PLATA_TESORO, "Cofre del tesoro hallado",
+                         cambios_extra={"ESTADO JSON": json.dumps(estado, ensure_ascii=False)},
+                         desafio={"DETALLE": "Tesoro de la semana", "TIPO": "tesoro", "VIDEO KEY": ""})
+        acreditado = {"plata": PLATA_TESORO}
+        await crear_evento("tesoro", nombre, robot, {"coins": f"+{PLATA_TESORO} 🥈"})
+
+    elif accion == "dragon-vencido":
+        if detalle not in DRAGONES_IDS:
+            raise HTTPException(status_code=422, detail="dragon_invalido")
+        drag = estado.setdefault("dragones", {}).setdefault(detalle, {"casa": 0, "venc": False})
+        if drag["venc"]:
+            raise HTTPException(status_code=409, detail="dragon_ya_vencido")
+        if drag["casa"] < CASA_META:
+            raise HTTPException(status_code=409, detail="faltan_misiones_en_casa")
+        drag["venc"] = True
+        estado.setdefault("insignias", {})[detalle] = estado.get("insignias", {}).get(detalle, 0) + 1
+        total = int(f.get("DRAGONES TOTAL") or 0) + 1
+        extra = {"DRAGONES TOTAL": total}
+        if all(estado.get("dragones", {}).get(d, {}).get("venc") for d in DRAGONES_IDS):
+            extra["MES"] = int(f.get("MES") or 1) + 1     # mes vencido → reinicia la batalla
+            for d in DRAGONES_IDS:
+                estado["dragones"][d] = {"casa": 0, "venc": False}
+        await _acreditar(guardian, "plata", PLATA_DRAGON, f"Dragón {detalle} vencido",
+                         cambios_extra={"ESTADO JSON": json.dumps(estado, ensure_ascii=False), **extra},
+                         desafio={"DETALLE": f"Dragón {detalle}", "TIPO": "desafio-sabado", "VIDEO KEY": ""})
+        acreditado = {"plata": PLATA_DRAGON, "dragones_total": total}
+        await crear_evento("dragon", nombre, robot, {"d": detalle.capitalize(), "coins": f"+{PLATA_DRAGON} 🥈"})
+
+    else:
+        raise HTTPException(status_code=422, detail=f"accion_desconocida ({accion})")
+
+    return JSONResponse(content={"ok": True, "acreditado": acreditado,
+                                 "guardian": _guardian_publico(guardian)}, headers=_CORS)
 
 
 # ═══════════════════════ CIRCUITO NFC (Fase N1, SPEC-NFC-CIRCUITO) ═══════════════════════
