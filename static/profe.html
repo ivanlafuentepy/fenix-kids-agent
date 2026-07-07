@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Guardián Mayor — Fenix</title>
+<!--
+  APP DEL PROFE (Fase E, SPEC-TOTEM-Y-PROFE 4D + N3 SPEC-NFC-CIRCUITO)
+  Celular del profe. Dispara eventos del juego hacia la TV/mapa y vincula
+  pulseras NFC (Web NFC — Chrome Android). Auth: la clave del juego (se pide
+  una vez, queda en el teléfono). Misma-origin con la API → sin CORS.
+-->
+<style>
+  :root{--ash:#0d0a12;--smoke:#1c1626;--cream:#fde9d2;--muted:#8c7d93;--ember:#ff6a1a;
+        --gold:#ffc24b;--good:#6fd08a;--line:rgba(255,178,120,.18)}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:var(--ash);color:var(--cream);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       min-height:100vh;padding:18px 14px 90px}
+  h1{font-size:20px;color:var(--gold);margin-bottom:2px}
+  .sub{font-size:13px;color:var(--muted);margin-bottom:18px}
+  .card{background:var(--smoke);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+  input,button{font:inherit;border-radius:12px;border:1px solid var(--line)}
+  input{width:100%;padding:12px;background:#241c2e;color:var(--cream)}
+  input::placeholder{color:var(--muted)}
+  button{cursor:pointer}
+  .btn{width:100%;padding:14px;background:linear-gradient(135deg,#e23a2e,#ff6a1a);color:#fff;
+       font-weight:800;font-size:16px;border:none;margin-top:10px}
+  .btn:disabled{opacity:.4}
+  .alumno{display:block;width:100%;text-align:left;padding:12px 14px;margin-top:8px;
+          background:#241c2e;color:var(--cream);font-size:16px;font-weight:600}
+  .alumno.sel{border-color:var(--gold);background:#33231a;color:var(--gold)}
+  .acciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .acc{padding:16px 8px;font-size:15px;font-weight:800;color:var(--cream);background:#241c2e}
+  .acc:active{background:#33231a}
+  .acc.nfc{grid-column:1/-1;background:linear-gradient(135deg,#2a2340,#241c2e);color:var(--gold)}
+  #toast{position:fixed;bottom:16px;left:14px;right:14px;padding:14px;border-radius:14px;
+         background:#1d3322;color:var(--good);font-weight:700;text-align:center;opacity:0;
+         transition:opacity .3s;pointer-events:none;border:1px solid rgba(111,208,138,.4)}
+  #toast.err{background:#3a1d1a;color:#ff9a8a;border-color:rgba(255,120,100,.4)}
+  #toast.on{opacity:1}
+  .hid{display:none}
+  #buscar{margin-top:4px}
+  .mini{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<h1>🧙 Guardián Mayor</h1>
+<div class="sub">Panel del profe — La Casona</div>
+
+<!-- ═══ gate ═══ -->
+<div id="gate" class="card">
+  <div style="margin-bottom:8px;font-weight:700">Clave del Guardián Mayor</div>
+  <input id="clave" type="password" placeholder="Clave del juego" autocomplete="off">
+  <button class="btn" onclick="entrar()">Entrar 🔥</button>
+</div>
+
+<!-- ═══ panel ═══ -->
+<div id="panel" class="hid">
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:6px">1 · Elegí al Guardián</div>
+    <input id="buscar" placeholder="Buscar niño…" oninput="pintar()">
+    <div id="lista"></div>
+  </div>
+
+  <div class="card" id="accCard" style="opacity:.35">
+    <div style="font-weight:700">2 · ¿Qué pasó con <span id="selNombre" style="color:var(--gold)">—</span>?</div>
+    <div class="acciones">
+      <button class="acc" onclick="evento('llegada','+10 🥇')">✅ Llegó</button>
+      <button class="acc" onclick="evento('vuelta','+100 🥈')">🏃 Vuelta</button>
+      <button class="acc" onclick="evento('dragon','+200 🥈')">⚔️ Dragón</button>
+      <button class="acc" onclick="evento('tesoro','+300 🥈')">🏴‍☠️ Tesoro</button>
+      <button class="acc nfc" onclick="vincular()">📿 Vincular pulsera NFC</button>
+    </div>
+    <div class="mini">Vincular: apoyá la muñequera contra la parte de atrás del celu cuando
+    aparezca "escaneando". Solo Chrome en Android. Si no anda, cargá el código UID a mano
+    (aparece en el lector de la estación).</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = "";                       // misma-origin (Railway). Si se muda: URL completa acá.
+let KEY = localStorage.getItem("mf_profe_key") || "";
+let alumnos = [], sel = null;
+
+function toast(msg, err){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = err ? "err on" : "on";
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("on"), 2600);
+}
+
+async function entrar(){
+  const k = document.getElementById("clave").value.trim() || KEY;
+  if (!k) return toast("Poné la clave", true);
+  const r = await fetch(`${API}/juego/alumnos`, {headers:{"X-JUEGO-KEY":k}});
+  if (r.status === 401 || r.status === 503) return toast("Clave incorrecta", true);
+  if (!r.ok) return toast(`Error ${r.status}`, true);
+  KEY = k; localStorage.setItem("mf_profe_key", k);
+  alumnos = (await r.json()).alumnos || [];
+  document.getElementById("gate").classList.add("hid");
+  document.getElementById("panel").classList.remove("hid");
+  pintar();
+  toast(`${alumnos.length} Guardianes cargados 🔥`);
+}
+
+function pintar(){
+  const q = (document.getElementById("buscar").value||"").toLowerCase();
+  const box = document.getElementById("lista");
+  box.innerHTML = "";
+  alumnos.filter(a => !q || (a.nombre+" "+a.apellido+" "+a.apodo).toLowerCase().includes(q))
+    .slice(0, 12).forEach(a => {
+      const b = document.createElement("button");
+      b.className = "alumno" + (sel && sel.id===a.id ? " sel" : "");
+      b.textContent = a.apodo ? `${a.nombre} "${a.apodo}" ${a.apellido}` : `${a.nombre} ${a.apellido}`;
+      b.onclick = ()=>{ sel = a; pintar();
+        document.getElementById("selNombre").textContent = a.nombre;
+        document.getElementById("accCard").style.opacity = 1; };
+      box.appendChild(b);
+    });
+}
+
+async function evento(tipo, coins){
+  if (!sel) return toast("Elegí un niño primero", true);
+  const r = await fetch(`${API}/juego/evento`, {method:"POST",
+    headers:{"Content-Type":"application/json","X-JUEGO-KEY":KEY},
+    body: JSON.stringify({tipo, nino_nombre: sel.nombre, payload:{coins, via:"profe"}})});
+  if (r.ok) toast(`${tipo.toUpperCase()} de ${sel.nombre} → la TV lo celebra 🔥`);
+  else toast(`No salió (${r.status})`, true);
+}
+
+async function vincular(){
+  if (!sel) return toast("Elegí un niño primero", true);
+  let uid = "";
+  if ("NDEFReader" in window){
+    try{
+      toast("📿 Escaneando… apoyá la pulsera");
+      const reader = new NDEFReader();
+      const ctl = new AbortController();
+      uid = await new Promise((res, rej)=>{
+        reader.addEventListener("reading", e => { ctl.abort(); res(e.serialNumber||""); });
+        reader.addEventListener("readingerror", ()=>rej(new Error("lectura")));
+        reader.scan({signal: ctl.signal}).catch(rej);
+        setTimeout(()=>{ ctl.abort(); rej(new Error("timeout")); }, 20000);
+      });
+    }catch(e){ uid = ""; }
+  }
+  if (!uid) uid = prompt("Web NFC no disponible.\nCargá el UID de la pulsera a mano:") || "";
+  if (!uid) return;
+  const r = await fetch(`${API}/juego/nfc-vincular`, {method:"POST",
+    headers:{"Content-Type":"application/json","X-JUEGO-KEY":KEY},
+    body: JSON.stringify({uid, nino_nombre: sel.nombre})});
+  const d = await r.json().catch(()=>({}));
+  if (r.ok) toast(`Pulsera ${d.uid} → ${sel.nombre} ✅`);
+  else if (r.status===409) toast(d.detail || "Esa pulsera es de otro niño", true);
+  else toast(`No salió (${r.status})`, true);
+}
+
+if (KEY){ document.getElementById("clave").value = KEY; entrar(); }
+</script>
+</body>
+</html>

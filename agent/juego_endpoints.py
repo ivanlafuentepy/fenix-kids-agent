@@ -288,6 +288,25 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
     return {"ok": True, "vuelta_cerrada": False, "faltan": faltan, "llegada": llegada_evento}
 
 
+@router.get("/juego/alumnos")
+async def juego_alumnos(x_juego_key: str | None = Header(default=None)):
+    """Lista {id, nombre, apodo} de NIÑOS FENIX para el selector del profe. Requiere key."""
+    _auth(x_juego_key)
+    from agent.airtable_client import _get_records, _NINOS
+    records = await _get_records(_NINOS, max_records=500)
+    alumnos = []
+    for rec in records:
+        f = rec.get("fields", {})
+        nombre = (f.get("NOMBRE") or "").strip()
+        if not nombre:
+            continue
+        alumnos.append({"id": rec.get("id", ""), "nombre": nombre,
+                        "apodo": (f.get("APODO") or "").strip(),
+                        "apellido": (f.get("APELLIDO") or "").strip()})
+    alumnos.sort(key=lambda a: a["nombre"])
+    return {"alumnos": alumnos}
+
+
 @router.get("/juego/estaciones")
 async def juego_estaciones():
     """Config del circuito activo (para /profe, el mapa y los ESP32)."""
