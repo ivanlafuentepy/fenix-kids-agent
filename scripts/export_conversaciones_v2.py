@@ -18,7 +18,7 @@ load_dotenv()
 BASE_URL = "https://fenix-kids-agent-production.up.railway.app"
 ADMIN_KEY = "23ebc7b3d716f558f4ba53a4b3f000dbceb09b350aa5a65fc3f6475227a1e8d9"
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "IVAN VAULT", "FENIX KIDS", "CONVERSACIONES FENIX")
-PHONES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "all_phones.txt")
+PHONES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "all_phones.txt")
 PY_OFFSET = timedelta(hours=-3)
 
 # Default: exportar del 13 al 25 de mayo (última ejecución)
