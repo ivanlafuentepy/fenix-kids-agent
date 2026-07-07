@@ -150,7 +150,7 @@ async function vincular(){
   if (!uid) return;
   const r = await fetch(`${API}/juego/nfc-vincular`, {method:"POST",
     headers:{"Content-Type":"application/json","X-JUEGO-KEY":KEY},
-    body: JSON.stringify({uid, nino_nombre: sel.nombre})});
+    body: JSON.stringify({uid, nino_nombre: sel.nombre, nino_id: sel.id})});
   const d = await r.json().catch(()=>({}));
   if (r.ok) toast(`Pulsera ${d.uid} → ${sel.nombre} ✅`);
   else if (r.status===409) toast(d.detail || "Esa pulsera es de otro niño", true);

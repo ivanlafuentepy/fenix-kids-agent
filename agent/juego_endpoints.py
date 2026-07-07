@@ -299,6 +299,32 @@ async def _guardar_estado(guardian: dict, estado: dict, extra: dict | None = Non
     guardian.get("fields", {}).update(cambios)
 
 
+async def _dias_entrenados_7d(nino_id: str) -> int:
+    """Días DISTINTOS con entrenamiento en casa (reto-dia o mision-casa acreditados)
+    en los últimos 7 días. Para el saludo del tótem: 'entrenaste N días esta semana'."""
+    from agent.airtable_client import _get_records
+    recs = await _get_records(_T_GUARDIANES, formula=f"{{NINO ID}}='{nino_id}'", max_records=1)
+    if not recs:
+        return 0
+    gid = recs[0]["id"]
+    # IS_AFTER es estricto → -8 para incluir los 7 días completos (regla airtable-seguro)
+    formula = (f"AND({{GUARDIAN ID}}='{gid}', {{ESTADO}}='acreditado', "
+               f"OR({{TIPO}}='reto-dia', {{TIPO}}='mision-casa'), "
+               f"IS_AFTER({{FECHA}}, DATEADD(TODAY(), -8, 'days')))")
+    desafios = await _get_records(_T_DESAFIOS, formula=formula, max_records=100)
+    dias = {str(d.get("fields", {}).get("FECHA", ""))[:10] for d in desafios}
+    dias.discard("")
+    return len(dias)
+
+
+def _payload_llegada_con_dias(dias: int, extra: dict | None = None) -> dict:
+    p = dict(extra or {})
+    if dias > 0:
+        p["dias_casa"] = dias
+        p["sub"] = f"Entrenaste en casa {dias} día{'s' if dias != 1 else ''} esta semana 💪"
+    return p
+
+
 async def _accion_reto_dia(guardian: dict, video_key: str) -> dict:
     """Un día del reto cumplido (la llama reto-video en P5 — SIEMPRE con video).
     +50 plata, +250 bonus al 5to. Máx 1 por día PY."""
@@ -572,6 +598,7 @@ async def nfc_vincular(payload: dict = Body(...), x_juego_key: str | None = Head
     uid = _norm_uid(payload.get("uid", ""))
     nombre = str(payload.get("nino_nombre", "") or "").strip()[:120]
     guardian = str(payload.get("guardian", "") or "").strip()[:30] or None
+    nino_id = str(payload.get("nino_id", "") or "").strip()[:50] or None
     if not uid or not nombre:
         raise HTTPException(status_code=422, detail="uid y nino_nombre requeridos")
     async with async_session() as session:
@@ -581,8 +608,11 @@ async def nfc_vincular(payload: dict = Body(...), x_juego_key: str | None = Head
             raise HTTPException(status_code=409, detail=f"UID ya vinculado a {p.nino_nombre}")
         if p:
             p.nino_nombre, p.guardian, p.activa = nombre, guardian, True
+            if nino_id:
+                p.nino_airtable_id = nino_id
         else:
-            session.add(Pulsera(uid=uid, nino_nombre=nombre, guardian=guardian))
+            session.add(Pulsera(uid=uid, nino_nombre=nombre, guardian=guardian,
+                                nino_airtable_id=nino_id))
         await session.commit()
     logger.info(f"[JUEGO] pulsera {uid} vinculada a {nombre}")
     return {"ok": True, "uid": uid, "nino_nombre": nombre}
@@ -676,7 +706,14 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
 
     # eventos fuera de la transacción (best-effort, la TV los celebra)
     if llegada_evento:
-        await crear_evento("llegada", p.nino_nombre, p.guardian, {"via": "nfc"})
+        dias = 0
+        if p.nino_airtable_id:
+            try:
+                dias = await _dias_entrenados_7d(p.nino_airtable_id)
+            except Exception as e:
+                logger.warning(f"[JUEGO] dias_entrenados falló: {e}")
+        await crear_evento("llegada", p.nino_nombre, p.guardian,
+                           _payload_llegada_con_dias(dias, {"via": "nfc"}))
     if vuelta_info:
         sub = f"¡Bonus de {vuelta_info['numero']} vueltas!" if vuelta_info["numero"] in (5, 10) else ""
         await crear_evento("vuelta", p.nino_nombre, p.guardian,
@@ -745,9 +782,14 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
     except Exception as e:
         logger.warning(f"[JUEGO] checkin-face: asistencia falló para {nombre}: {e}")
 
+    dias = 0
+    try:
+        dias = await _dias_entrenados_7d(nino_id)
+    except Exception as e:
+        logger.warning(f"[JUEGO] dias_entrenados falló: {e}")
     await crear_evento("llegada", nombre, None,
-                       {"via": "face", "conf": round(best["confidence"], 1)})
-    return {"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                       _payload_llegada_con_dias(dias, {"via": "face", "conf": round(best["confidence"], 1)}))
+    return {"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
             "confidence": round(best["confidence"], 1)}
 
 
