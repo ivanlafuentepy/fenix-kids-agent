@@ -288,6 +288,70 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
     return {"ok": True, "vuelta_cerrada": False, "faltan": faltan, "llegada": llegada_evento}
 
 
+@router.post("/juego/checkin-face")
+async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
+    """El Espejo del Guardián (tablet): foto → Rekognition → llegada + asistencia.
+    Cooldown 5 min por niño (toca 20 veces = 1 llegada). Ver SPEC-TOTEM 4A."""
+    _auth(x_juego_key)
+    foto_b64 = str(payload.get("foto_base64", ""))
+    if "," in foto_b64[:80]:                      # tolera data:image/jpeg;base64,...
+        foto_b64 = foto_b64.split(",", 1)[1]
+    try:
+        import base64
+        image_bytes = base64.b64decode(foto_b64)
+    except Exception:
+        raise HTTPException(status_code=422, detail="foto_base64 inválida")
+    if not image_bytes or len(image_bytes) > 5_000_000:
+        raise HTTPException(status_code=422, detail="foto vacía o >5MB")
+
+    from agent.face_recognition import identificar_ninos
+    matches = await identificar_ninos(image_bytes, threshold=80.0)
+    if not matches:
+        return {"ok": False, "motivo": "no_reconocido"}
+    best = max(matches, key=lambda m: m.get("confidence", 0))
+    nino_id = best["nino_id"]
+
+    # nombre del niño desde Airtable
+    from agent.airtable_client import _BASE_URL, _NINOS, _headers
+    import httpx
+    nombre = ""
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                nombre = (r.json().get("fields", {}).get("NOMBRE") or "").strip()
+    except Exception as e:
+        logger.warning(f"[JUEGO] checkin-face: no pude leer niño {nino_id}: {e}")
+    if not nombre:
+        return {"ok": False, "motivo": "nino_sin_datos"}
+
+    # cooldown 5 min por niño
+    async with async_session() as session:
+        corte = datetime.utcnow() - timedelta(minutes=COOLDOWN_LLEGADA_MIN)
+        r = await session.execute(select(JuegoEvento.id).where(
+            JuegoEvento.tipo == "llegada", JuegoEvento.nino_nombre == nombre,
+            JuegoEvento.timestamp >= corte).limit(1))
+        if r.scalar() is not None:
+            return {"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                    "repetido": True, "confidence": round(best["confidence"], 1)}
+
+    # asistencia real (best-effort — nunca rompe el saludo)
+    try:
+        from zoneinfo import ZoneInfo
+        from agent.airtable_client import crear_asistencia
+        ahora_py = datetime.now(ZoneInfo("America/Asuncion"))
+        await crear_asistencia(nombre=nombre, fecha_iso=ahora_py.date().isoformat(),
+                               hora_checkin_iso=ahora_py.isoformat(),
+                               nino_id=nino_id, metodo="FACE")
+    except Exception as e:
+        logger.warning(f"[JUEGO] checkin-face: asistencia falló para {nombre}: {e}")
+
+    await crear_evento("llegada", nombre, None,
+                       {"via": "face", "conf": round(best["confidence"], 1)})
+    return {"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+            "confidence": round(best["confidence"], 1)}
+
+
 @router.get("/juego/alumnos")
 async def juego_alumnos(x_juego_key: str | None = Header(default=None)):
     """Lista {id, nombre, apodo} de NIÑOS FENIX para el selector del profe. Requiere key."""
