@@ -12,3 +12,4 @@
 
 | Nombre | Código (sessionId) | Fecha | Qué se hizo |
 |--------|--------------------|-------|-------------|
+| auditoría de skills | c26595b6-67d6-4cbf-b0d6-a08c4746d93b | 2026-07-07 | Auditoría de ~50 skills/commands de los 4 agentes + 10 globales + 168 sesiones. Skills globales nuevos (agente-ops, renovar-token-meta, airtable-seguro, pendientes) + estandares-trabajo.md. FENIX: /masivo + export diario automatizado. |
