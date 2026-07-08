@@ -147,5 +147,19 @@ y buscar causa raíz, no parche.
   reintento / Guardián Mayor. Para conectarlo al backend real: solo setear `CONFIG.API_URL`
   y `CONFIG.JUEGO_KEY` (primeras líneas del script). La fase D del tótem queda REDUCIDA a eso.
 - ✅ Tablet TCL Tab 11 comprada (en camino)
-- ⏳ Falta backend de eventos + checkin-face, TV-polling, app del profe (fases A-C, E)
-- ⏳ DVR pendiente esta noche: IP fija + usuario dedicado (datos en CLAUDE.local.md)
+- ⏳ DVR pendiente: IP fija + usuario dedicado (datos en CLAUDE.local.md)
+
+## 8. EJECUTADO 07/07/2026 (sesión Fable) — fases A, B, C, E hechas y VERIFICADAS EN PROD
+
+| Fase | Estado | Commit |
+|---|---|---|
+| A — `juego_eventos` + GET/POST `/juego` | ✅ prod (auth 401 ok, evento real creado) | `cf73321` |
+| B — `/juego/checkin-face` (Rekognition, 36 caras, asistencia FACE) | ✅ prod (no_reconocido verificado en vivo) | `35a0f14` |
+| C — TV polling (`index.html`) + mapa (`mapa.html`) → prod | ✅ (since=0 sin replay; solo llegada/vuelta/dragon/tesoro en TV) | local (no-git) |
+| D — tótem | ✅ `totem.html` con API_URL+KEY reales; FALTA solo tablet física + Fully Kiosk | local (no-git) |
+| E — `/juego/alumnos` (102 niños) + `/static/profe.html` (eventos + vincular Web NFC) | ✅ prod 200 | `7e64b9e` |
+| F — `scripts/generar_voces_alumnos.py` | script listo; **BLOQUEADO: falta env `ELEVENLABS_API_KEY`** (45 activos ≈ 21.6k chars → 2 tandas free o $5 Creator) | `9d1eca7` |
+| **N1 NFC** (SPEC-NFC) — pulseras/estaciones/vuelta en tótem | ✅ prod: vuelta completa real verificada (llegada→5 estaciones→+100 plata) | `f49f000` |
+
+Env nueva en Railway: `JUEGO_API_KEY` (seteada por API 07/07). Config circuito:
+`JUEGO_ESTACIONES` (default ninja,arbol,basket,quincho,muelle) · `JUEGO_TIEMPO_MIN_SEG` (60).

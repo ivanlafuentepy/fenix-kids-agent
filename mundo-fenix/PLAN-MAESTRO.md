@@ -49,12 +49,29 @@ aventura visible: su Guardián, sus brasas, su capa, su historia.
 
 ### 3.3 Reto Fénix — 5 días (el corazón del embudo)
 - Camada semanal: todos arrancan el lunes, se gradúan el sábado.
-- Pantalla del día: los 5 ejercicios de SU categoría + botón "Ya entrenamos — enviar video".
-- **El video NO se sube a la app**: el botón abre WhatsApp con mensaje pre-armado hacia el
-  número de Fénix ("Video Reto Día 2 — familia XXXX"). El padre adjunta el video ahí.
-  *Razón: canal ya existente, cero costo de storage/moderación, y cada video mantiene la
-  ventana de 24h de Meta abierta.*
-- La app muestra el día como "en revisión" → "aprobado ✅" cuando el admin valida.
+- Pantalla del día: los 5 ejercicios de SU categoría + botón "Ya entrenamos — subir video".
+- **El video SE SUBE EN LA APP** (decisión Iván 07/07/2026, reemplaza el flujo por WhatsApp):
+  botón "Ya entrenamos — subir video" → upload directo del navegador a **Cloudflare R2**
+  (bucket privado) vía URL prefirmada que emite una Pages Function. *Razón: mandar por
+  WhatsApp es incómodo y saca al usuario de la app; el loop subir→revisión→aprobado→brasas
+  viviendo completo en la app incentiva su uso diario.*
+  - Privacidad: bucket PRIVADO, solo el admin ve los videos (coherente con COPPA — nada
+    público). Retención corta: se borran a los 30 días (config).
+  - Costo: R2 no cobra egress; videos de 30-60s → centavos por mes.
+  - Trade-off asumido: se pierde la ventana de 24h de Meta que abrían los videos entrantes
+    → las notificaciones salientes que la necesiten van por plantilla (el anuncio del lunes
+    ya estaba planificado así).
+- **Acreditación INMEDIATA, control DESPUÉS** (decisión Iván 07/07: "no puedo recibir 100
+  videos por día"). Al subir, el día se marca ✅ y las brasas caen al toque (dopamina
+  inmediata). Nadie espera a un humano. El control es asíncrono, en 3 capas:
+  1. **Checks automáticos al subir** (gratis): duración mínima, hash anti-duplicado (mismo
+     video re-subido), máx. 1 video/día/niño. La economía ya acota el fraude: el tope es
+     50 plata/día, hagas lo que hagas.
+  2. **Validación IA async**: un job extrae 3-4 frames del video y le pregunta a Claude
+     (Haiku vision, centavos) "¿se ve un niño haciendo ejercicio?" → score. Videos OK no
+     los ve nadie; los sospechosos van a una cola de revisión.
+  3. **Revisión humana solo por excepción**: la cola de sospechosos + muestreo aleatorio
+     ocasional. Si algo era trampa → se revocan las brasas (estado "revocado", caso raro).
 - Día fallado se recupera (la meta es completar 5, no la perfección).
 - Racha visible (los 5 puntos que se van llenando) + puntos por día.
 - Día 5 completado → **pantalla de invitación a la Graduación del sábado** (fecha, hora,
@@ -70,8 +87,8 @@ aventura visible: su Guardián, sus brasas, su capa, su historia.
 - Pantalla "Mis Capas": progresión, cuántos puntos faltan, historial de ceremonias.
 
 ### 3.5 Entrenamiento semanal en casa (post-graduación — el motor de retención)
-- Después del Reto, el juego sigue: **desafío semanal en casa** (mismo mecanismo de video
-  por WhatsApp) + **misión presencial del sábado**.
+- Después del Reto, el juego sigue: **desafío semanal en casa** (mismo mecanismo: video
+  subido en la app, acreditación inmediata) + **misión presencial del sábado**.
 - Mínimo mensual por categoría → mantiene la **llama encendida** (indicador visual). No
   cumplir NO castiga: la llama se apaga y se reenciende entrenando (nunca se pierde rango).
 - Puntos por: día entrenado, semana completa, asistencia al sábado, valores mostrados.
@@ -121,7 +138,7 @@ aventura visible: su Guardián, sus brasas, su capa, su historia.
 ### 3.11 Comunicación (sin chat)
 - La app NO tiene chat. Todo lo conversacional pasa por **Aurora en WhatsApp** (canal ya
   construido, con espejo Telegram para Iván).
-- Notificaciones de la app → por WhatsApp vía Aurora: video aprobado, insignia otorgada,
+- Notificaciones de la app → por WhatsApp vía Aurora: insignia otorgada,
   desafío nuevo del lunes, recordatorio del sábado, subiste de rango, canje listo.
 - Push web (PWA) como refuerzo opcional en Fase 2+.
 
@@ -137,10 +154,11 @@ aventura visible: su Guardián, sus brasas, su capa, su historia.
 
 Reutiliza el patrón Command Center (PWA protegida con clave).
 
-1. **Bandeja de videos**: cola de videos del día (llegan por WhatsApp; el espejo Telegram
-   ya los muestra) → botones Aprobar / Rechazar con motivo → acredita brasas y marca el día.
-   *(v1: se aprueba directo desde Telegram con botones, como los comprobantes de pago —
-   patrón ya construido en el agente.)*
+1. **Cola de revisión de videos** (solo excepciones): los videos se acreditan solos al
+   subirse a la app; acá aparecen ÚNICAMENTE los flaggeados por la IA + un muestreo
+   aleatorio → botones Confirmar / Revocar brasas con motivo. *(v1: la cola se puede
+   espejar a Telegram con botones, patrón comprobantes — pero solo los sospechosos,
+   nunca los 100 del día.)*
 2. **Otorgar valores**: elegir niño + valor + nota de una línea → insignia + brasas + notif.
 3. **Registrar el sábado**: marcar asistencia (→ oro; mientras no haya lector facial) y
    **cargar las vueltas** que completa cada niño en el circuito (→ plata). Con el lector
@@ -178,11 +196,11 @@ Reutiliza el patrón Command Center (PWA protegida con clave).
 ### 5.2 Aurora / agente WhatsApp (el repo actual)
 - **Embudo**: lead nuevo → Aurora ofrece el Reto → crea GUARDIAN + manda link mágico →
   camada del lunes. (Reemplaza a la "clase de prueba" como CTA principal.)
-- **Recepción de videos**: detectar video entrante con contexto de reto activo → registrar
-  DESAFIO CUMPLIDO pendiente → espejo a Telegram con botones Aprobar/Rechazar (patrón
-  comprobantes). Aprobación acredita brasas y avisa al padre.
-- **Notificaciones salientes**: plantilla Meta para el anuncio del lunes (fuera de ventana);
-  el resto aprovecha la ventana abierta por los propios videos.
+- **Videos: ya NO pasan por WhatsApp** (07/07: se suben en la app → R2, acreditación
+  automática + IA async). Aurora queda solo como canal conversacional y de notificaciones.
+- **Notificaciones salientes**: plantilla Meta para el anuncio del lunes y demás avisos
+  fuera de ventana (al no entrar videos por WhatsApp, la ventana de 24h se abre menos —
+  asumido como trade-off de la decisión del 07/07).
 - **Regla de oro**: TODO cambio en el agente pasa por /pre-cambio y /pre-deploy, deploy
   incremental como siempre. El juego NUNCA rompe el flujo de leads/pagos.
 
@@ -255,10 +273,27 @@ Reutiliza el patrón Command Center (PWA protegida con clave).
   **Próximo:** fijar IP + usuario dedicado por API, renombrar cámaras por zona, y armar el
   pipeline RTSP+FFmpeg para recorte por evento con hora exacta.
 
-### 5.4 Hosting
-- **Repo propio** (`mundo-fenix-app`) + **Cloudflare Pages** (patrón de las 5 webs: git
-  push = deploy). El repo del agente NO carga con el juego (por eso los PNGs siguen sin
-  commitear acá). El Panel puede ser ruta protegida de la misma PWA.
+### 5.3d MAPA VIVO — segunda TV con el mapa de La Casona (pedido Iván 07/07, construido)
+- **`mundo-fenix/mapa.html`**: mapa ilustrado de La Casona en otra TV — cada niño es su
+  robot Guardián en el último fuego que encendió; camina por el sendero al tocar la
+  siguiente estación NFC; vuelta reclamada en el tótem = lluvia de monedas en el mapa.
+- Render puro del canal de eventos existente (localStorage demo + polling backend). Muda
+  (la voz vive en la TV principal). Detalle en `SPEC-NFC-CIRCUITO.md` §6b.
+- **Nivel 2 — movimiento continuo por zonas (pulseras BLE + los mismos ESP32 como
+  receptores): decidido NO ahora.** Diseño completo + privacidad + gate de decisión en
+  `SPEC-BLE-TRACKING.md`. Se evalúa recién después del piloto NFC.
+
+### 5.4 Hosting — ✅ DEPLOYADO 07/07/2026
+- **Repo propio `mundo-fenix-app` (GitHub privado) + Cloudflare Pages** — EN VIVO:
+  - Juego / **Modo TV**: `https://mundo-fenix.pages.dev/?tv` (la Smart TV apunta acá, FIJO)
+  - **Espejo** (tablet): `https://mundo-fenix.pages.dev/totem` (pide la clave UNA vez)
+  - **Mapa Vivo** (2da TV): `https://mundo-fenix.pages.dev/mapa`
+  - Deploy: `npx wrangler pages deploy . --project-name=mundo-fenix` (direct upload; sin
+    secrets en el sitio → el bug de secrets de Pages no aplica). La carpeta
+    `fenix-kids-agent/mundo-fenix/` sigue siendo el WORKSPACE (specs + edición);
+    `Projects/mundo-fenix-app/` es el repo que se publica — copiar y deployar al cambiar.
+  - Seguridad: `totem.html` ya NO lleva la key hardcodeada (localStorage, se tipea 1 vez).
+  - Esto MATA los líos de LAN/túneles/caché/charset de las sesiones 26-27.
 - Backend liviano para hablar con Airtable sin exponer el token: **Cloudflare Pages
   Functions** (mismo repo) o endpoints nuevos en el Railway del agente. *Decisión en F2.*
 
@@ -307,7 +342,7 @@ y VENTAJAS extra, nunca el acceso básico (eso es la cuota + venir):
 - 1 tesoro por semana, tematizado por la temporada (Piratas: el cofre de Barbafuego).
 - **3 pistas** que se resuelven en la semana, alternando cabeza y cuerpo:
   1. 🧮 **Mate** (test de matemática por categoría de edad; la respuesta abre la siguiente pista)
-  2. 💪 **Física** (mini reto filmado — video por WhatsApp como siempre)
+  2. 💪 **Física** (mini reto filmado — video subido en la app, como el reto)
   3. 🦜 **Acertijo/lógica** (adivinanza cuya respuesta es un lugar/objeto de La Casona)
 - Cada pista: +50 plata. Las 3 → se revela el **acertijo final**: un verso que apunta a un
   lugar REAL de La Casona ("donde el agua duerme y el sol se mira…" = la pileta).
@@ -331,12 +366,16 @@ Roja 12 · Naranja 24 · Dorada 36 · Fénix 48 (~1 año). Cada capa ≈ 3 meses
 | Fase | Qué | Estado / esfuerzo |
 |---|---|---|
 | **F0** | Prototipo jugable mock (avatar, reto, ceremonia, banco, tienda, ranking) | ✅ HECHO (Artifact) |
-| **F1** | Robotitos integrados (PNG optimizados + aura por rango) + selector multi-hijo + categorías de edad + pantalla Familia mock + pulido | 1-2 días |
-| **F2** | Repo propio + Cloudflare + Airtable REAL (tablas nuevas, link mágico, lectura/escritura vía Functions) — la app deja de ser mock | 2-4 días |
-| **F3** | Circuito de video por WhatsApp + aprobación por Telegram + acreditación de brasas (toca el agente: /pre-cambio) | 2-3 días |
-| **F4** | Embudo Aurora completo (lead→Reto→camada→graduación→venta 350/450) + notificaciones + pantalla Familia real con PAGOS | 2-3 días |
+| **F1** | Robotitos integrados (PNG optimizados + aura por rango) + selector multi-hijo + categorías de edad + pantalla Familia mock + pulido | ✅ multi-hijo/Familia HECHOS en F2 (07/07); resta pulido |
+| **F2** | Repo propio + Cloudflare + Airtable REAL (tablas nuevas, link mágico) — la app deja de ser mock | ✅ **HECHO 07/07/2026.** Arquitectura HÍBRIDA (decidida con Iván, supersede "todo Functions"): lógica/datos en Railway `/juego/*` + CF Function SOLO videos→R2. Tablas: GUARDIANES/MOVIMIENTOS BRASAS/DESAFIOS CUMPLIDOS FENIX + CODIGO FENIX en FAMILIAS. Link mágico `/?f=CODIGO` (POST /juego/familia-codigo). Selector multi-hijo = pantalla Familia v1 (saldos, capa, botón WhatsApp). Acciones vía POST /juego/accion (montos §6 en el servidor, ledger + anti-dup diario). Sin `?f=` la app sigue siendo demo. |
+| **F3** | Upload de video en la app + acreditación automática + checks anti-abuso | ✅ **HECHO 07/07/2026** (v1): PUT /api/video (Pages Function → R2 `fenix-videos`, binding sin credenciales, la familia solo ve SUS videos) + POST /juego/reto-video (1/día, +50/+250, ledger, muestreo espejado a Telegram con link). **Validación IA (Haiku vision) = iteración 2** (decidido). |
+| **F4** | Embudo Aurora completo (lead→Reto→camada→graduación→venta 350/450) + notificaciones + pantalla Familia con PAGOS | 2-3 días |
 | **F5** | Panel Fénix completo (valores, misiones, tienda, ceremonias, métricas) | 2-3 días |
 | **F6** | Temporadas, patrullas, QR en zonas, eventos especiales (Copa Fénix / semana intensiva paga como evento de temporada) | continuo |
+
+**Saludo personalizado (07/07):** las llegadas (tótem NFC y checkin facial) llevan
+`{dias_casa, sub:"Entrenaste en casa N días esta semana 💪"}` contando DESAFIOS CUMPLIDOS
+de 7 días — la TV lo muestra bajo el nombre. Voz por variantes = iteración 2.
 
 **Gate de negocio**: F3+ recién cuando el piloto (F1-F2 con 5-10 familias reales elegidas
 a mano) muestre que los niños se enganchan. Métricas gate: >40% manda ≥1 video/semana,
@@ -350,6 +389,13 @@ a mano) muestre que los niños se enganchan. Métricas gate: >40% manda ≥1 vid
 2. **Backend F2 = Cloudflare Pages Functions** (repo propio del juego, separado del agente).
 3. **Naming**: "Mundo Fénix" es el mundo/la app; "Guardianes Fénix" son los niños dentro.
    Ambos conviven: *en el Mundo Fénix están los Guardianes Fénix*.
+
+**RESUELTAS por Iván (07/07/2026):**
+4. **Videos EN la app, no por WhatsApp**: subir a R2 desde la app; WhatsApp era incómodo y
+   sacaba al usuario del juego. El loop completo (subir→✅→brasas) vive en la app.
+5. **Acreditación inmediata + control posterior**: nada de aprobar 100 videos/día a mano.
+   Brasas al toque; checks automáticos + IA (Haiku vision sobre frames) + revisión humana
+   solo de excepciones flaggeadas.
 
 **ABIERTAS:**
 4. **Piloto**: qué 5-10 familias reales invitar a la camada 1 y qué lunes arranca.
