@@ -74,3 +74,26 @@
 - `06d36fa` — config(cierre): la bitacora de sesion se escribe en docs/sesiones, no en Obsidian
 
 **En otros repos:** Dorita `d5dd4d5` + `5f60049` · NEO `1917967` + `e08c0cf` · Genesis `149e3dd` + `918a457`.
+
+---
+
+## 2026-07-07 — Sesión 30: auditoría de skills + skills globales nuevos
+
+- **Ivan:** "Sos mi analista de sistemas de IA. Estudiá cómo uso Claude, auditá cada skill y workflow (keep/fix/merge/delete), reescribí mis workflows repetidos como skills reutilizables, capturá mis estándares para un modelo más barato. Preguntame antes de borrar. Para agent kit, fenix, cowork y agente neo."
+- **Fenix:** 5 auditores Explore en paralelo (4 proyectos + skills globales + 168 sesiones de historial). Hallazgos: dualidad skills/commands con wrappers triviales, `/pagina` huérfano, cifras viejas en Dorita, `banner-design`/`slides` redundantes con `design`, `ui-ux-pro-max` roto (scripts de 0 bytes). El mayor dolor sin skill del historial: renovar token Meta (~53 sesiones), "seguimos/pendientes" (~110), operaciones Airtable (~81).
+- **Fenix:** Creados 4 skills globales (agente-ops, renovar-token-meta, airtable-seguro, pendientes) + `estandares-trabajo.md` enganchado al CLAUDE.md global con `@`. `/masivo` en FENIX. Fixes en los 4 repos.
+- **Ivan:** Aprobó los 3 borrados (build-agent x2, banner-design+slides, recortar ui-ux-pro-max).
+- **Fenix:** Borrados ejecutados. `ui-ux-pro-max` recortado 659→379 líneas conservando los 99 lineamientos UX.
+- **Ivan:** "Vamos con todo" (los pendientes recomendados).
+- **Fenix:** agente-ops unificado con punteros en NEO/Genesis, `/pendientes`, export automático en el hook SessionStart de FENIX. Descubierto y corregido: el refactor `94f6865` movió `all_phones.txt` a `data/` pero el script apuntaba a la raíz → export estaba roto. Regenerado desde Airtable (1178) y probado end-to-end.
+- **Ivan:** "commit, hay otras sesiones corriendo."
+- **Fenix:** Commits por path explícito en los 4 repos, sin tocar `mundo-fenix/` ni `juego_endpoints.py` de las otras sesiones. Sin push (la sesión paralela ya los subió).
+
+**Commits de esta sesión (en este repo):**
+- `b7c3b1e` — feat(skills): /masivo con pre-flight + /pagina invocable + router actualizado
+- `c4c337f` — feat(export): export diario automatico de conversaciones al iniciar sesion
+- `5baa19b` — docs: skills nuevos en la tabla de flujo de trabajo del CLAUDE.md
+
+**En otros repos:** Dorita `7680342` · NEO `ab3521a` · Genesis `b71fa58`.
+
+**Skills globales creados (fuera de git, en `~/.claude/`):** agente-ops, renovar-token-meta, airtable-seguro, pendientes, docs/estandares-trabajo.md.
