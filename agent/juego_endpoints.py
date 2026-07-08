@@ -237,6 +237,7 @@ PLATA_PISTA = 50
 PLATA_TESORO = 300
 PLATA_DRAGON = 200
 CASA_META = 3
+ORO_LLEGADA = 10          # PLAN-MAESTRO §6: "el oro es por VENIR" — asistir al sábado
 
 
 def _hoy_py() -> str:
@@ -323,6 +324,22 @@ def _payload_llegada_con_dias(dias: int, extra: dict | None = None) -> dict:
         p["dias_casa"] = dias
         p["sub"] = f"Entrenaste en casa {dias} día{'s' if dias != 1 else ''} esta semana 💪"
     return p
+
+
+async def _acreditar_oro_llegada(nino_id: str, nombre: str) -> int:
+    """+10 oro por llegar a La Casona (PLAN §6). Máx 1 por día PY, cross-canal
+    (facial y NFC comparten el gate en ESTADO JSON). Devuelve el oro acreditado (0 si
+    ya cobró hoy). Los callers la envuelven en try/except: el saludo NUNCA se rompe."""
+    guardian = await _guardian_de_nino(nino_id, nombre)
+    if not guardian:
+        return 0
+    estado = _estado_de(guardian)
+    if estado.get("ult_oro_llegada") == _hoy_py():
+        return 0
+    estado["ult_oro_llegada"] = _hoy_py()
+    await _acreditar(guardian, "oro", ORO_LLEGADA, "Asistencia — llegada a La Casona",
+                     cambios_extra={"ESTADO JSON": json.dumps(estado, ensure_ascii=False)})
+    return ORO_LLEGADA
 
 
 async def _accion_reto_dia(guardian: dict, video_key: str) -> dict:
@@ -708,10 +725,16 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
     if llegada_evento:
         dias = 0
         if p.nino_airtable_id:
+            try:  # +10 oro por venir (gate diario compartido con el facial)
+                await _acreditar_oro_llegada(p.nino_airtable_id, p.nino_nombre)
+            except Exception as e:
+                logger.warning(f"[JUEGO] totem-nfc: oro de llegada falló para {p.nino_nombre}: {e}")
             try:
                 dias = await _dias_entrenados_7d(p.nino_airtable_id)
             except Exception as e:
                 logger.warning(f"[JUEGO] dias_entrenados falló: {e}")
+        else:
+            logger.info(f"[JUEGO] totem-nfc: pulsera {uid} sin nino_airtable_id — llegada sin oro")
         await crear_evento("llegada", p.nino_nombre, p.guardian,
                            _payload_llegada_con_dias(dias, {"via": "nfc"}))
     if vuelta_info:
@@ -782,6 +805,13 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
     except Exception as e:
         logger.warning(f"[JUEGO] checkin-face: asistencia falló para {nombre}: {e}")
 
+    # +10 oro por venir (best-effort — nunca rompe el saludo)
+    oro = 0
+    try:
+        oro = await _acreditar_oro_llegada(nino_id, nombre)
+    except Exception as e:
+        logger.warning(f"[JUEGO] checkin-face: oro de llegada falló para {nombre}: {e}")
+
     dias = 0
     try:
         dias = await _dias_entrenados_7d(nino_id)
@@ -790,7 +820,7 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
     await crear_evento("llegada", nombre, None,
                        _payload_llegada_con_dias(dias, {"via": "face", "conf": round(best["confidence"], 1)}))
     return {"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
-            "confidence": round(best["confidence"], 1)}
+            "oro": oro, "confidence": round(best["confidence"], 1)}
 
 
 @router.get("/juego/alumnos")
