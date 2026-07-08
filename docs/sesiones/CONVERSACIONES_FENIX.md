@@ -97,3 +97,33 @@
 **En otros repos:** Dorita `7680342` · NEO `ab3521a` · Genesis `b71fa58`.
 
 **Skills globales creados (fuera de git, en `~/.claude/`):** agente-ops, renovar-token-meta, airtable-seguro, pendientes, docs/estandares-trabajo.md.
+
+## 2026-07-08
+
+Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agente de leads/pagos no se tocó (solo el router `/juego/*` aislado y el frontend en el repo propio `mundo-fenix-app`).
+
+- **Ivan:** "hacemos una auditoría completa del proyecto mundo fenix, decime todo lo que podemos hacer para mejorar y dejame bien detallado los pendientes."
+- **Fenix:** Auditoría completa (PLAN-MAESTRO, 3 SPECs, `juego_endpoints.py`, frontend, Functions R2). 11 hallazgos priorizados. Críticos: **H1** el oro por llegada nunca se acreditaba (kepi/remera imposibles de ganar), **H2** la plata de vueltas NFC no llega al ledger Airtable. + huecos de anti-abuso (H3-H5) y deuda menor. Pendientes ordenados en software (A1-A11) / bloqueos de Ivan / hardware / fases grandes.
+
+- **Ivan:** "dale vamos con eso" (arrancar por A1).
+- **Fenix:** `/pre-cambio` → `_acreditar_oro_llegada` (+10 oro, gate diario 1×/día en `ESTADO JSON` compartido facial↔NFC, best-effort) en `checkin-face` y `totem-nfc`. `/pre-deploy` → commit `62775f4`, deploy Railway SUCCESS, endpoints verificados en prod (401/422/200 correctos).
+
+- **Ivan:** "vamos a armar un check in de prueba, me cargo mi foto y hacemos todo el proceso." (después: "poneme como nombre alan!")
+- **Fenix:** `/airtable-seguro` → creado registro NIÑOS FENIX `recLwzdHkFbHSysge` (IVAN TEST, después renombrado ALAN). Foto de Ivan subida a Airtable + indexada en Rekognition (FACE_ID `8a9ca8c9`, collection pasó de 36 a 37 caras).
+
+- **Ivan (varias):** reportes sobre la TV — "no tiene audio", "siguen esos botones", "que navegador uso en la TV", "porque piratas del fenix", "quiero el LOGO flotando", "no carga nada", "toco OK y no pasa nada".
+- **Fenix:** Cadena de fixes a `index.html`/`totem.html` (repo `mundo-fenix-app`): idle = logo Fenix flotando (fuera "Piratas del Fenix" y el párrafo largo); botones Demo/Salir borrados del HTML; `_headers` no-cache (adiós pelea con caché de Fully); pantalla de arranque "Tocá para despertar" que desbloquea audio y acepta el OK del control (keydown); fix `ReferenceError` (resize() antes de definir `cv` dejaba la TV en blanco — diagnosticado con Edge headless screenshot); video del saludo conectado y optimizado (4.4MB→590KB, 30fps).
+
+- **Ivan:** check-in disparado con su foto → reconoció ALAN 100%, ORO=10 en Airtable. Después: "no hubo sonido!" → falta el gesto de desbloqueo.
+- **Fenix:** Verificado en Airtable: GUARDIAN ALAN ORO=10 + fila MOVIMIENTOS "Asistencia — llegada a La Casona" + gate diario marcado (2ª llegada = oro 0, no duplica). A1 cerrado end-to-end.
+
+- **Ivan:** "la moneda tiene que tener el logo de fenix... son 10 monedas, se ven de a una, van al celular del padre (la billetera), con sonido de monedas."
+- **Fenix:** Explicado: las animaciones se programan (CSS/JS), no se generan aparte — más liviano y fluido que un video. Prototipo aparte mostrado a Ivan → aprobado. Integrado a la escena de llegada: primero el Fenix saluda, después las 10 monedas (logo escudo) vuelan de a una a la "Billetera de {niño}", saldo 0→10, cling por moneda + cha-ching final (WebAudio). Video optimizado. Deployado.
+
+- **Ivan:** "bien aprobado."
+
+**Commits de esta sesión:**
+- Repo agente: `62775f4` — feat(juego): +10 oro por llegada — facial y NFC, gate diario cross-canal
+- Repo `mundo-fenix-app` (frontend, deployado a Cloudflare Pages): `3e7907c`, `1f72605`, `efa8850`, `4fff5c4`, `60680af`, `a19bcc7`, `8d363ff`, `5b546e6`
+
+**Pendiente inmediato:** A2 — conectar la plata de las vueltas NFC al ledger Airtable (hueco H2). Registro de prueba ALAN quedó en NIÑOS FENIX con la cara de Ivan indexada (decidir si borrar).
