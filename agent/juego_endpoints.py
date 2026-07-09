@@ -750,7 +750,17 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
 @router.post("/juego/checkin-face")
 async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
     """El Espejo del Guardián (tablet): foto → Rekognition → llegada + asistencia.
+    TODAS las respuestas llevan CORS — el tótem vive en otro origen (Cloudflare Pages) y
+    el navegador NO lee la respuesta sin ese header (aunque el back reconozca y responda 200).
     Cooldown 5 min por niño (toca 20 veces = 1 llegada). Ver SPEC-TOTEM 4A."""
+    try:
+        return await _checkin_face_inner(payload, x_juego_key)
+    except HTTPException as e:
+        return JSONResponse(content={"ok": False, "detail": e.detail},
+                            status_code=e.status_code, headers=_CORS)
+
+
+async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     _auth(x_juego_key)
     foto_b64 = str(payload.get("foto_base64", ""))
     if "," in foto_b64[:80]:                      # tolera data:image/jpeg;base64,...
@@ -766,7 +776,7 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
     from agent.face_recognition import identificar_ninos
     matches = await identificar_ninos(image_bytes, threshold=80.0)
     if not matches:
-        return {"ok": False, "motivo": "no_reconocido"}
+        return JSONResponse(content={"ok": False, "motivo": "no_reconocido"}, headers=_CORS)
     best = max(matches, key=lambda m: m.get("confidence", 0))
     nino_id = best["nino_id"]
 
@@ -782,7 +792,7 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
     except Exception as e:
         logger.warning(f"[JUEGO] checkin-face: no pude leer niño {nino_id}: {e}")
     if not nombre:
-        return {"ok": False, "motivo": "nino_sin_datos"}
+        return JSONResponse(content={"ok": False, "motivo": "nino_sin_datos"}, headers=_CORS)
 
     # cooldown 5 min por niño
     async with async_session() as session:
@@ -791,8 +801,8 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
             JuegoEvento.tipo == "llegada", JuegoEvento.nino_nombre == nombre,
             JuegoEvento.timestamp >= corte).limit(1))
         if r.scalar() is not None:
-            return {"ok": True, "nino": {"id": nino_id, "nombre": nombre},
-                    "repetido": True, "confidence": round(best["confidence"], 1)}
+            return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                    "repetido": True, "confidence": round(best["confidence"], 1)}, headers=_CORS)
 
     # asistencia real (best-effort — nunca rompe el saludo)
     try:
@@ -819,8 +829,8 @@ async def juego_checkin_face(payload: dict = Body(...), x_juego_key: str | None 
         logger.warning(f"[JUEGO] dias_entrenados falló: {e}")
     await crear_evento("llegada", nombre, None,
                        _payload_llegada_con_dias(dias, {"via": "face", "conf": round(best["confidence"], 1)}))
-    return {"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
-            "oro": oro, "confidence": round(best["confidence"], 1)}
+    return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
+            "oro": oro, "confidence": round(best["confidence"], 1)}, headers=_CORS)
 
 
 @router.get("/juego/alumnos")
