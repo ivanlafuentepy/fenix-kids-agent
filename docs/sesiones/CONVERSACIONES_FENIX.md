@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-07-08 — Sesión 32: Llegó la tablet — puesta en marcha del Espejo del Guardián
+
+**Iván:** Llegó la tablet, vamos con eso.
+**Fénix:** Verifiqué que el tótem está deployado en `mundo-fenix.pages.dev/totem`, conectado al backend real y pidiendo la clave del juego una sola vez. Le pasé la `JUEGO_API_KEY` para tipear y la guía de Fully Kiosk (WiFi, permisos, montaje).
+
+**Iván:** Conectado Fully. No escucha audio, la cámara está habilitada. Cuando toco responde con audio, pero cuando hablo no escucha. Yo quiero que el niño hable con Fénix.
+**Fénix:** Le expliqué que el "escuchar" (Web Speech API) no anda en el WebView de Fully Kiosk. Después de idas y vueltas quedó claro lo que quería: **comandos de voz** ("Hola Fénix"), no conversación libre.
+
+**Iván:** No, no quiero micrófono, el niño toca la pantalla y listo. Sacame las frases y el emoji hablando. Poné el espejo más alto que la cámara está arriba.
+**Fénix:** Limpié el tótem: saqué frases/emoji/micrófono, tocar toda la pantalla despierta, subí el espejo pegado arriba (mejor encuadre para la cámara). Deployado.
+
+**Iván:** No me reconoce esta mierda, se queda 2 segundos y nada. Ayer cargamos una foto mía con nombre ALAN.
+**Fénix:** Miré los logs de Railway: **el backend SÍ te reconocía como ALAN** (200 OK, evento "llegada" creado) pero el tótem mostraba "Pedile al Guardián Mayor". Causa raíz: **`checkin-face` no devolvía CORS** → el navegador bloqueaba la respuesta. Fix en `juego_endpoints.py` (commit `def7359`), deployado y verificado. ALAN reconocido.
+
+**Iván:** Toca y saca la foto de una, jamás espera el "Hola Fénix". Si no lo dice debería apagarse, no sacar la foto. Así estaba programado. ¿Por qué no se puede?
+**Fénix:** Le aclaré la verdad: el "Hola Fénix" **SÍ se puede — en Chrome (donde estaba probando), NO en Fully Kiosk**. Yo lo había sacado pensando en Fully Kiosk. Lo **restauré** con su lógica: toca → escucha → si dice "Fénix" lee la cara; si no en 6s se apaga sin foto.
+
+**Iván:** Sacá el cartel "Decí Hola Fénix", el niño ya sabe. El audio debería salir en la TV, no acá.
+**Fénix:** Saqué el cartel (la escucha corre en silencio). Confirmé la arquitectura: el espejo lee rápido, el circo (voz "¿Quién despertó al ave Fénix?") va en la TV conectada al mismo backend.
+
+**Iván:** ¿Por qué no usamos Chrome? Explicá la diferencia con Fully Kiosk.
+**Fénix:** Comparé los dos: Fully Kiosk = kiosco completo pero sin motor de voz ni cámara fácil; Chrome = "Hola Fénix" + cámara OK pero no es kiosco. Recomendé **Chrome + anclaje de pantalla de Android**.
+
+**Iván:** Perfecto, vamos con Chrome y el anclaje. Mañana seguimos, buen trabajo. /cierre
+**Fénix:** Cierre de sesión.
+
+**Commits de la sesión:**
+- `def7359` — fix(juego): checkin-face devuelve CORS en todas las respuestas
+- (frontend `totem.html` deployado a Cloudflare Pages por wrangler, `mundo-fenix/` sigue untracked en git)
+
+---
+
 ## 2026-07-07 — Sesión 28: Mundo Fénix, de mock a producción real
 
 **Iván:** ¿Dónde consigo las pulseras para rastrear a los niños? La idea: que en cada estación hagan un ejercicio, hagan check con la pulsera, y al llegar al Fénix (la TV) les lea el recorrido automático y les cargue la vuelta con sus monedas.

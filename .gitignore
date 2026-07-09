@@ -52,3 +52,6 @@ logs/
 
 # Contactos personales — NUNCA subir
 contactos/
+
+# Cache de wrangler (deploy Cloudflare Pages)
+.wrangler/
