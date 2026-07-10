@@ -67,3 +67,25 @@ REGLAS:
 - Si no hay nada que actualizar en el resumen (sesión sin cambios reales), avisarlo y no commitear vacío
 - Push automático al cerrar — el usuario ya lo aprobó (2026-05-25)
 - Si hay cambios sin commitear que NO son del resumen, avisar al usuario antes de tocar nada
+
+---
+
+## REGLA FINAL — Aprendizajes que NO deben repetirse (obligatorio, ANTES del commit)
+
+Contestate esta pregunta antes de commitear: **"¿Qué problema resolvimos hoy cuya solución
+no debe re-descubrirse nunca?"** (criterio: costó >15 min, tocó producción, o Iván tuvo que
+recordarnos algo ya resuelto). Si la respuesta es "ninguno", decilo explícito en el resumen
+final. Si hubo, registralo en DOS lugares — los dos, no uno:
+
+1. **`memory/errores-aprendidos.md`** del repo (si no existe, crealo; lo más reciente arriba):
+   **qué falló · la causa raíz · cómo se resolvió · la regla para la próxima**.
+2. **La memoria automática de ESTE proyecto** (`~/.claude/projects/<carpeta-de-este-proyecto>/memory/`):
+   un archivo nuevo (o actualizar uno existente) con frontmatter `type: feedback`, el **Why**
+   y el **How to apply**, + su línea en `MEMORY.md`. Esa memoria se carga SOLA en cada sesión:
+   es la que evita repetir el error aunque nadie la busque.
+
+> Por qué doble: el archivo del repo es la bitácora compartida (greppeable, versionada), pero
+> solo sirve si alguien lo lee; `MEMORY.md` llega en cada arranque sin pedirlo. El bug del cert
+> de Railway (2026-07-09) se re-diagnosticó desde cero teniendo la solución escrita en el repo.
+> Y si el problema se resolvió a mitad de sesión, registralo EN ESE MOMENTO — este paso es la
+> red por si se escapó, no el único lugar.
