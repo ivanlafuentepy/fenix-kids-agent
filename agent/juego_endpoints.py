@@ -800,9 +800,12 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
         r = await session.execute(select(JuegoEvento.id).where(
             JuegoEvento.tipo == "llegada", JuegoEvento.nino_nombre == nombre,
             JuegoEvento.timestamp >= corte).limit(1))
-        if r.scalar() is not None:
-            return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
-                    "repetido": True, "confidence": round(best["confidence"], 1)}, headers=_CORS)
+        repetido = r.scalar() is not None
+    if repetido:
+        # el guardián viaja igual: si re-escanea sin avatar, el selector aparece igual
+        return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                "repetido": True, "confidence": round(best["confidence"], 1),
+                "guardian": await _guardian_publico_seguro(nino_id, nombre)}, headers=_CORS)
 
     # asistencia real (best-effort — nunca rompe el saludo)
     try:
@@ -830,7 +833,59 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     await crear_evento("llegada", nombre, None,
                        _payload_llegada_con_dias(dias, {"via": "face", "conf": round(best["confidence"], 1)}))
     return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
-            "oro": oro, "confidence": round(best["confidence"], 1)}, headers=_CORS)
+            "oro": oro, "confidence": round(best["confidence"], 1),
+            "guardian": await _guardian_publico_seguro(nino_id, nombre)}, headers=_CORS)
+
+
+async def _guardian_publico_seguro(nino_id: str, nombre: str) -> dict | None:
+    """Guardián proyectado para la tablet (robot + billetera). None si Airtable
+    falla — el saludo del check-in NUNCA se rompe por esto."""
+    try:
+        g = await _guardian_de_nino(nino_id, nombre)
+        return _guardian_publico(g) if g else None
+    except Exception as e:
+        logger.warning(f"[JUEGO] guardian no disponible para {nombre}: {e}")
+        return None
+
+
+@router.post("/juego/elegir-robot")
+async def juego_elegir_robot(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
+    """El niño elige su Guardián en la tablet tras el check-in facial (SPEC-TOTEM).
+    Idempotente: si ya tiene ROBOT devuelve el actual con ya_tenia=true (tocar dos
+    veces no lo pisa). TODAS las respuestas llevan CORS — el tótem vive en pages.dev."""
+    try:
+        return await _elegir_robot_inner(payload, x_juego_key)
+    except HTTPException as e:
+        return JSONResponse(content={"ok": False, "detail": e.detail},
+                            status_code=e.status_code, headers=_CORS)
+
+
+async def _elegir_robot_inner(payload: dict, x_juego_key: str | None):
+    _auth(x_juego_key)
+    nino_id = str(payload.get("nino_id", "")).strip()
+    robot = str(payload.get("robot", "")).strip().lower()
+    nombre = str(payload.get("nombre", "") or "").strip()[:120]
+    if not nino_id or robot not in ROBOTS_VALIDOS:
+        raise HTTPException(status_code=422, detail=f"nino_id y robot válido requeridos ({', '.join(sorted(ROBOTS_VALIDOS))})")
+
+    guardian = await _guardian_de_nino(nino_id, nombre or "Guardián")
+    if not guardian:
+        raise HTTPException(status_code=404, detail="guardian_no_existe")
+    f = guardian.get("fields", {})
+    if f.get("ROBOT"):
+        return JSONResponse(content={"ok": True, "ya_tenia": True,
+                                     "guardian": _guardian_publico(guardian)}, headers=_CORS)
+
+    # mismo comportamiento que elegir-robot de la app: ROBOT + salir de builder
+    from agent.airtable_client import _patch
+    cambios = {"ROBOT": robot, **({"STAGE": "reto"} if f.get("STAGE") == "builder" else {})}
+    ok = await _patch(_T_GUARDIANES, guardian["id"], cambios)
+    if not ok:
+        raise HTTPException(status_code=502, detail="airtable_no_respondio")
+    f.update(cambios)
+    logger.info(f"[JUEGO] {f.get('NOMBRE') or nino_id} eligió su Guardián: {robot}")
+    return JSONResponse(content={"ok": True, "ya_tenia": False,
+                                 "guardian": _guardian_publico(guardian)}, headers=_CORS)
 
 
 @router.get("/juego/alumnos")
