@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-07-11 — El comando `selfie` no encontraba nombres largos (acentos + multi-palabra)
+
+**Síntoma:** `selfie Fiorella Gonzalez Aguero` (dos nombres/dos apellidos, escrito sin
+tilde) no encontraba al niño; con un solo nombre+apellido sí.
+
+**Causa raíz:** en `fotos.py` la búsqueda tenía DOS ramas: una palabra usaba variantes
+sin/​con acento (tolerante), pero **multi-palabra usaba las palabras crudas** contra
+`FIND` de Airtable, que es sensible a acentos. Como los apellidos compuestos casi siempre
+llevan tilde en el dato (González, Rodríguez) y se escriben sin ella, el AND por palabra
+nunca matcheaba. No era "dos nombres y dos apellidos" — era acentos en cualquier búsqueda
+de 2+ palabras.
+
+**Fix (commit 556f15e):** unificar las dos ramas — cada palabra matchea por OR de sus
+variantes de acento (la palabra, sin acentos, y con una vocal acentuada) sobre
+NOMBRE/APODO/APELLIDO, y AND entre palabras. Probado con positivos sin/con tilde, una
+palabra y negativos.
+
+**How to apply:** Airtable `FIND`/`SEARCH` NO ignora acentos. Cualquier búsqueda de texto
+por nombre debe generar variantes de acento por palabra (o comparar sobre un campo
+normalizado). Si hay una rama "tolerante" y otra "cruda", tarde o temprano la cruda muerde.
+
+---
+
 ## 2026-07-11 — Dos Fiorellas: el gate de llegada por NOMBRE dejó a la segunda sin oro
 
 **Síntoma:** Fiorella González llegó, el Espejo la reconoció, pero "monedas: 0" — sin
