@@ -233,45 +233,40 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         # Buscar niño en Airtable por nombre/apodo (solo NIÑOS FENIX)
         import unicodedata
         nombre_norm = nombre_buscar.lower().strip()
-        # Variante sin acentos para búsqueda tolerante
-        nombre_sin_acento = ''.join(
-            c for c in unicodedata.normalize('NFD', nombre_norm)
-            if unicodedata.category(c) != 'Mn'
-        )
-        # Variante con acentos comunes (cesar→césar, etc.)
-        _acento_map = {'a': 'á', 'e': 'é', 'i': 'í', 'o': 'ó', 'u': 'ú'}
-        _variantes_acento = set()
-        for i, c in enumerate(nombre_sin_acento):
-            if c in _acento_map:
-                _variantes_acento.add(nombre_sin_acento[:i] + _acento_map[c] + nombre_sin_acento[i+1:])
 
-        # Construir búsqueda: nombre exacto + sin acento + variantes con acento
-        _buscar_nombres = [nombre_norm]
-        if nombre_sin_acento != nombre_norm:
-            _buscar_nombres.append(nombre_sin_acento)
-        _buscar_nombres.extend(_variantes_acento)
-        # Eliminar duplicados manteniendo orden
-        _buscar_nombres = list(dict.fromkeys(_buscar_nombres))
+        def _variantes_palabra(palabra: str) -> list[str]:
+            """Variantes tolerantes a acentos de UNA palabra: la palabra tal cual,
+            su versión sin acentos, y las que acentúan una vocal (gonzalez→gonzález,
+            rodriguez→rodríguez). Airtable FIND es sensible a acentos, así que sin
+            esto un apellido con tilde no matchea cuando se escribe sin ella."""
+            p = palabra.strip()
+            sin = ''.join(c for c in unicodedata.normalize('NFD', p)
+                          if unicodedata.category(c) != 'Mn')
+            variantes = {p, sin}
+            _amap = {'a': 'á', 'e': 'é', 'i': 'í', 'o': 'ó', 'u': 'ú'}
+            for i, c in enumerate(sin):
+                if c in _amap:
+                    variantes.add(sin[:i] + _amap[c] + sin[i+1:])
+            return list(variantes)
 
         # Buscar SOLO en NIÑOS FENIX — PRUEBA FENIX está en retiro (migración
         # 2026-06): los niños de prueba también se crean en NIÑOS via
         # crear_familia_a_prueba, así que buscar en PRUEBA duplicaba candidatos
         # del mismo niño. El camino _es_prueba queda solo por compat con
         # preseleccionados viejos.
-        # Si hay múltiples palabras ("max lee"), buscar registros que contengan TODAS
-        _palabras = nombre_norm.split()
-        if len(_palabras) > 1:
-            # Multi-palabra: AND de cada palabra en NOMBRE/APODO/APELLIDO
-            _and_ninos = [f"OR(FIND('{p}', LOWER({{NOMBRE}})), FIND('{p}', LOWER({{APODO}})), FIND('{p}', LOWER({{APELLIDO}})))" for p in _palabras]
-            _formula_ninos = f"AND({','.join(_and_ninos)})"
-        else:
-            # Una palabra: OR de variantes con/sin acentos
-            _or_parts_ninos = []
-            for _bn in _buscar_nombres:
-                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APODO}}))")
-                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
-                _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APELLIDO}}))")
-            _formula_ninos = f"OR({','.join(_or_parts_ninos)})"
+        # Cada palabra ("dara isabella oviedo rodriguez") debe aparecer en algún
+        # campo → AND de palabras; cada palabra matchea por cualquiera de sus
+        # variantes de acento → OR de variantes sobre NOMBRE/APODO/APELLIDO.
+        _palabras = nombre_norm.split() or [nombre_norm]
+        _and_ninos = []
+        for _p in _palabras:
+            _ors = []
+            for _v in _variantes_palabra(_p):
+                _ors.append(f"FIND('{_v}', LOWER({{NOMBRE}}))")
+                _ors.append(f"FIND('{_v}', LOWER({{APODO}}))")
+                _ors.append(f"FIND('{_v}', LOWER({{APELLIDO}}))")
+            _and_ninos.append(f"OR({','.join(_ors)})")
+        _formula_ninos = _and_ninos[0] if len(_and_ninos) == 1 else f"AND({','.join(_and_ninos)})"
 
         _records_ninos = await _get_records(_NINOS, formula=_formula_ninos, max_records=5)
 
