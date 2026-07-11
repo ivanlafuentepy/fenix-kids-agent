@@ -157,6 +157,11 @@ from agent.inscripcion import (
     _inscripcion_pendiente,
 )
 
+# ── Cargar niño: alta directa a FAMILIAS via Meta Flow (agent/cargar_nino.py) ──
+from agent.cargar_nino import (
+    enviar_formulario_cargar_nino, procesar_formulario_cargar_nino,
+)
+
 # ── Fotos y reconocimiento facial (extraído a agent/fotos.py) ──
 from agent.fotos import (
     _iniciar_modo_fotos, _acumular_foto, _finalizar_fotos, _confirmar_fotos,
@@ -2730,6 +2735,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _procesar_registro_cara(telefono, msg.media_id)
             return
 
+        # ── Comando cargar niño (solo admin): formulario Meta → FAMILIAS ──
+        _texto_cn = texto.lower().strip().replace("ñ", "n")
+        if telefono == admin_phone and _texto_cn.startswith("cargar nino"):
+            try:
+                await enviar_formulario_cargar_nino(telefono)
+            except Exception as e:
+                logger.error(f"[CARGAR-NINO] Error enviando formulario: {e}")
+                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+            return
+
         # ── Comando cargar familia (solo admin) ───────────────────────────
         if telefono == admin_phone and texto.lower().strip().startswith("cargar familia"):
             _resto = texto.strip()[len("cargar familia"):].strip()
@@ -2932,6 +2947,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if telefono == admin_phone and msg.es_boton:
             # Botones de seguimiento (seg_enviado_recXXX / seg_descartado_recXXX)
             btn_raw_id = getattr(msg, 'btn_id', '') or ''
+            # Formulario "cargar niño" completado (Meta Flow → nfm_reply)
+            if btn_raw_id == "flow_completado":
+                _flow_data = getattr(msg, "flow_data", None) or {}
+                if _flow_data.get("flow") == "cargar_nino":
+                    try:
+                        await procesar_formulario_cargar_nino(telefono, _flow_data)
+                    except Exception as e:
+                        logger.error(f"[CARGAR-NINO] Error procesando formulario: {e}")
+                        await proveedor.enviar_mensaje(telefono, f"Error cargando el alumno: {e}")
+                    return
             # Keep-alive ventana 24h: el admin apretó "Sí" → el mensaje entrante
             # ya reabrió la ventana de Meta. Solo confirmamos y cortamos (no se
             # procesa como lead ni se espeja a Telegram).

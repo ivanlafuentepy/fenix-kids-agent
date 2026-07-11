@@ -1,0 +1,259 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "NINO",
+      "title": "Cargar alumno — Niño",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Datos del niño/a"
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "nino_nombre",
+                "label": "Nombre",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "nino_apellido",
+                "label": "Apellido",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "DatePicker",
+                "name": "nino_fecha_nacimiento",
+                "label": "Fecha de nacimiento",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "nino_ci",
+                "label": "Cédula de identidad (si tiene)",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Siguiente: datos del papá",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "PADRE" },
+                  "payload": {
+                    "nino_nombre": "${form.nino_nombre}",
+                    "nino_apellido": "${form.nino_apellido}",
+                    "nino_fecha_nacimiento": "${form.nino_fecha_nacimiento}",
+                    "nino_ci": "${form.nino_ci}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "PADRE",
+      "title": "Cargar alumno — Papá",
+      "data": {
+        "nino_nombre": { "type": "string", "__example__": "Mateo" },
+        "nino_apellido": { "type": "string", "__example__": "González" },
+        "nino_fecha_nacimiento": { "type": "string", "__example__": "1717200000000" },
+        "nino_ci": { "type": "string", "__example__": "6123456" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Datos del papá"
+          },
+          {
+            "type": "TextBody",
+            "text": "Todos opcionales — si no los tenés, pasá directo."
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "padre_nombre",
+                "label": "Nombre",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "padre_apellido",
+                "label": "Apellido",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "padre_ci",
+                "label": "Cédula de identidad",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "padre_telefono",
+                "label": "Teléfono",
+                "input-type": "phone",
+                "required": false
+              },
+              {
+                "type": "DatePicker",
+                "name": "padre_fecha_nacimiento",
+                "label": "Fecha de nacimiento",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "padre_email",
+                "label": "Email",
+                "input-type": "email",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Siguiente: datos de la mamá",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "MADRE" },
+                  "payload": {
+                    "nino_nombre": "${data.nino_nombre}",
+                    "nino_apellido": "${data.nino_apellido}",
+                    "nino_fecha_nacimiento": "${data.nino_fecha_nacimiento}",
+                    "nino_ci": "${data.nino_ci}",
+                    "padre_nombre": "${form.padre_nombre}",
+                    "padre_apellido": "${form.padre_apellido}",
+                    "padre_ci": "${form.padre_ci}",
+                    "padre_telefono": "${form.padre_telefono}",
+                    "padre_fecha_nacimiento": "${form.padre_fecha_nacimiento}",
+                    "padre_email": "${form.padre_email}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "MADRE",
+      "title": "Cargar alumno — Mamá",
+      "terminal": true,
+      "data": {
+        "nino_nombre": { "type": "string", "__example__": "Mateo" },
+        "nino_apellido": { "type": "string", "__example__": "González" },
+        "nino_fecha_nacimiento": { "type": "string", "__example__": "1717200000000" },
+        "nino_ci": { "type": "string", "__example__": "6123456" },
+        "padre_nombre": { "type": "string", "__example__": "Carlos" },
+        "padre_apellido": { "type": "string", "__example__": "González" },
+        "padre_ci": { "type": "string", "__example__": "3456789" },
+        "padre_telefono": { "type": "string", "__example__": "0981123456" },
+        "padre_fecha_nacimiento": { "type": "string", "__example__": "555552000000" },
+        "padre_email": { "type": "string", "__example__": "carlos@gmail.com" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Datos de la mamá"
+          },
+          {
+            "type": "TextBody",
+            "text": "Todos opcionales — si no los tenés, cargá directo."
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "madre_nombre",
+                "label": "Nombre",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "madre_apellido",
+                "label": "Apellido",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "madre_ci",
+                "label": "Cédula de identidad",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "madre_telefono",
+                "label": "Teléfono",
+                "input-type": "phone",
+                "required": false
+              },
+              {
+                "type": "DatePicker",
+                "name": "madre_fecha_nacimiento",
+                "label": "Fecha de nacimiento",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "madre_email",
+                "label": "Email",
+                "input-type": "email",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Cargar alumno",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "flow": "cargar_nino",
+                    "nino_nombre": "${data.nino_nombre}",
+                    "nino_apellido": "${data.nino_apellido}",
+                    "nino_fecha_nacimiento": "${data.nino_fecha_nacimiento}",
+                    "nino_ci": "${data.nino_ci}",
+                    "padre_nombre": "${data.padre_nombre}",
+                    "padre_apellido": "${data.padre_apellido}",
+                    "padre_ci": "${data.padre_ci}",
+                    "padre_telefono": "${data.padre_telefono}",
+                    "padre_fecha_nacimiento": "${data.padre_fecha_nacimiento}",
+                    "padre_email": "${data.padre_email}",
+                    "madre_nombre": "${form.madre_nombre}",
+                    "madre_apellido": "${form.madre_apellido}",
+                    "madre_ci": "${form.madre_ci}",
+                    "madre_telefono": "${form.madre_telefono}",
+                    "madre_fecha_nacimiento": "${form.madre_fecha_nacimiento}",
+                    "madre_email": "${form.madre_email}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
