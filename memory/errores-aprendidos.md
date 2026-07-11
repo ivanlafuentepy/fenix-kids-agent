@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-07-11 — FENIX tiene WABA propio: el Flow "cargar niño" falló por crearse en el WABA de Dorita
+
+**Síntoma:** el comando `cargar niño` respondía "No pude enviar el formulario"; Meta
+devolvía #131009 "flow_id is invalid... belongs to your WhatsApp Business Account".
+
+**Causa raíz:** la doc del repo (scripts/crear_flow_fenix.py, bitácora) decía "Fenix
+vive en el WABA compartido con Salsa Soul (2112324596219739)". FALSO: ese WABA solo
+contiene el número de Dorita (verificado con lista paginada completa). Lo compartido
+es el Business Portfolio; el número de FENIX tiene WABA propio: **896276490105251**.
+La confusión Business Account ≠ WABA venía desde abril. El Flow `fenix_inscripcion`
+(FENIX_FLOW_ID) tiene el mismo problema y nunca hubiera funcionado.
+
+**Cómo se descubrió el WABA:** ningún token disponible (Fenix, Dorita, app token)
+puede listar los WABAs del negocio (falta scope business_management). La única fuente
+es el `entry.id` de cualquier webhook — quedó log permanente en parsear_webhook
+(meta.py): "[META] WABA de este numero".
+
+**Fix:** Flow recreado en 896276490105251 con el PROPIO token de FENIX (administra su
+WABA sin ayuda de Dorita) → FLOW_CARGAR_NINO_ID=2122521084980809 en Railway + restart.
+También corregido WHATSAPP_BUSINESS_ACCOUNT_ID (apuntaba al WABA de Dorita; lo usa CAPI)
+y el token META_ACCESS_TOKEN muerto del .env local. Flow huérfano deprecado.
+
+**How to apply:** flows/plantillas/subscribed_apps de FENIX van SIEMPRE en el WABA
+896276490105251 con el token de FENIX. Pendientes detectados: recrear fenix_inscripcion
+en el WABA correcto cuando se conecte su handler; META_CAPI_ACCESS_TOKEN está muerto
+(error 190) — los eventos CTWA no deben estar llegando.
+
+---
+
 ## 2026-07-11 — El atajo numérico del menú secre pisaba las selecciones pendientes
 
 **Síntoma:** `selfie Horacio González` encontró 2 candidatos y pidió responder con un

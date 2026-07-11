@@ -1,15 +1,15 @@
 """Crea, sube el asset y publica el Flow de cargar alumno (comando admin) vía Graph API.
 
-Fenix vive en el WABA compartido con Salsa Soul (2112324596219739). El token de
-Fenix no tiene rol de management sobre ese WABA, así que para crear/publicar el
-Flow se usa el token de management con acceso al WABA (el de whatsapp-agentkit/Dorita).
+El número de FENIX tiene WABA PROPIO (896276490105251, descubierto vía entry.id
+del webhook el 2026-07-11) — NO está en el WABA de Dorita/Salsa (2112324596219739),
+eso es solo el Business Portfolio compartido. El propio token de FENIX
+(META_ACCESS_TOKEN) administra su WABA: lista números, flows, crea y publica.
 
 Idempotente-ish: si ya existe un flow con el mismo nombre, lo reutiliza.
-Lee el token de management vía la env var META_MGMT_TOKEN, o del .env de
-whatsapp-agentkit como fallback. No imprime el token.
+No imprime el token.
 
 Uso: python scripts/crear_flow_cargar_nino.py
-Réplica de scripts/crear_flow_fenix.py (Flow fenix_inscripcion).
+Ver scripts/crear_flow_fenix.py (Flow fenix_inscripcion — OJO: ese quedó en el WABA equivocado).
 """
 import json
 import os
@@ -20,21 +20,21 @@ import httpx
 
 RAIZ = Path(__file__).resolve().parent.parent
 FLOW_JSON_PATH = RAIZ / "config" / "flows" / "cargar_nino.json"
-WABA_ID = "2112324596219739"  # WABA compartido Fenix + Salsa Soul
+WABA_ID = "896276490105251"  # WABA PROPIO de Fenix (entry.id del webhook)
 FLOW_NAME = "fenix_cargar_nino"
 API = "https://graph.facebook.com/v21.0"
-DORITA_ENV = Path.home() / "Projects" / "whatsapp-agentkit" / ".env"
+FENIX_ENV = RAIZ / ".env"
 
 
 def _token() -> str:
     tok = os.getenv("META_MGMT_TOKEN", "").strip()
     if tok:
         return tok
-    if DORITA_ENV.exists():
-        for linea in DORITA_ENV.read_text(encoding="utf-8").splitlines():
+    if FENIX_ENV.exists():
+        for linea in FENIX_ENV.read_text(encoding="utf-8").splitlines():
             if linea.startswith("META_ACCESS_TOKEN="):
                 return linea.split("=", 1)[1].strip()
-    sys.exit("No hay token de management (seteá META_MGMT_TOKEN o el .env de Dorita).")
+    sys.exit("No hay token (seteá META_MGMT_TOKEN o META_ACCESS_TOKEN en el .env).")
 
 
 def main() -> None:
