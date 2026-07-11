@@ -230,7 +230,7 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
             await proveedor.enviar_mensaje(telefono, f"❌ No encontré el registro preseleccionado")
             return
     else:
-        # Buscar niño en Airtable por nombre/apodo (NIÑOS FENIX + PRUEBA FENIX)
+        # Buscar niño en Airtable por nombre/apodo (solo NIÑOS FENIX)
         import unicodedata
         nombre_norm = nombre_buscar.lower().strip()
         # Variante sin acentos para búsqueda tolerante
@@ -253,15 +253,17 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         # Eliminar duplicados manteniendo orden
         _buscar_nombres = list(dict.fromkeys(_buscar_nombres))
 
-        # Buscar en AMBAS tablas siempre (NIÑOS + PRUEBA) y juntar resultados
+        # Buscar SOLO en NIÑOS FENIX — PRUEBA FENIX está en retiro (migración
+        # 2026-06): los niños de prueba también se crean en NIÑOS via
+        # crear_familia_a_prueba, así que buscar en PRUEBA duplicaba candidatos
+        # del mismo niño. El camino _es_prueba queda solo por compat con
+        # preseleccionados viejos.
         # Si hay múltiples palabras ("max lee"), buscar registros que contengan TODAS
         _palabras = nombre_norm.split()
         if len(_palabras) > 1:
-            # Multi-palabra: AND de cada palabra en NOMBRE/APODO (o NOMBRE HIJO/APELLIDO HIJO)
+            # Multi-palabra: AND de cada palabra en NOMBRE/APODO/APELLIDO
             _and_ninos = [f"OR(FIND('{p}', LOWER({{NOMBRE}})), FIND('{p}', LOWER({{APODO}})), FIND('{p}', LOWER({{APELLIDO}})))" for p in _palabras]
             _formula_ninos = f"AND({','.join(_and_ninos)})"
-            _and_prueba = [f"OR(FIND('{p}', LOWER({{NOMBRE HIJO}})), FIND('{p}', LOWER({{APELLIDO HIJO}})))" for p in _palabras]
-            _formula_prueba = f"AND({','.join(_and_prueba)})"
         else:
             # Una palabra: OR de variantes con/sin acentos
             _or_parts_ninos = []
@@ -270,32 +272,17 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
                 _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{NOMBRE}}))")
                 _or_parts_ninos.append(f"FIND('{_bn}', LOWER({{APELLIDO}}))")
             _formula_ninos = f"OR({','.join(_or_parts_ninos)})"
-            _or_parts_prueba = []
-            for _bn in _buscar_nombres:
-                _or_parts_prueba.append(f"FIND('{_bn}', LOWER({{NOMBRE HIJO}}))")
-                _or_parts_prueba.append(f"FIND('{_bn}', LOWER({{APELLIDO HIJO}}))")
-            _formula_prueba = f"OR({','.join(_or_parts_prueba)})"
 
         _records_ninos = await _get_records(_NINOS, formula=_formula_ninos, max_records=5)
-        _records_prueba = await _get_records(_PRUEBAS, formula=_formula_prueba, max_records=5)
 
-        # Juntar resultados marcando origen
         records = []
         _es_prueba = False
-        # Agregar records de NIÑOS (no son prueba)
         for _r in _records_ninos:
             _r["_es_prueba"] = False
             records.append(_r)
-        # Agregar records de PRUEBA
-        for _r in _records_prueba:
-            _r["_es_prueba"] = True
-            records.append(_r)
-        # Si todos son de prueba, marcar flag
-        if records and all(r.get("_es_prueba") for r in records):
-            _es_prueba = True
 
         if not records:
-            await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS ni PRUEBA FENIX")
+            await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS FENIX")
             return
 
     if len(records) > 1:
