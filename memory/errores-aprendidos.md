@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-07-11 — El video del tótem tardaba y se cortaba: Cloudflare Pages sirve TODO con cache 0
+
+**Síntoma:** en la TV del tótem el video del Fenix (fenix_saludo.mp4) tardaba en cargar,
+se veía un segundo y se cortaba, "cargando el mp4 desde cero" cada vez. El archivo local
+y el de prod eran idénticos y correctos (5s, 590KB, faststart OK).
+
+**Causa raíz:** Cloudflare Pages sirve por defecto TODOS los archivos con
+`Cache-Control: public, max-age=0, must-revalidate`. En el navegador de la TV (flojo)
+eso obliga a re-pedir/revalidar el video a la red en cada reproducción/reload en vez de
+usar el cacheado → buffering, corte al segundo. No era el archivo ni el `<video>` (ya
+tenía loop + preload=auto); era el header.
+
+**Fix:** archivo `mundo-fenix/_headers` (Pages lo respeta en direct upload) que cachea
+`/assets/*` con `max-age=2592000` (30 días). El HTML queda SIN cachear a propósito para
+no romper el auto-reload kiosk. La TV baja cada asset una vez y lo reproduce del cache.
+
+**How to apply:** en cualquier página kiosk de Pages, los assets pesados (video/audio/
+imágenes) necesitan `_headers` con cache largo — el default max-age=0 los re-baja siempre.
+Si reemplazás un asset con el MISMO nombre, la TV lo ve viejo hasta 30 días → cache purge
+en Cloudflare o renombrar (ej `_v2`). Diagnóstico: `curl -sD - -o /dev/null <asset>` y
+mirar el Cache-Control real de prod ANTES de tocar el archivo o el frontend.
+
+---
+
 ## 2026-07-11 — El comando `selfie` no encontraba nombres largos (acentos + multi-palabra)
 
 **Síntoma:** `selfie Fiorella Gonzalez Aguero` (dos nombres/dos apellidos, escrito sin
