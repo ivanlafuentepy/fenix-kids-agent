@@ -58,6 +58,12 @@ No existe "cambio chico". El crash del 11/05 fue por "cambios chicos" juntos.
 Dependencias en `requirements.txt`. No agregar librerías sin avisar.
 Google Calendar fue **eliminado** — no reintroducirlo.
 
+**WABA propio de FENIX: `896276490105251`** — flows, plantillas y subscribed_apps
+van AHÍ con el token de FENIX (que administra su WABA solo). Con Salsa/Dorita se
+comparte únicamente el Business Portfolio (`1793368704086327`), NO el WABA — la doc
+vieja que decía "WABA compartido 2112324596219739" era falsa (error #131009 del
+2026-07-11, ver `memory/errores-aprendidos.md`).
+
 ### Flujo de un mensaje (real)
 
 ```
