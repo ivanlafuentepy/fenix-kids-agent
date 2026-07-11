@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-07-11 — Dos Fiorellas: el gate de llegada por NOMBRE dejó a la segunda sin oro
+
+**Síntoma:** Fiorella González llegó, el Espejo la reconoció, pero "monedas: 0" — sin
+oro, sin movimiento, sin asistencia. Fiorella Perinetto (llegó antes) tenía todo bien.
+
+**Causa raíz:** el "¿ya llegó hoy?" del checkin-face buscaba en `juego_eventos` por
+`nino_nombre` — que guarda solo el NOMBRE de pila ("Fiorella"). La segunda Fiorella
+matcheó la llegada de la primera → repetido=True → se salteó oro + asistencia + evento.
+
+**Fix (commit d673c70):** repetido = `ult_oro_llegada == hoy` en el ESTADO JSON del
+guardián del niño — gate DIARIO POR NIÑO que ya existía para el oro (cross-canal con
+NFC). Se eliminó la consulta por nombre. Datos reparados a mano (+10, movimiento,
+gate, asistencia) dejando `presentar_avatar` pendiente para que la TV la celebre.
+
+**How to apply:** en el juego NUNCA identificar niños por nombre de pila — siempre
+`nino_id` (Airtable record) o gates en el estado del guardián. `nino_nombre` en
+eventos es SOLO display para TV/mapa. Ojo con hermanos y tocayos: es el caso normal,
+no el edge case.
+
+---
+
 ## 2026-07-11 — FENIX tiene WABA propio: el Flow "cargar niño" falló por crearse en el WABA de Dorita
 
 **Síntoma:** el comando `cargar niño` respondía "No pude enviar el formulario"; Meta
