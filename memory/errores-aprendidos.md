@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-07-11 — La asistencia por FACE nunca se creó (select sin la opción)
+
+**Síntoma:** ASISTENCIA FENIX tenía UN solo registro histórico (QR 06/06) pese a que
+`checkin-face` llama `crear_asistencia(..., metodo="FACE")` en cada llegada desde el 08/07.
+
+**Causa raíz:** el campo `MÉTODO` es un single-select que solo tenía la opción "QR" —
+cada POST con "FACE" devolvía 422 `INVALID_MULTIPLE_CHOICE_OPTIONS`, y el try/except
+best-effort del check-in lo tragaba sin que nadie lo viera.
+
+**Fix:** crear la opción una sola vez con un POST con `"typecast": true` (crea la opción
+del select si el token tiene permiso de creator) y borrar el registro de prueba. El
+código no cambió — ahora el POST normal funciona.
+
+**How to apply:** clásico airtable-seguro — un flujo "best-effort" que escribe en un
+select AJENO al código necesita que la opción exista EXACTA. Ante una tabla que "no se
+llena", probar a mano el POST exacto del código y mirar el 422. `typecast:true` es la
+salida para crear opciones sin ir al UI de Airtable.
+
+---
+
 ## 2026-07-11 — La tablet/TV no reciben los deploys de mundo-fenix (bug "AlanTest")
 
 **Síntoma:** Iván probó el check-in facial como AlanTest (sin avatar) y el tótem fusionó
