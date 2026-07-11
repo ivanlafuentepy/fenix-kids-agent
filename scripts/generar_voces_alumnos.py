@@ -4,47 +4,39 @@ Genera los MP3 que la TV reproduce cuando un niño llega/completa vuelta/vence
 dragón/halla tesoro. Voz George de ElevenLabs, pre-generados (costo ~cero en
 runtime: se generan UNA vez por alumno y la TV solo reproduce archivos).
 
+Desde que crear_nino() dispara la generación automática al inscribir un
+alumno (agent/voces_alumnos.py), este script sirve para:
+  - regenerar audios borrados/corruptos a mano
+  - correr un barrido manual si algo quedó pendiente (ej. corte por quota)
+
 Uso:
     python scripts/generar_voces_alumnos.py --dry              # cuenta chars/costo, no gasta
     python scripts/generar_voces_alumnos.py --nombres "Mateo,Lola"   # subset
     python scripts/generar_voces_alumnos.py                    # todos los ACTIVOS
 
-Requiere env ELEVENLABS_API_KEY (la tiene Iván — plan free: 10k chars/mes).
+Requiere env ELEVENLABS_API_KEY (la tiene Iván).
 Salida: mundo-fenix/assets/voz/{escena}_{nombre}.mp3 (nombre normalizado:
 minúsculas sin tildes — convención de tvVoz() en index.html).
 """
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
-import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-import httpx
+_handler = logging.StreamHandler()
+_handler.setFormatter(logging.Formatter("%(message)s"))
+_agentkit_logger = logging.getLogger("agentkit")
+_agentkit_logger.setLevel(logging.INFO)
+_agentkit_logger.addHandler(_handler)
+_agentkit_logger.propagate = False
 
-VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"          # George
-MODEL = "eleven_multilingual_v2"
-SETTINGS = {"stability": 0.45, "similarity_boost": 0.8, "style": 0.4}
-OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       "mundo-fenix", "assets", "voz")
-
-# Guiones por escena (SPEC-TOTEM 4E) — {n} = nombre del niño
-GUIONES = {
-    "llegada": "¡{n} llegó a La Casona! El Guardián Fenix te da la bienvenida, campeón. Ganaste diez monedas de oro… ¡que comience la aventura!",
-    "vuelta":  "¡Increíble, {n}! Vuelta completada… el cofre del tesoro está cada vez más cerca. ¡Seguí así, Guardián!",
-    "dragon":  "¡{n} venció al dragón! La Casona respira tranquila gracias a vos. Ganaste una nueva insignia… ¡sos una leyenda!",
-    "tesoro":  "¡{n} encontró el cofre del Capitán! Trescientas monedas de plata para el héroe del día. ¡La Casona entera te aplaude!",
-}
-
-
-def norm(nombre: str) -> str:
-    """mateo, lola… minúsculas sin tildes (convención tvVoz de index.html)."""
-    s = unicodedata.normalize("NFD", nombre.strip().lower())
-    return "".join(c for c in s if c.isalnum())
+from agent.voces_alumnos import GUIONES, generar_audios_nino
 
 
 async def alumnos_activos() -> list[str]:
@@ -58,27 +50,6 @@ async def alumnos_activos() -> list[str]:
             if nino.get("nombre"):
                 nombres.append(nino["nombre"].strip())
     return sorted(set(nombres))
-
-
-async def generar(nombre: str, escena: str, texto: str, key: str) -> bool:
-    path = os.path.join(OUT_DIR, f"{escena}_{norm(nombre)}.mp3")
-    if os.path.exists(path):
-        print(f"  ya existe: {os.path.basename(path)}")
-        return True
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
-            headers={"xi-api-key": key, "Content-Type": "application/json"},
-            json={"text": texto, "model_id": MODEL, "voice_settings": SETTINGS},
-            timeout=60,
-        )
-        if r.status_code != 200:
-            print(f"  ERROR {escena}_{norm(nombre)}: {r.status_code} {r.text[:150]}")
-            return False
-        with open(path, "wb") as f:
-            f.write(r.content)
-        print(f"  ok: {os.path.basename(path)} ({len(r.content)//1024} KB)")
-        return True
 
 
 async def main():
@@ -99,19 +70,14 @@ async def main():
     if args.dry:
         return
 
-    key = os.getenv("ELEVENLABS_API_KEY", "")
-    if not key:
+    if not os.getenv("ELEVENLABS_API_KEY", ""):
         print("FALTA env ELEVENLABS_API_KEY — cargala en .env y re-corré.")
         sys.exit(1)
-    os.makedirs(OUT_DIR, exist_ok=True)
+
     for n in nombres:
         print(f"{n}:")
-        for escena, guion in GUIONES.items():
-            ok = await generar(n, escena, guion.format(n=n), key)
-            if not ok:
-                print("Corte por error (¿quota?) — lo generado queda, re-corré después.")
-                return
-            await asyncio.sleep(0.4)   # gentil con el rate limit
+        await generar_audios_nino(n)
+        await asyncio.sleep(0.4)   # gentil con el rate limit
 
 
 if __name__ == "__main__":

@@ -831,6 +831,10 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
     resultado = await _post(_NINOS, campos)
     if resultado:
         logger.info(f"Niño creado: {resultado['id']} en familia {familia_id}")
+        if datos_nino.get("nombre"):
+            from agent.concurrencia import _fire_and_forget
+            from agent.voces_alumnos import generar_audios_nino
+            _fire_and_forget(generar_audios_nino(datos_nino["nombre"]))
         return resultado["id"]
     return None
 
