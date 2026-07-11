@@ -1077,6 +1077,7 @@ async def juego_dia():
         item = {
             "nino_id": (f.get("NINO ID") or "").strip(),
             "nombre": (f.get("NOMBRE") or "").strip(),
+            "apellido": "",
             "robot": f.get("ROBOT") or None,
             "vueltas_hoy": 0, "oro_hoy": 0, "plata_hoy": 0,
             "oro_total": int(f.get("ORO") or 0),
@@ -1088,6 +1089,14 @@ async def juego_dia():
         if item["nino_id"]:
             por_nino_id[item["nino_id"]] = item
         por_nombre[item["nombre"].lower()] = item
+
+    # 1b) Apellido — GUARDIANES no lo guarda; lo trae NIÑOS FENIX vía NINO ID
+    if por_nino_id:
+        from agent.airtable_client import _NINOS
+        for r in await _get_records(_NINOS, max_records=500):
+            item = por_nino_id.get(r.get("id", ""))
+            if item:
+                item["apellido"] = (r.get("fields", {}).get("APELLIDO") or "").strip()
 
     # 2) Monedas ganadas hoy — movimientos positivos desde la medianoche PY (en UTC)
     if ninos:
