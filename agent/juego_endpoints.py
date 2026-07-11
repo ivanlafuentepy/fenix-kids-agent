@@ -245,6 +245,16 @@ def _hoy_py() -> str:
     return datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
 
 
+def _hoy0_utc() -> datetime:
+    """Medianoche de HOY en Paraguay expresada en UTC naive — comparable con los
+    timestamps de la DB (que se guardan con utcnow)."""
+    from zoneinfo import ZoneInfo
+    from datetime import timezone
+    hoy0 = datetime.now(ZoneInfo("America/Asuncion")).replace(hour=0, minute=0,
+                                                              second=0, microsecond=0)
+    return hoy0.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 async def _validar_nino_de_familia(codigo: str, nino_id: str):
     """codigo → familia; el niño DEBE pertenecerle. Devuelve (familia, guardian)."""
     familia = await _familia_por_codigo(codigo)
@@ -794,12 +804,12 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     if not nombre:
         return JSONResponse(content={"ok": False, "motivo": "nino_sin_datos"}, headers=_CORS)
 
-    # cooldown 5 min por niño
+    # ¿ya llegó HOY (fecha PY)? — la 2ª pasada del día es "repetido": el tótem pregunta
+    # por la vuelta del circuito en vez de re-celebrar la llegada (igual que el NFC)
     async with async_session() as session:
-        corte = datetime.utcnow() - timedelta(minutes=COOLDOWN_LLEGADA_MIN)
         r = await session.execute(select(JuegoEvento.id).where(
             JuegoEvento.tipo == "llegada", JuegoEvento.nino_nombre == nombre,
-            JuegoEvento.timestamp >= corte).limit(1))
+            JuegoEvento.timestamp >= _hoy0_utc()).limit(1))
         repetido = r.scalar() is not None
     if repetido:
         # el guardián viaja igual: si re-escanea sin avatar, el selector aparece igual
@@ -885,6 +895,64 @@ async def _elegir_robot_inner(payload: dict, x_juego_key: str | None):
     f.update(cambios)
     logger.info(f"[JUEGO] {f.get('NOMBRE') or nino_id} eligió su Guardián: {robot}")
     return JSONResponse(content={"ok": True, "ya_tenia": False,
+                                 "guardian": _guardian_publico(guardian)}, headers=_CORS)
+
+
+# ═══════════════ VUELTAS POR CARA — puente hasta que lleguen los lectores NFC ═══════════════
+# El niño completa la vuelta, se escanea, y confirma en la tablet ("¿completaste una
+# vuelta?") con el profe supervisando. Cada SÍ acredita plata REAL a la billetera.
+
+VUELTA_FACE_MIN_SEG = int(os.getenv("JUEGO_VUELTA_FACE_MIN_SEG", "120"))  # anti doble-tap
+
+
+@router.post("/juego/vuelta-face")
+async def juego_vuelta_face(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
+    """Vuelta del circuito confirmada en la tablet (sin NFC): plata a la billetera +
+    registro en juego_vueltas (uid FACE:{nino_id}) + evento para la TV. CORS siempre."""
+    try:
+        return await _vuelta_face_inner(payload, x_juego_key)
+    except HTTPException as e:
+        return JSONResponse(content={"ok": False, "detail": e.detail},
+                            status_code=e.status_code, headers=_CORS)
+
+
+async def _vuelta_face_inner(payload: dict, x_juego_key: str | None):
+    _auth(x_juego_key)
+    nino_id = str(payload.get("nino_id", "")).strip()
+    nombre = str(payload.get("nombre", "") or "").strip()[:120]
+    if not nino_id or not nombre:
+        raise HTTPException(status_code=422, detail="nino_id y nombre requeridos")
+    uid = f"FACE:{nino_id}"[:40]
+
+    async with async_session() as session:
+        # anti doble-tap: mínimo N segundos entre vueltas del mismo niño
+        ult = await session.execute(select(JuegoVuelta.cerrada).where(JuegoVuelta.uid == uid)
+                                    .order_by(JuegoVuelta.cerrada.desc()).limit(1))
+        ultima = ult.scalar()
+        if ultima and (datetime.utcnow() - ultima).total_seconds() < VUELTA_FACE_MIN_SEG:
+            raise HTTPException(status_code=409, detail="vuelta_muy_rapida")
+        hechas = await session.execute(select(JuegoVuelta.id).where(
+            JuegoVuelta.uid == uid, JuegoVuelta.cerrada >= _hoy0_utc()))
+        numero = len(list(hechas.scalars().all())) + 1
+
+    plata = PLATA_VUELTA + (BONUS_5_VUELTAS if numero == 5 else 0) + (BONUS_10_VUELTAS if numero == 10 else 0)
+
+    # plata REAL a la billetera (el guardián ya existe por el flujo de llegada/avatar)
+    guardian = await _guardian_de_nino(nino_id, nombre)
+    if not guardian:
+        raise HTTPException(status_code=404, detail="guardian_no_existe")
+    await _acreditar(guardian, "plata", plata, f"Vuelta {numero} del circuito")
+
+    async with async_session() as session:
+        session.add(JuegoVuelta(uid=uid, nino_nombre=nombre, numero_dia=numero,
+                                estaciones_ok=0, plata=plata))
+        await session.commit()
+
+    robot = guardian.get("fields", {}).get("ROBOT") or None
+    sub = f"¡Bonus de {numero} vueltas!" if numero in (5, 10) else ""
+    await crear_evento("vuelta", nombre, robot, {"v": numero, "coins": f"+{plata} 🥈", "sub": sub})
+    logger.info(f"[JUEGO] vuelta-face #{numero} de {nombre} (+{plata} plata)")
+    return JSONResponse(content={"ok": True, "numero": numero, "plata": plata,
                                  "guardian": _guardian_publico(guardian)}, headers=_CORS)
 
 
