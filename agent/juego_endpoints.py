@@ -1008,6 +1008,81 @@ async def juego_estaciones():
                         headers=_CORS)
 
 
+@router.get("/juego/dia")
+async def juego_dia():
+    """Resumen del día para la TV lista: niños que llegaron HOY con sus vueltas,
+    monedas ganadas en el día y saldo total. Público con CORS (misma política que
+    /juego/eventos: nombres de pila + números del juego, sin datos sensibles).
+
+    Fuentes: GUARDIANES (gate ult_oro_llegada en ESTADO JSON = llegó hoy, y saldos
+    ORO/PLATA), MOVIMIENTOS BRASAS (ganado hoy por CREATED_TIME) y juego_vueltas
+    en Postgres (vueltas cerradas hoy, uid FACE:{nino_id} o pulsera NFC)."""
+    from agent.airtable_client import _get_records
+    hoy = _hoy_py()
+
+    # 1) Quiénes llegaron hoy — el gate diario vive como texto dentro de ESTADO JSON
+    #    (json.dumps escribe exactamente '"ult_oro_llegada": "YYYY-MM-DD"')
+    formula_g = f"FIND('\"ult_oro_llegada\": \"{hoy}\"', {{ESTADO JSON}})"
+    guardianes = await _get_records(_T_GUARDIANES, formula=formula_g, max_records=300)
+
+    ninos: dict[str, dict] = {}          # guardian_id → item
+    por_nino_id: dict[str, dict] = {}    # nino_id → item (para cruzar vueltas)
+    por_nombre: dict[str, dict] = {}     # nombre lower → item (fallback pulseras viejas)
+    for g in guardianes:
+        f = g.get("fields", {})
+        item = {
+            "nino_id": (f.get("NINO ID") or "").strip(),
+            "nombre": (f.get("NOMBRE") or "").strip(),
+            "robot": f.get("ROBOT") or None,
+            "vueltas_hoy": 0, "oro_hoy": 0, "plata_hoy": 0,
+            "oro_total": int(f.get("ORO") or 0),
+            "plata_total": int(f.get("PLATA") or 0),
+        }
+        if not item["nombre"]:
+            continue
+        ninos[g["id"]] = item
+        if item["nino_id"]:
+            por_nino_id[item["nino_id"]] = item
+        por_nombre[item["nombre"].lower()] = item
+
+    # 2) Monedas ganadas hoy — movimientos positivos desde la medianoche PY (en UTC)
+    if ninos:
+        corte_utc = _hoy0_utc().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        movs = await _get_records(
+            _T_MOVIMIENTOS, formula=f"IS_AFTER(CREATED_TIME(), '{corte_utc}')", max_records=1000)
+        for m in movs:
+            fm = m.get("fields", {})
+            item = ninos.get((fm.get("GUARDIAN ID") or "").strip())
+            monto = int(fm.get("MONTO") or 0)
+            if not item or monto <= 0:
+                continue
+            if fm.get("MONEDA") == "oro":
+                item["oro_hoy"] += monto
+            else:
+                item["plata_hoy"] += monto
+
+    # 3) Vueltas cerradas hoy (Postgres) — FACE:{nino_id} directo; NFC via pulsera
+    async with async_session() as session:
+        rows = (await session.execute(
+            select(JuegoVuelta).where(JuegoVuelta.cerrada >= _hoy0_utc()))).scalars().all()
+        for v in rows:
+            item = None
+            if v.uid.startswith("FACE:"):
+                item = por_nino_id.get(v.uid[5:])
+            else:
+                p = await _pulsera_por_uid(session, v.uid)
+                if p and p.nino_airtable_id:
+                    item = por_nino_id.get(p.nino_airtable_id)
+            if not item:
+                item = por_nombre.get((v.nino_nombre or "").strip().lower())
+            if item:
+                item["vueltas_hoy"] += 1
+
+    lista = sorted(ninos.values(),
+                   key=lambda x: (-(x["oro_hoy"] + x["plata_hoy"]), -x["vueltas_hoy"], x["nombre"]))
+    return JSONResponse(content={"ok": True, "fecha": hoy, "ninos": lista}, headers=_CORS)
+
+
 @router.get("/juego/eventos")
 async def juego_eventos(since: int = 0):
     """Polling de la TV/mapa. since=0 → no repite historia: devuelve solo el último id
