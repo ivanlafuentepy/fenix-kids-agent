@@ -282,6 +282,24 @@ async def _acreditar(guardian: dict, moneda: str, monto: int, motivo: str,
     cambios = {campo: nuevo_saldo}
     if cambios_extra:
         cambios.update(cambios_extra)
+    # "Ganado hoy" para el video: acumula SOLO ganancias (monto>0), reset por día PY.
+    # Merge sobre el ESTADO JSON que el caller ya haya puesto en cambios_extra (para
+    # no pisar ult_oro_llegada / ult_reto_dia / etc.). Cae también en oro y plata.
+    if monto > 0:
+        _src = cambios.get("ESTADO JSON")
+        if _src is None:
+            _src = f.get("ESTADO JSON") or "{}"
+        try:
+            _est_hoy = json.loads(_src)
+        except (json.JSONDecodeError, TypeError):
+            _est_hoy = {}
+        _hoy = _hoy_py()
+        if _est_hoy.get("hoy_fecha") != _hoy:
+            _est_hoy["hoy_fecha"] = _hoy
+            _est_hoy["hoy_oro"] = 0
+            _est_hoy["hoy_plata"] = 0
+        _est_hoy["hoy_" + moneda] = int(_est_hoy.get("hoy_" + moneda, 0)) + monto
+        cambios["ESTADO JSON"] = json.dumps(_est_hoy, ensure_ascii=False)
     ok = await _patch(_T_GUARDIANES, guardian["id"], cambios)
     if not ok:
         raise HTTPException(status_code=502, detail="airtable_no_respondio")
@@ -950,8 +968,16 @@ async def _vuelta_face_inner(payload: dict, x_juego_key: str | None):
         raise HTTPException(status_code=422, detail="nino_id y nombre requeridos")
     uid = f"FACE:{nino_id}"[:40]
 
+    # Cantidad de vueltas que el profe cuenta en la tablet (default 1). Tope de
+    # seguridad para que un typo no acredite miles: máx 20 de una.
+    try:
+        cantidad = int(payload.get("cantidad", 1) or 1)
+    except (TypeError, ValueError):
+        cantidad = 1
+    cantidad = max(1, min(cantidad, 20))
+
     async with async_session() as session:
-        # anti doble-tap: mínimo N segundos entre vueltas del mismo niño
+        # anti doble-tap: mínimo N segundos entre registros del mismo niño
         ult = await session.execute(select(JuegoVuelta.cerrada).where(JuegoVuelta.uid == uid)
                                     .order_by(JuegoVuelta.cerrada.desc()).limit(1))
         ultima = ult.scalar()
@@ -959,27 +985,45 @@ async def _vuelta_face_inner(payload: dict, x_juego_key: str | None):
             raise HTTPException(status_code=409, detail="vuelta_muy_rapida")
         hechas = await session.execute(select(JuegoVuelta.id).where(
             JuegoVuelta.uid == uid, JuegoVuelta.cerrada >= _hoy0_utc()))
-        numero = len(list(hechas.scalars().all())) + 1
+        ya_hechas = len(list(hechas.scalars().all()))
 
-    plata = PLATA_VUELTA + (BONUS_5_VUELTAS if numero == 5 else 0) + (BONUS_10_VUELTAS if numero == 10 else 0)
+    # plata de las N vueltas — el bonus es por acumulado del día (la vuelta 5 y la 10)
+    def _plata_de(numero: int) -> int:
+        return PLATA_VUELTA + (BONUS_5_VUELTAS if numero == 5 else 0) + (BONUS_10_VUELTAS if numero == 10 else 0)
+    numeros = [ya_hechas + 1 + k for k in range(cantidad)]
+    numero_final = numeros[-1]
+    plata_total = sum(_plata_de(n) for n in numeros)
 
     # plata REAL a la billetera (el guardián ya existe por el flujo de llegada/avatar)
     guardian = await _guardian_de_nino(nino_id, nombre)
     if not guardian:
         raise HTTPException(status_code=404, detail="guardian_no_existe")
-    await _acreditar(guardian, "plata", plata, f"Vuelta {numero} del circuito")
+    motivo = (f"{cantidad} vueltas del circuito (#{numeros[0]}–#{numero_final})"
+              if cantidad > 1 else f"Vuelta {numero_final} del circuito")
+    await _acreditar(guardian, "plata", plata_total, motivo)
 
     async with async_session() as session:
-        session.add(JuegoVuelta(uid=uid, nino_nombre=nombre, numero_dia=numero,
-                                estaciones_ok=0, plata=plata))
+        for numero in numeros:
+            session.add(JuegoVuelta(uid=uid, nino_nombre=nombre, numero_dia=numero,
+                                    estaciones_ok=0, plata=_plata_de(numero)))
         await session.commit()
 
+    # totales de billetera + lo ganado hoy (lo puso _acreditar en ESTADO JSON)
+    gp = _guardian_publico(guardian)
+    _est = gp.get("estado", {}) or {}
+    hoy_oro = int(_est.get("hoy_oro", 0))
+    hoy_plata = int(_est.get("hoy_plata", 0))
     robot = guardian.get("fields", {}).get("ROBOT") or None
-    sub = f"¡Bonus de {numero} vueltas!" if numero in (5, 10) else ""
-    await crear_evento("vuelta", nombre, robot, {"v": numero, "coins": f"+{plata} 🥈", "sub": sub})
-    logger.info(f"[JUEGO] vuelta-face #{numero} de {nombre} (+{plata} plata)")
-    return JSONResponse(content={"ok": True, "numero": numero, "plata": plata,
-                                 "guardian": _guardian_publico(guardian)}, headers=_CORS)
+    _bonus = [n for n in numeros if n in (5, 10)]
+    sub = (f"¡Bonus de {_bonus[-1]} vueltas!" if _bonus
+           else (f"¡{cantidad} vueltas de una! 🔥" if cantidad > 1 else ""))
+    await crear_evento("vuelta", nombre, robot, {
+        "v": numero_final, "cantidad": cantidad, "coins": f"+{plata_total} 🥈", "sub": sub,
+        "oro_total": gp["oro"], "plata_total": gp["plata"],
+        "hoy_oro": hoy_oro, "hoy_plata": hoy_plata})
+    logger.info(f"[JUEGO] vuelta-face x{cantidad} de {nombre} (#{numero_final}, +{plata_total} plata)")
+    return JSONResponse(content={"ok": True, "numero": numero_final, "cantidad": cantidad,
+                                 "plata": plata_total, "guardian": gp}, headers=_CORS)
 
 
 @router.get("/juego/alumnos")
