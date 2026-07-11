@@ -2476,7 +2476,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `cargar familia [nombre padre]` — inscribir familia desde PRUEBA\n\n"
                 "📸 *Fotos (reconocimiento facial):*\n"
                 "• `fotos 9:30` / `fotos 11` / `fotos 15:30` — modo fotos de clase\n"
-                "• `registrar cara [nombre]` — registrar cara de un niño nuevo\n\n"
+                "• `selfie [nombre]` (o `registrar cara [nombre]`) — registrar cara de un niño\n\n"
                 "🔄 *Reset:*\n"
                 "• `modo padre` — reset completo + entrar como padre nuevo\n"
                 "• `modo alumno` — reset conversación, simular padre inscripto\n"
@@ -2672,18 +2672,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _iniciar_modo_fotos(telefono, texto)
             return
 
-        # ── Comando "registrar cara [nombre]" (solo admin) ────────────────
-        # Acepta: texto "registrar cara matheo" (sin foto) O imagen con caption "registrar cara matheo"
+        # ── Comando "selfie [nombre]" / "registrar cara [nombre]" (solo admin) ────
+        # Acepta: texto "selfie matheo" (sin foto) O imagen con caption "selfie matheo".
+        # "selfie" es el alias que Iván ya usa con Dorita — mismo hábito en los dos agentes.
         _caption_cara = getattr(msg, "caption", "") or ""
-        _es_cmd_cara_texto = telefono == admin_phone and texto.lower().strip().startswith("registrar cara")
-        _es_cmd_cara_caption = telefono == admin_phone and texto == "[imagen]" and msg.media_id and _caption_cara.lower().strip().startswith("registrar cara")
-        if _es_cmd_cara_texto or _es_cmd_cara_caption:
-            if _es_cmd_cara_caption:
-                _nombre_cara = _caption_cara.strip()[len("registrar cara"):].strip()
-            else:
-                _nombre_cara = texto.strip()[len("registrar cara"):].strip()
+
+        def _nombre_tras_prefijo_cara(s: str) -> str | None:
+            """Nombre tras "selfie"/"registrar cara"; None si no es el comando.
+            Match estricto (prefijo exacto o prefijo + espacio) — "selfies..." no dispara."""
+            s = s.strip()
+            for _p in ("registrar cara", "selfie"):
+                if s.lower() == _p or s.lower().startswith(_p + " "):
+                    return s[len(_p):].strip()
+            return None
+
+        _cara_texto = _nombre_tras_prefijo_cara(texto) if telefono == admin_phone else None
+        _cara_caption = (_nombre_tras_prefijo_cara(_caption_cara)
+                         if telefono == admin_phone and texto == "[imagen]" and msg.media_id
+                         else None)
+        if _cara_texto is not None or _cara_caption is not None:
+            _nombre_cara = _cara_caption if _cara_caption is not None else _cara_texto
             if _nombre_cara:
-                if _es_cmd_cara_caption:
+                if _cara_caption is not None:
                     # Foto + nombre en un solo mensaje → procesar directo
                     _cara_pendiente[telefono] = _nombre_cara
                     _cara_media_pendiente[telefono] = msg.media_id
@@ -2693,7 +2703,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _cara_pendiente[telefono] = _nombre_cara
                     await proveedor.enviar_mensaje(telefono, f"Dale, mandá la foto de {_nombre_cara} para registrar su cara")
             else:
-                await proveedor.enviar_mensaje(telefono, "Usá: registrar cara [nombre del niño]")
+                await proveedor.enviar_mensaje(telefono, "Usá: selfie [nombre del niño] (también vale: registrar cara [nombre])")
             return
 
         # ── Selección numérica de candidato para registrar cara ──────────
@@ -2962,7 +2972,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "9. `cargar familia [nombre]`\n\n"
                     "📸 *Fotos:*\n"
                     "10. `fotos 11` / `fotos 15:30`\n"
-                    "11. `registrar cara [nombre]`\n\n"
+                    "11. `selfie [nombre]` (o `registrar cara`)\n\n"
                     "🔄 *Modos:*\n"
                     "12. Modo padre — simular lead nuevo\n"
                     "13. Modo alumno — simular inscripto\n\n"
