@@ -804,38 +804,39 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     if not nombre:
         return JSONResponse(content={"ok": False, "motivo": "nino_sin_datos"}, headers=_CORS)
 
-    # ¿ya llegó HOY (fecha PY)? — la 2ª pasada del día es "repetido": el tótem pregunta
-    # por la vuelta del circuito en vez de re-celebrar la llegada (igual que el NFC)
-    async with async_session() as session:
-        r = await session.execute(select(JuegoEvento.id).where(
-            JuegoEvento.tipo == "llegada", JuegoEvento.nino_nombre == nombre,
-            JuegoEvento.timestamp >= _hoy0_utc()).limit(1))
-        repetido = r.scalar() is not None
+    # ¿ya llegó HOY? — gate DIARIO por NIÑO: ult_oro_llegada en el estado del guardián
+    # (lo setea el oro de llegada, cross-canal con el NFC). OJO: NO mirar juego_eventos
+    # por nombre — dos niñas "Fiorella" se pisaban y la segunda quedaba sin oro ni
+    # asistencia (bug 11/07). Si el oro falló, el gate no queda y el próximo escaneo
+    # reintenta como primera llegada: preferible a perderle las monedas al niño.
+    guardian = None
+    try:
+        guardian = await _guardian_de_nino(nino_id, nombre)
+    except Exception as e:
+        logger.warning(f"[JUEGO] guardian no disponible para {nombre}: {e}")
+    estado_g = _estado_de(guardian) if guardian else {}
+    repetido = estado_g.get("ult_oro_llegada") == _hoy_py()
+
     if repetido:
         # el guardián viaja igual: si re-escanea sin avatar, el selector aparece igual.
         # Si recién eligió su Guardián en la tablet y volvió al espejo → PRESENTACIÓN:
         # evento llegada para la TV (celebra con monedas) + flag para la tablet.
-        guardian_pub = None
-        try:
-            g = await _guardian_de_nino(nino_id, nombre)
-            if g:
-                estado = _estado_de(g)
-                robot_g = g.get("fields", {}).get("ROBOT")
-                if robot_g and estado.get("presentar_avatar") == _hoy_py():
-                    estado.pop("presentar_avatar", None)
-                    await _guardar_estado(g, estado)
-                    await crear_evento("llegada", nombre, robot_g,
-                                       {"via": "avatar", "sub": "¡Ya tiene a su Guardián! 🛡️"})
-                    return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
-                            "repetido": True, "presentacion": True,
-                            "confidence": round(best["confidence"], 1),
-                            "guardian": _guardian_publico(g)}, headers=_CORS)
-                guardian_pub = _guardian_publico(g)
-        except Exception as e:
-            logger.warning(f"[JUEGO] guardian no disponible para {nombre}: {e}")
+        robot_g = guardian.get("fields", {}).get("ROBOT")
+        if robot_g and estado_g.get("presentar_avatar") == _hoy_py():
+            try:
+                estado_g.pop("presentar_avatar", None)
+                await _guardar_estado(guardian, estado_g)
+                await crear_evento("llegada", nombre, robot_g,
+                                   {"via": "avatar", "sub": "¡Ya tiene a su Guardián! 🛡️"})
+                return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                        "repetido": True, "presentacion": True,
+                        "confidence": round(best["confidence"], 1),
+                        "guardian": _guardian_publico(guardian)}, headers=_CORS)
+            except Exception as e:
+                logger.warning(f"[JUEGO] presentación falló para {nombre}: {e}")
         return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
                 "repetido": True, "confidence": round(best["confidence"], 1),
-                "guardian": guardian_pub}, headers=_CORS)
+                "guardian": _guardian_publico(guardian) if guardian else None}, headers=_CORS)
 
     # asistencia real (best-effort — nunca rompe el saludo)
     try:
