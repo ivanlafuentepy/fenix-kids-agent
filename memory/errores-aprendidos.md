@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-07-11 — El atajo numérico del menú secre pisaba las selecciones pendientes
+
+**Síntoma:** `selfie Horacio González` encontró 2 candidatos y pidió responder con un
+número; al responder "1" el agente mostró el resumen de reservas en vez de seleccionar.
+
+**Causa raíz:** el remapeo del menú secre (`"1"` → `"resumen reservas"`, main.py ~2450)
+corre ANTES que todos los handlers de estado pendiente y solo excluía `_admin_modo_padre`.
+Cualquier flujo que espera respuesta numérica del admin (`_cara_candidatos`,
+`_asistencia_pendiente`, `_inscripcion_pendiente`) quedaba en sombra: el "1" nunca
+llegaba a su handler.
+
+**Fix:** el atajo se salta cuando hay un estado pendiente que consume la respuesta
+(commit 82d196c — quedó mezclado con el fix del WABA ID de otra sesión paralela que
+barrió el staging; los dos cambios eran de bajo riesgo y ya estaba pusheado).
+
+**How to apply:** todo atajo/interceptor GLOBAL de admin debe excluir explícitamente
+los estados pendientes que esperan input — al agregar un flujo nuevo con respuesta
+numérica, sumarlo a `_admin_espera_respuesta`. Y con dos sesiones de Claude en paralelo
+sobre el mismo repo: nunca dejar cambios en staging sin commitear al instante.
+
+---
+
 ## 2026-07-11 — La asistencia por FACE nunca se creó (select sin la opción)
 
 **Síntoma:** ASISTENCIA FENIX tenía UN solo registro histórico (QR 06/06) pese a que
