@@ -812,10 +812,30 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
             JuegoEvento.timestamp >= _hoy0_utc()).limit(1))
         repetido = r.scalar() is not None
     if repetido:
-        # el guardián viaja igual: si re-escanea sin avatar, el selector aparece igual
+        # el guardián viaja igual: si re-escanea sin avatar, el selector aparece igual.
+        # Si recién eligió su Guardián en la tablet y volvió al espejo → PRESENTACIÓN:
+        # evento llegada para la TV (celebra con monedas) + flag para la tablet.
+        guardian_pub = None
+        try:
+            g = await _guardian_de_nino(nino_id, nombre)
+            if g:
+                estado = _estado_de(g)
+                robot_g = g.get("fields", {}).get("ROBOT")
+                if robot_g and estado.get("presentar_avatar") == _hoy_py():
+                    estado.pop("presentar_avatar", None)
+                    await _guardar_estado(g, estado)
+                    await crear_evento("llegada", nombre, robot_g,
+                                       {"via": "avatar", "sub": "¡Ya tiene a su Guardián! 🛡️"})
+                    return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
+                            "repetido": True, "presentacion": True,
+                            "confidence": round(best["confidence"], 1),
+                            "guardian": _guardian_publico(g)}, headers=_CORS)
+                guardian_pub = _guardian_publico(g)
+        except Exception as e:
+            logger.warning(f"[JUEGO] guardian no disponible para {nombre}: {e}")
         return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
                 "repetido": True, "confidence": round(best["confidence"], 1),
-                "guardian": await _guardian_publico_seguro(nino_id, nombre)}, headers=_CORS)
+                "guardian": guardian_pub}, headers=_CORS)
 
     # asistencia real (best-effort — nunca rompe el saludo)
     try:
@@ -886,9 +906,14 @@ async def _elegir_robot_inner(payload: dict, x_juego_key: str | None):
         return JSONResponse(content={"ok": True, "ya_tenia": True,
                                      "guardian": _guardian_publico(guardian)}, headers=_CORS)
 
-    # mismo comportamiento que elegir-robot de la app: ROBOT + salir de builder
+    # mismo comportamiento que elegir-robot de la app: ROBOT + salir de builder.
+    # presentar_avatar: el próximo escaneo del día dispara la celebración en la TV
+    # (el niño elige en la tablet, vuelve al espejo, y la TV lo presenta con monedas).
     from agent.airtable_client import _patch
-    cambios = {"ROBOT": robot, **({"STAGE": "reto"} if f.get("STAGE") == "builder" else {})}
+    estado = _estado_de(guardian)
+    estado["presentar_avatar"] = _hoy_py()
+    cambios = {"ROBOT": robot, "ESTADO JSON": json.dumps(estado, ensure_ascii=False),
+               **({"STAGE": "reto"} if f.get("STAGE") == "builder" else {})}
     ok = await _patch(_T_GUARDIANES, guardian["id"], cambios)
     if not ok:
         raise HTTPException(status_code=502, detail="airtable_no_respondio")
