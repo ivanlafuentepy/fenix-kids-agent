@@ -76,6 +76,11 @@ class ProveedorMeta(ProveedorWhatsApp):
         body = await request.json()
         mensajes = []
         for entry in body.get("entry", []):
+            # entry.id = WABA ID real del número (dato que la Graph API no expone
+            # con los tokens actuales) — se loguea una vez por proceso
+            if not getattr(self, "_waba_logueado", False):
+                self._waba_logueado = True
+                logger.info(f"[META] WABA de este numero (entry.id): {entry.get('id')}")
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 # Filtrar por phone_number_id — ignorar mensajes de otros números

@@ -2447,7 +2447,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Admin phone + atajo numérico del menú secre ──
         admin_phone = os.getenv("ADMIN_PHONE", "")
-        if telefono == admin_phone and telefono not in _admin_modo_padre:
+        # Si hay un flujo pendiente que espera respuesta numérica (selección de
+        # candidato de cara, lista de asistencia, inscripción), el número es para
+        # ese flujo — NO remapear al menú secre.
+        _admin_espera_respuesta = (
+            telefono in _cara_candidatos
+            or telefono in _asistencia_pendiente
+            or telefono in _inscripcion_pendiente
+        )
+        if telefono == admin_phone and telefono not in _admin_modo_padre and not _admin_espera_respuesta:
             _MENU_SECRE = {
                 "1": "resumen reservas", "2": "resumen anuncios", "3": "resumen flias",
                 "4": "resumen asis", "5": "resumen prueba", "6": "resumen seguimiento",
