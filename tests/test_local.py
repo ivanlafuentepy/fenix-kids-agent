@@ -34,13 +34,12 @@ from agent.airtable_client import (
     buscar_familia_por_telefono, buscar_familia_por_nombre,
     obtener_ninos_de_familia,
 )
-# Importar las funciones de detección desde main (sin levantar el server)
-from agent.main import (
-    _detectar_activacion_nixie,
-    _detectar_handoff_ivan_nixie,
-    _detectar_confirmacion_aurora,
-    _build_contexto_aurora,
-)
+# Importar las funciones de detección (sin levantar el server).
+# Nixie ya no existe (el router decide ivan/aurora por familia en DB) y
+# _detectar_confirmacion_aurora se movió a detectores_conv (auditoría 12/07:
+# este import roto tenía muerta la suite entera — pytest ni recolectaba).
+from agent.main import _build_contexto_aurora
+from agent.detectores_conv import _detectar_confirmacion_aurora
 
 TELEFONO_TEST = "595900000001"  # número de prueba — fácil de identificar y borrar
 _MODO_PADRE = None  # familia simulada (record de Airtable)
@@ -108,18 +107,8 @@ async def procesar_mensaje(texto: str):
     global _MODO_PADRE
     telefono = TELEFONO_TEST
 
-    # Estado actual
+    # Estado actual (el router real decide ivan/aurora por familia en DB)
     agent_actual, modo_nixie = await obtener_agent_actual(telefono)
-
-    # Detectar activación directa de Nixie
-    if _detectar_activacion_nixie(texto) and agent_actual == "ivan":
-        modo_nixie = "cliente_inscripto"
-        agent_actual = "nixie"
-        await actualizar_agent_actual(telefono, "nixie", modo_nixie)
-        try:
-            await actualizar_agent_lead(telefono, "NIXIE", modo_nixie)
-        except Exception:
-            pass
 
     # Historial
     historial = await obtener_historial(telefono)
@@ -140,15 +129,16 @@ async def procesar_mensaje(texto: str):
     if _MODO_PADRE and agent_actual == "aurora":
         try:
             # En modo test: forzar CONTROL_DATOS pendiente para probar onboarding
-            contexto_extra = await _build_contexto_aurora(_MODO_PADRE)
+            # (_build_contexto_aurora retorna tupla (contexto, reservas_texto))
+            contexto_extra, _ = await _build_contexto_aurora(_MODO_PADRE)
             # NO hacemos check en CONTROL DATOS en modo test
         except Exception as e:
             print(f"[airtable] Error cargando familia simulada: {e}")
-    elif agent_actual in ("nixie", "aurora") and modo_nixie == "cliente_inscripto":
+    elif agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
         try:
             familia = await buscar_familia_por_telefono(telefono)
             if familia:
-                contexto_extra = await _build_contexto_aurora(familia, telefono)
+                contexto_extra, _ = await _build_contexto_aurora(familia, telefono)
         except Exception as e:
             print(f"[airtable] Error buscando familia: {e}")
 
@@ -159,35 +149,6 @@ async def procesar_mensaje(texto: str):
         agent_actual=agent_actual,
         contexto_extra=contexto_extra,
     )
-
-    # Detectar handoff Ivan → Nixie
-    if agent_actual == "ivan" and _detectar_handoff_ivan_nixie(respuesta):
-        await actualizar_agent_actual(telefono, "nixie", "lead_nuevo")
-        try:
-            await actualizar_agent_lead(telefono, "NIXIE", "lead_nuevo")
-        except Exception:
-            pass
-        print("[handoff] Ivan → Nixie (lead_nuevo)")
-
-    # Si Nixie en modo lead_nuevo: intentar extraer formulario
-    if agent_actual == "nixie" and (modo_nixie == "lead_nuevo" or not modo_nixie):
-        historial_completo = historial + [
-            {"role": "user", "content": texto},
-            {"role": "assistant", "content": respuesta},
-        ]
-        try:
-            datos = await extraer_datos_formulario(historial_completo)
-            if datos.get("completo"):
-                familia_id, nino_ids = await crear_familia_completa(telefono, datos)
-                if familia_id:
-                    await marcar_conversion(telefono)
-                    try:
-                        await actualizar_conversion_lead(telefono, "AGENDA")
-                    except Exception:
-                        pass
-                    print(f"[airtable] FAMILIA + NIÑOS creados (familia_id={familia_id})")
-        except Exception as e:
-            print(f"[brain] Error extrayendo formulario: {e}")
 
     # Detectar confirmación de reserva
     confirmaciones = _detectar_confirmacion_aurora(respuesta)
