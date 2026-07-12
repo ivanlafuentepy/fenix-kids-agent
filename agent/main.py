@@ -2477,7 +2477,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `/rechazado` — evaluación rechazada\n"
                 "• `/fenix` — reset conversación + reactivar\n"
                 "• `/registro` — activar Aurora para registrar familia\n"
-                "• `/agenda 90mil|120mil|150mil|gratis nombre` — cerrar agenda manual\n"
+                "• `/agenda 100mil|150mil|200mil|gratis nombre` — cerrar agenda manual\n"
                 "• _(texto libre)_ — se reenvía como mensaje de Ivan al padre"
             )
             await proveedor.enviar_mensaje(telefono, msg_comandos)
