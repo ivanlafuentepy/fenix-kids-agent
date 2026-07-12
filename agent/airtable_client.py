@@ -888,6 +888,24 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     return resultado
 
 
+async def obtener_familias_para_confirmacion() -> list[dict]:
+    """Familias con pago AL DÍA para la confirmación proactiva del sábado.
+
+    El campo {AL DÍA?} es una fórmula que devuelve "✅ AL DÍA" / "❌ VENCIDO" /
+    vacío. Se traen TODAS las familias (paginando con max_records alto) y se
+    filtra en Python: un FIND sobre un campo fórmula con emoji + acento en
+    filterByFormula da 422 silenciosos (ver reference_airtable_errores).
+
+    Devuelve los records crudos (id + fields). El armado del envío (tutor que
+    paga, hijos) lo hace agent/confirmacion_sabado.py.
+    """
+    familias = await _get_records(_FAMILIAS, max_records=2000)
+    return [
+        f for f in familias
+        if "AL DÍA" in ((f.get("fields", {}) or {}).get("AL DÍA?") or "")
+    ]
+
+
 # ── HORARIOS ──────────────────────────────────────────────────────────────────
 
 async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
@@ -1065,6 +1083,9 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                                 except ValueError:
                                     pass
                         familia_ids = res_fields.get("FAMILIAS", []) or nf.get("FAMILIA", [])
+                        # es_prueba: lookup ESTADO PLAN de la familia (viene como lista).
+                        # Sin lookup (reserva vieja sin link FAMILIAS) → inscripto.
+                        _estado_plan = res_fields.get("ESTADO PLAN") or [""]
                         ninos.append({
                             "id": nino_id,
                             "reserva_id": res_id,
@@ -1075,6 +1096,7 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                             "familia_id": familia_ids[0] if familia_ids else "",
                             "presente": res_fields.get("PRESENTE", False),
                             "ausente": res_fields.get("AUSENTE", False),
+                            "es_prueba": (_estado_plan[0] if isinstance(_estado_plan, list) else _estado_plan) == "A PRUEBA",
                         })
             except Exception as e:
                 logger.error(f"Error obteniendo reserva/niño: {e}")
