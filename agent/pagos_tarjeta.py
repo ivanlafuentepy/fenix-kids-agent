@@ -26,12 +26,17 @@ def tarjeta_habilitada() -> bool:
 def link_pago_fenix(monto: int, concepto: str = "", telefono: str = "") -> str:
     """Arma el link firmado de pago con tarjeta de Fenix Kids.
 
-    firma = HMAC(LINK_SECRET, "fenix:{monto}") primeros 16 hex — idéntica a la
-    que valida la pasarela. `telefono` va como ?cliente= para que la pasarela
-    nos avise por /pago-confirmado y podamos vincular el pago a la familia.
+    firma = HMAC(LINK_SECRET, "fenix:{monto}:{telefono}") primeros 16 hex —
+    idéntica a la que valida la pasarela. La firma CUBRE el teléfono: antes
+    ?cliente= viajaba sin firmar y editándolo en la URL se podía atribuir el
+    pago a otra familia (auditoría 2026-07-12, A5; la pasarela rechaza firmas
+    legacy de fenix con cliente presente desde pagos-bancard 4f5017f).
     """
     secret = os.getenv("LINK_SECRET", "")
-    sig = hmac.new(secret.encode(), f"fenix:{int(monto)}".encode(), hashlib.sha256).hexdigest()[:16]
+    base_firma = f"fenix:{int(monto)}"
+    if telefono:
+        base_firma += f":{telefono}"
+    sig = hmac.new(secret.encode(), base_firma.encode(), hashlib.sha256).hexdigest()[:16]
     params = {"monto": int(monto), "sig": sig}
     if concepto:
         params["concepto"] = concepto
