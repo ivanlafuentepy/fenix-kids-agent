@@ -12,15 +12,18 @@ Cubre el flujo completo: diseno → creacion (API o Business Manager) → codigo
 
 ## 0. LO DISTINTO DE FENIX (leer primero)
 
-- **Fenix vive en el WABA COMPARTIDO con Salsa Soul** (`WABA_ID = 2112324596219739`).
-  Las plantillas son del WABA, no del numero: **cualquier plantilla aprobada de Dorita
-  tambien la puede mandar el numero de Fenix** (y viceversa). Antes de crear una nueva,
-  revisar si ya existe una que sirva.
-- **El token de Fenix (`META_ACCESS_TOKEN` de este repo) NO tiene rol de management
-  sobre el WABA** → NO puede crear plantillas. Para crear/editar hay que usar el token
-  de management de Dorita (`whatsapp-agentkit/.env` → `META_ACCESS_TOKEN`), igual que
-  con los Flows (ver `scripts/crear_flow_fenix.py`). Para ENVIAR plantillas aprobadas,
-  el token de Fenix funciona perfecto.
+- **Fenix tiene su WABA PROPIO** (`WABA_ID = 896276490105251`), NO el compartido con
+  Salsa Soul. La doc vieja que decia "WABA compartido 2112324596219739" era FALSA
+  (error #131009 del 2026-07-11) — con Salsa/Dorita se comparte solo el Business
+  Portfolio, no el WABA. Las plantillas de Fenix viven en SU WABA; las de Dorita NO
+  estan disponibles para el numero de Fenix.
+- **El token de Fenix (`META_ACCESS_TOKEN` de este repo) SI administra su WABA propio**
+  → crea, edita y envia plantillas ahi. Verificado 2026-07-12 (se creo y aprobo
+  `confirmacion_sabado_fenix` con ese token). NO hace falta el token de Dorita para
+  plantillas de Fenix (el de Dorita solo se usa para leer el SCHEMA de Airtable).
+  Listar/crear:
+  `GET  https://graph.facebook.com/v21.0/896276490105251/message_templates` (Bearer token Fenix)
+  `POST https://graph.facebook.com/v21.0/896276490105251/message_templates` (Bearer token Fenix)
 - **La firma de `enviar_plantilla` en Fenix es DISTINTA a la de Dorita**:
   `enviar_plantilla(telefono, template_name, variables=None, componentes=None, language="es")`.
   El kwarg es **`language=`** (Dorita usa `idioma=`) y el **default es `"es"`** — si la
@@ -48,31 +51,39 @@ mensajes libres son rechazados.
 
 ## 2. CREAR LA PLANTILLA
 
-### Opcion A: por API (como se creo `factura_electronica_fenix`, 03/07/2026)
+### Opcion A: por API (con el token de FENIX, contra su WABA 896276490105251)
 
-Con el token de management de Dorita. Pasos (script de referencia usado:
-`crear_plantilla_factura_fenix.py`, sesion Claude 03/07/2026):
-1. `GET /debug_token?input_token={tok}` → `app_id`.
-2. Si lleva header DOCUMENT/IMAGE: resumable upload del archivo de muestra →
-   `POST /{app_id}/uploads?file_name=..&file_length=..&file_type=..` → `upload_id`,
-   luego `POST /{upload_id}` con header `Authorization: OAuth {tok}` + `file_offset: 0`
-   y el binario en el body → devuelve `{"h": "<handle>"}`.
-3. `POST /{WABA_ID}/message_templates` con:
-```json
-{
-  "name": "nombre_snake_case",
-  "language": "es_AR",
-  "category": "UTILITY",
-  "parameter_format": "NAMED",
-  "components": [
-    {"type": "HEADER", "format": "DOCUMENT", "example": {"header_handle": ["<handle>"]}},
-    {"type": "BODY", "text": "¡Hola {{nombre}}! ...",
-     "example": {"body_text_named_params": [{"param_name": "nombre", "example": "Sofía"}]}}
-  ]
-}
+El token de Fenix (`META_ACCESS_TOKEN` del `.env` de este repo) alcanza para todo.
+Ejemplo real: `confirmacion_sabado_fenix` (botones si/no, posicional), creada y
+aprobada en minutos el 2026-07-12.
+
+Body posicional con botones quick-reply (el molde mas simple):
+```bash
+TOK=$(grep -E "^META_ACCESS_TOKEN=" .env | cut -d= -f2-)
+curl -s -X POST "https://graph.facebook.com/v21.0/896276490105251/message_templates" \
+  -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{
+    "name": "nombre_snake_case",
+    "language": "es_AR",
+    "category": "UTILITY",
+    "components": [
+      {"type": "BODY", "text": "Hola {{1}}! ... {{2}} ...",
+       "example": {"body_text": [["Sofía", "Mateo"]]}},
+      {"type": "BUTTONS", "buttons": [
+        {"type": "QUICK_REPLY", "text": "Sí"},
+        {"type": "QUICK_REPLY", "text": "No"}
+      ]}
+    ]
+  }'
 ```
-4. Queda `PENDING` → poll con `GET /{WABA_ID}/message_templates?name=...&fields=name,status`
-   hasta `APPROVED` (UTILITY: minutos).
+Con header DOCUMENT/IMAGE hay que subir la muestra primero (resumable upload →
+`{"h": "<handle>"}`) y agregar `{"type":"HEADER","format":"DOCUMENT","example":{"header_handle":["<handle>"]}}`.
+Para variables con nombre, usar `"parameter_format": "NAMED"` + `{{nombre}}` +
+`"example":{"body_text_named_params":[{"param_name":"nombre","example":"Sofía"}]}`.
+
+Queda `PENDING` → poll con
+`GET https://graph.facebook.com/v21.0/896276490105251/message_templates?name=...&fields=name,status`
+hasta `APPROVED` (UTILITY: minutos).
 
 ### Opcion B: manual en Business Manager
 
@@ -91,7 +102,16 @@ Firma en `agent/providers/meta.py`:
 async def enviar_plantilla(telefono, template_name, variables=None, componentes=None, language="es") -> bool
 ```
 
-**Variables nombradas (recomendado):**
+**Variables posicionales `{{1}} {{2}}` (lo mas simple — arma el body solo):**
+```python
+await proveedor.enviar_plantilla(
+    telefono, "confirmacion_sabado_fenix",
+    variables=[nombre_padre, hijos_str],   # {{1}}, {{2}}
+    language="es_AR",   # 👈 SIEMPRE explicito si la plantilla es es_AR
+)
+```
+
+**Variables nombradas:**
 ```python
 await proveedor.enviar_plantilla(
     telefono, "factura_electronica_fenix",
@@ -102,6 +122,11 @@ await proveedor.enviar_plantilla(
     language="es_AR",   # 👈 SIEMPRE explicito si la plantilla es es_AR
 )
 ```
+
+Los botones quick-reply de una plantilla llegan de vuelta como `tipo=="button"`
+(en `providers/meta.py`): solo trae el **texto** del boton (ej "Sí"/"No"), sin `btn_id`.
+Para saber a que plantilla responde, guardar un flag de estado al enviarla
+(patron de `agent/confirmacion_sabado.py`: `esperando_confirmacion_sabado`).
 
 **Header documento (PDF) + body:**
 ```python
@@ -135,9 +160,11 @@ Mantener actualizada esta seccion.
 
 | Nombre | Categoria | Variables | Donde se usa | Codigo |
 |---|---|---|---|---|
+| `confirmacion_sabado_fenix` | UTILITY | `{{1}}` padre + `{{2}}` hijos + botones Sí/No | jueves 9AM: confirma asistencia del sábado a familias al día | `agent/loops.py` `_confirmacion_sabado_loop` + `agent/confirmacion_sabado.py` |
 | `factura_electronica_fenix` | UTILITY | header DOCUMENT + `{{nombre}}` | envio de factura PDF fuera de ventana 24h | `agent/loops.py` `_envio_facturas_fenix_loop` |
 | `contenido_hijo` | — | (ver codigo) | contenido social fuera de ventana | `agent/contenido_social.py:124` |
-| (Promo Madre) | MARKETING | header IMAGE | envio masivo por endpoint | `agent/main.py` (~979) |
+| `fenixpromomadre` | MARKETING | header IMAGE | envio masivo por endpoint | `agent/main.py` (~979) |
 
-Del WABA compartido tambien estan disponibles las de Dorita (`bienvenido_qr`,
-`factura_electronica`, `recordatorio_3h`, ...): listar todas en WhatsApp Manager.
+Todas viven en el WABA propio de Fenix (`896276490105251`). Listar el estado real:
+`GET https://graph.facebook.com/v21.0/896276490105251/message_templates?fields=name,status,category,language`
+con el token de Fenix. Las plantillas de Dorita NO estan disponibles para el numero de Fenix.

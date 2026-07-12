@@ -4382,6 +4382,37 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         apellido_hijo=_n0.get("apellido", ""),
                         fecha_nacimiento=_n0.get("fecha_nacimiento", ""),
                     )
+                    # ── Gap 2b (migración fase 1): esta rama solo tocaba PRUEBA —
+                    # asegurar también FAMILIA A PRUEBA + RESERVA real (espejo de la
+                    # rama principal). crear_familia_a_prueba es idempotente.
+                    try:
+                        from agent.airtable_client import crear_familia_a_prueba
+                        _ninos_fam_upd = [
+                            {"nombre": n.get("nombre", ""), "apellido": n.get("apellido", ""),
+                             "fecha_nacimiento": n.get("fecha_nacimiento", "")}
+                            for n in _ninos_upd if n.get("nombre")
+                        ]
+                        _fam_id_upd, _ = await crear_familia_a_prueba(
+                            telefono=telefono,
+                            nombre_padre=_padre_upd.get("nombre", ""),
+                            apellido_padre=_padre_upd.get("apellido", ""),
+                            ninos=_ninos_fam_upd,
+                        )
+                        logger.info(f"[FORMULARIO] FAMILIA A PRUEBA (guard): {_fam_id_upd}")
+                    except Exception as _e_fam_upd:
+                        logger.error(f"[FORMULARIO] Error FAMILIA A PRUEBA (guard): {_e_fam_upd}")
+                    # A1: reserva real con la fecha/hora que ya tiene la PRUEBA existente
+                    try:
+                        from agent.tools.reservas import _crear_reserva_real, _parsear_fecha
+                        _pr_f = _ya_existe_prueba[0].get("fields", {})
+                        _f_prev = str(_pr_f.get("FECHA RESERVA", "") or "")
+                        _h_prev = str(_pr_f.get("HORA", "") or "")
+                        if _f_prev and "definir" not in _f_prev.lower() and _h_prev and "definir" not in _h_prev.lower():
+                            _f_iso_upd = _parsear_fecha(_f_prev)
+                            if _f_iso_upd:
+                                await _crear_reserva_real(telefono, _f_iso_upd, _h_prev, reagendar=False)
+                    except Exception as _e_res_upd:
+                        logger.error(f"[FORMULARIO] Error RESERVA real (guard): {_e_res_upd}")
                     # Enviar QR (no se envió antes porque el guard abortaba).
                     # Re-consultar con max_records=10: _ya_existe_prueba se trajo
                     # con max_records=1 (guard) → hermanos recibían UN solo QR (M10).
