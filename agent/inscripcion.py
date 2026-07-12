@@ -474,6 +474,28 @@ async def _ejecutar_inscripcion(
     _pagos_tabla = "PAGOS"
     pagos_creados = []
 
+    # Guard anti-duplicado (mismo patrón que registrar_pago_fenix): si el admin
+    # corre "cargar familia" dos veces (timeout, reintento), los POST directos
+    # duplicaban matrícula + cuota en PAGOS (auditoría 2026-07-12, A1).
+    # Se saltea la creación si la familia ya tiene un PAGO con ese CONCEPTO hoy.
+    _conceptos_hoy: set[str] = set()
+    try:
+        _fam_g = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
+        _pago_ids_g = (_fam_g[0].get("fields", {}).get("PAGOS", []) or []) if _fam_g else []
+        if _pago_ids_g:
+            _or_g = ",".join(f"RECORD_ID()='{pid}'" for pid in _pago_ids_g)
+            _formula_g = f"OR({_or_g})" if len(_pago_ids_g) > 1 else _or_g
+            _pagos_g = await _get_records(_pagos_tabla, formula=_formula_g, max_records=len(_pago_ids_g))
+            from datetime import datetime as _dt_g
+            from zoneinfo import ZoneInfo as _ZI_g
+            _hoy_g = _dt_g.now(_ZI_g("America/Asuncion")).date().isoformat()
+            for _p_g in _pagos_g:
+                _pf_g = _p_g.get("fields", {})
+                if (_pf_g.get("FECHA") or "")[:10] == _hoy_g:
+                    _conceptos_hoy.add(_pf_g.get("CONCEPTO") or "")
+    except Exception as _e_g:
+        logger.warning(f"[INSCRIPCION] Guard anti-dup no pudo leer PAGOS: {_e_g}")
+
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",
         "DEB": "DEBIT CARD", "CRED": "CREDIT CARD", "EFECTIVO": "EFECTIVO",
@@ -488,7 +510,10 @@ async def _ejecutar_inscripcion(
     }
     _matri_concepto = "MATRICULA"
 
-    if matricula > 0:
+    if matricula > 0 and _matri_concepto in _conceptos_hoy:
+        pagos_creados.append("Matrícula ya registrada hoy — no dupliqué")
+        logger.info(f"[INSCRIPCION] PAGO MATRICULA ya existe hoy para familia {familia_id} → no duplico")
+    elif matricula > 0:
         pago_matri = await _post(_pagos_tabla, {
             "MONTO": matricula,
             "METODO DE PAGO": metodo_pago_tabla,
@@ -501,8 +526,11 @@ async def _ejecutar_inscripcion(
         if pago_matri:
             pagos_creados.append(f"Matrícula {matricula // 1000}mil")
 
-    if monto > 0:
-        concepto_plan = _concepto_map.get(plan, "MENSUAL")
+    concepto_plan = _concepto_map.get(plan, "MENSUAL")
+    if monto > 0 and concepto_plan in _conceptos_hoy:
+        pagos_creados.append(f"Plan {concepto_plan} ya registrado hoy — no dupliqué")
+        logger.info(f"[INSCRIPCION] PAGO {concepto_plan} ya existe hoy para familia {familia_id} → no duplico")
+    elif monto > 0:
         pago_plan = await _post(_pagos_tabla, {
             "MONTO": monto,
             "METODO DE PAGO": metodo_pago_tabla,
