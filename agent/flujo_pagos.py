@@ -275,15 +275,28 @@ async def _procesar_comprobante(
     if tipo == "prueba":
         try:
             await asyncio.sleep(3)
-            msg_agenda = await _armar_mensaje_agenda_post_pago()
-            await guardar_mensaje(telefono, "assistant", msg_agenda)
-            await proveedor.enviar_mensaje(telefono, msg_agenda)
-            await actualizar_estado_flags(telefono, modo_agenda=True)
-            if topic_id:
-                await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
-            logger.info(f"[PAGOS] Modo agenda activado para {telefono}")
+            # Nuevo flujo: ANTES de ofrecer las fechas, mandar el formulario nativo de Meta
+            # para completar los datos (niño + padre/madre). La agenda se ofrece recién
+            # cuando el lead completa el formulario (ver agent/formulario_reserva.py).
+            from agent.formulario_reserva import enviar_formulario_reserva
+            enviado = await enviar_formulario_reserva(telefono)
+            if enviado:
+                await actualizar_estado_flags(telefono, esperando_formulario_reserva=True)
+                await guardar_mensaje(telefono, "assistant", "[formulario de reserva enviado]")
+                if topic_id:
+                    await enviar_a_topic(topic_id, "📋 Formulario de reserva enviado al lead", telefono=telefono, group_override=group_override)
+                logger.info(f"[PAGOS] Formulario de reserva enviado a {telefono}")
+            else:
+                # Fallback: si el formulario no salió (token/flow), usar el flujo viejo de agenda
+                msg_agenda = await _armar_mensaje_agenda_post_pago()
+                await guardar_mensaje(telefono, "assistant", msg_agenda)
+                await proveedor.enviar_mensaje(telefono, msg_agenda)
+                await actualizar_estado_flags(telefono, modo_agenda=True)
+                if topic_id:
+                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
+                logger.warning(f"[PAGOS] Formulario no salió — fallback a agenda directa para {telefono}")
         except Exception as e:
-            logger.error(f"[PAGOS] Error enviando agenda post-pago: {e}")
+            logger.error(f"[PAGOS] Error en post-pago (formulario/agenda): {e}")
 
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────

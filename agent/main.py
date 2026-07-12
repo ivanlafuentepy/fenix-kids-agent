@@ -162,6 +162,9 @@ from agent.cargar_nino import (
     enviar_formulario_cargar_nino, procesar_formulario_cargar_nino,
 )
 
+# ── Formulario de reserva del lead via Meta Flow (agent/formulario_reserva.py) ──
+from agent.formulario_reserva import procesar_formulario_reserva
+
 # ── Fotos y reconocimiento facial (extraído a agent/fotos.py) ──
 from agent.fotos import (
     _iniciar_modo_fotos, _acumular_foto, _finalizar_fotos, _confirmar_fotos,
@@ -2952,6 +2955,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if topic_alumno:
                 await enviar_a_topic(topic_alumno, "⚙️ MODO ALUMNO — reset conversación sin tocar Airtable", telefono=telefono)
             return
+
+        # ── Formulario de reserva completado por un LEAD (Meta Flow → nfm_reply) ──
+        # Llega como es_boton + btn_id="flow_completado". Solo si el lead está en el
+        # paso post-pago esperando el formulario (flag). Completa FAMILIA/NIÑO/TUTORES
+        # y dispara la agenda. Se distingue del alta admin por el flag, no por el payload.
+        if (telefono != admin_phone and getattr(msg, "es_boton", False)
+                and (getattr(msg, "btn_id", "") or "") == "flow_completado"):
+            _flags_form = await obtener_estado_flags(telefono)
+            if _flags_form.get("esperando_formulario_reserva"):
+                _flow_data_r = getattr(msg, "flow_data", None) or {}
+                try:
+                    await procesar_formulario_reserva(telefono, _flow_data_r)
+                except Exception as e:
+                    logger.error(f"[RESERVA-FORM] Error procesando formulario de reserva: {e}")
+                return
 
         # ── Botones del admin ──────────────────────────────────────────────
         if telefono == admin_phone and msg.es_boton:
