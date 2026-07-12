@@ -47,7 +47,7 @@ from agent.night_mode import (
 from agent.telegram_bridge import (
     obtener_o_crear_topic, enviar_a_topic,
     notificar_llamada_urgente,
-    group_id_para_agente,
+    group_id_para_agente, grupo_telegram_para,
 )
 from agent.resumenes import (
     _generar_resumen_reservas, _generar_resumen_anuncios,
@@ -625,11 +625,14 @@ async def _ejecutar_followup():
                     await actualizar_conversion_lead(telefono, "DESCARTADO")
                     logger.info(f"[FOLLOWUP] {telefono}: 3 seguimientos completados → DESCARTADO")
 
-                # Espejar en Telegram
+                # Espejar en Telegram — grupo según el agente REAL del número
+                # (agent_actual), no forzar leads: si ya es familia iría al grupo
+                # equivocado y el topic rebota creando uno nuevo en cada envío.
                 try:
-                    _topic_fu = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                    _grp_fu = await grupo_telegram_para(telefono)
+                    _topic_fu = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp_fu)
                     if _topic_fu:
-                        await enviar_a_topic(_topic_fu, f"🔔 FOLLOWUP ({nuevo}/3): {respuesta_fu}", telefono=telefono, group_override=group_id_para_agente("ivan"))
+                        await enviar_a_topic(_topic_fu, f"🔔 FOLLOWUP ({nuevo}/3): {respuesta_fu}", telefono=telefono, group_override=_grp_fu)
                 except Exception:
                     pass
 
@@ -736,11 +739,12 @@ async def _followup_fotos_oneshot():
             await proveedor.enviar_mensaje(telefono, texto)
             await guardar_mensaje(telefono, "assistant", texto)
 
-            # Espejar en Telegram
+            # Espejar en Telegram — grupo según el agente REAL del número (ver nota arriba)
             try:
-                _topic_fu_fotos = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                _grp_ff = await grupo_telegram_para(telefono)
+                _topic_fu_fotos = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp_ff)
                 if _topic_fu_fotos:
-                    await enviar_a_topic(_topic_fu_fotos, f"📢 1ER FOLLOWUP: [📸 2 fotos + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
+                    await enviar_a_topic(_topic_fu_fotos, f"📢 1ER FOLLOWUP: [📸 2 fotos + texto enviado]", telefono=telefono, group_override=_grp_ff)
             except Exception:
                 pass
 
@@ -868,9 +872,10 @@ async def _followup_video_oneshot():
             # Espejar en Telegram — anotar si es 1ro o 2do según si ya recibió el masivo de fotos
             _fu_num = "2DO" if telefono in leads_con_1er_fu else "1ER"
             try:
-                _topic_vid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=group_id_para_agente("ivan"))
+                _grp_vid = await grupo_telegram_para(telefono)
+                _topic_vid = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp_vid)
                 if _topic_vid:
-                    await enviar_a_topic(_topic_vid, f"📢 {_fu_num} FOLLOWUP: [🎬 Video + texto enviado]", telefono=telefono, group_override=group_id_para_agente("ivan"))
+                    await enviar_a_topic(_topic_vid, f"📢 {_fu_num} FOLLOWUP: [🎬 Video + texto enviado]", telefono=telefono, group_override=_grp_vid)
             except Exception:
                 pass
 
