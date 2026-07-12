@@ -4825,7 +4825,13 @@ async def _procesar_confirmacion_reserva(
                 )
                 if telefono != _admin_phone_re:
                     await proveedor.enviar_mensaje(_admin_phone_re, _msg_re)
-                return  # No seguir procesando (no crear RESERVAS, no actualizar LEADS)
+                # A1 (migración 2.B): reagendar también la RESERVA FENIX real —
+                # antes este camino solo tocaba PRUEBA y la reserva quedaba vieja.
+                # _crear_reserva_real es fail-safe (try/except interno).
+                if fecha_iso:
+                    from agent.tools.reservas import _crear_reserva_real
+                    await _crear_reserva_real(telefono, fecha_iso, _hora_norm, reagendar=True)
+                return  # No seguir procesando (no crear RESERVAS duplicadas, no actualizar LEADS)
         except Exception as e:
             logger.error(f"[REAGENDAR] Error actualizando PRUEBA FENIX: {e}")
 
