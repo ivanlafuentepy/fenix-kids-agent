@@ -456,3 +456,93 @@ desbloqueo de rango:
 | Dorada | 25 · 25 · 30s · 75s · 75s · 15 flexiones · **+10 saltos estrella (nuevo)** |
 | Fénix | 30 · 30 · 45s · 90s · 90s · 20 flexiones · 15 estrella |
 (Los números los calibra Iván con los profes; la mecánica es lo definido.)
+
+## 11. MECÁNICA DEL SÁBADO v2 — vueltas → desafío → insignia (definida 2026-07-12)
+
+Cierra el "cómo" operativo del §3.6 y §10: cómo, en la práctica de cada sábado, un niño
+**vence al dragón de la semana** y se lleva la insignia (= progreso de capa). Mantiene las dos
+reglas de oro: las **vueltas dan plata, NO capa**; la **capa se gana superando el desafío**
+(disciplina). Las vueltas solo **habilitan el acceso** al desafío.
+
+### 11.1 Requisito para vencer al dragón (las tres cosas)
+1. 🏠 **3 misiones en casa** durante la semana (lo *debilitan*) — ya existe: acción `mision-casa`,
+   `CASA_META=3`, 1/día, +50 plata c/u.
+2. 🔄 **7 vueltas el sábado** (dentro de la ventana del entrenamiento) — **habilitan/desbloquean el
+   desafío** (NO otorgan la insignia por sí solas).
+3. ⚔️ **Superar el desafío presencial** del sábado → la insignia se otorga con el **SÍ de Iván por
+   WhatsApp** (post-cierre). Nada se dispara automático — ese es el anti-abuso (Iván 2026-07-12:
+   confirmó que la 7ma vuelta NO otorga sola, evita que un niño la dispare logueándose). Insignia
+   **genérica** (no la del dragón específico, al menos en el piloto).
+
+### 11.2 El entrenamiento del día lo ABRE y CIERRA un profe (por comando de WhatsApp)
+Cada horario (11:00 / 15:30) tiene ciclo: `CERRADO → (profe ABRE) → ABIERTO → (profe CIERRA) →
+CERRADO`. Durante ABIERTO se cuentan llegadas y vueltas. El CIERRE congela quién quedó elegible
+(7 vueltas + 3 misiones) y habilita la fase de insignias. Abrir/cerrar = **comando de WhatsApp**.
+
+### 11.3 Flujo del día
+```
+El profe ABRE el entrenamiento (comando WhatsApp).
+ABIERTO:
+  · login facial niño   → llegada (+10 oro)            [existe: checkin-face]
+  · cada vuelta         → +100 plata                    [existe: vuelta-face / juego_vueltas]
+  · vuelta 7            → DESBLOQUEA el desafío + audio (anuncia, NO da insignia)
+  · vuelta 10           → CAJA MÁGICA (retira en Banco Fenix) + audio
+  · la LISTA (TV) muestra por niño → ✅7 vueltas / ✅3 misiones = quién accede al desafío
+
+El profe CIERRA (comando WhatsApp): se congela quién quedó elegible.
+
+POST-CIERRE, el niño vuelve a hacer login facial:
+  · si ELEGIBLE (7v + 3m) → WhatsApp a Iván: "¿[nombre] superó el desafío?"
+                              SÍ → TV reproduce video de felicitación + se anota la INSIGNIA (capa)
+                              NO → no pasa nada
+  · si NO elegible        → despedida en TV, NO molesta a Iván:
+                              "¡Hoy estuviste espectacular, {nombre}! Nos vemos el próximo sábado."
+```
+**Anti-abuso (la razón del diseño):** post-cierre nada se dispara solo. La insignia siempre pasa
+por el SÍ de un adulto por WhatsApp (reusa el patrón `_admin_espera_respuesta` ya existente).
+
+### 11.4 Guiones de voz (George) — v2, quedaron NEUTROS (sin género)
+Al reescribirlos desaparecieron "campeón"/"héroe": ya casi no hace falta versión niño/niña.
+- **Llegada:** "¡{nombre} llegó a La Casona! El Guardián Fenix te da la bienvenida. Gracias por
+  venir a cuidar La Casona. Ganaste diez monedas de oro… ¡que comience la aventura!"
+- **Vuelta:** "Muy bien, {nombre}. Vuelta completada. Te ganaste 100 monedas de plata. Vamos
+  otra vuelta más."
+- **7 vueltas (desbloquea el desafío — anuncia, NO da insignia):** "¡Séptima vuelta completada,
+  {nombre}! Desbloqueaste el desafío del día. ¡Con tres vueltas más te ganás la caja mágica!"
+- **Dragón (post-cierre, se dispara con el SÍ de Iván):** "¡{nombre} venció al dragón! Completaste
+  la misión de hoy. Ganaste una nueva insignia."
+- **Caja mágica (10 vueltas):** "¡{nombre} completó 10 vueltas! ¡Sos genial! Te ganaste una caja
+  mágica. Podés retirarla en el Banco Fenix."
+- **Despedida no elegible:** "¡Hoy estuviste espectacular, {nombre}! Nos vemos el próximo sábado."
+- **Tesoro:** ⏳ PENDIENTE (Iván lo va a estudiar; el viejo dice "héroe" → único con género).
+> Al cambiar Llegada y Vuelta hay que **regenerar esos audios para TODOS los niños** (el guión
+> cambió para todos), no solo las nenas. Costo de quota ElevenLabs (free 10k/mes o $5 Creator).
+
+### 11.5 Qué ya existe vs qué falta construir
+**Existe (reusar):** `checkin-face` (login niños) · `vuelta-face`+`juego_vueltas` (conteo por día
+con número de vuelta) · `/juego/dia`+`lista.html` (lista con `vueltas_hoy`) · `PLATA_VUELTA=100`
+y bonus 5/10 · `mision-casa`+`CASA_META=3` · `dragon-vencido` (otorga insignia, +200 plata) ·
+patrón de aprobación admin por WhatsApp (SÍ/NO) · TV que reproduce eventos/videos.
+
+**Falta:** estado ABIERTO/CERRADO por horario · caso `vuelta==7` (evento/audio desbloqueo) ·
+mostrar en la lista ✅7 vueltas + ✅3 misiones (elegibles) · flujo post-cierre (login elegible →
+pregunta WhatsApp; no elegible → despedida) · SÍ → video felicitación + anotar insignia (reusa
+`dragon-vencido`) · abrir/cerrar del profe (facial admin o comando) · audios nuevos/regenerados ·
+video de felicitación (asset).
+
+### 11.6 Decisiones
+- **Abrir/cerrar del profe:** ✅ (Iván 2026-07-12) → **por comando de WhatsApp** (descartado el
+  login facial admin con menú en el tótem).
+- **Insignia por la 7ma vuelta:** ✅ **NO es automática** — la 7ma solo desbloquea/anuncia; la
+  insignia se otorga con el **SÍ de Iván post-cierre**. Y es **genérica** (Iván 2026-07-12).
+- **Texto del audio de la 7ma vuelta:** ✅ definido (§11.4).
+- Abiertas: **video de felicitación** (¿genérico o por niño?) · **texto del audio de Tesoro**.
+
+### 11.7 Incrementos sugeridos (menor→mayor riesgo, uno por deploy con /pre-cambio)
+1. **Lista del día** muestra ✅7 vueltas + ✅3 misiones (display puro, no toca economía).
+2. **Audio/evento en la 7ma vuelta** (mismo patrón que 5/10) + audios regenerados Llegada/Vuelta.
+3. **Abrir/cerrar del entrenamiento** (comando del profe) + estado del día.
+4. **Post-cierre**: login elegible → pregunta WhatsApp → SÍ → video + insignia; no elegible →
+   despedida.
+> Dependencia NFC: hoy las vueltas se cuentan con cara+SÍ/NO manual (puente). Cuando lleguen las
+> pulseras (~20-25/07) solo cambia el ORIGEN de la vuelta; la mecánica de arriba no cambia.
