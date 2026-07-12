@@ -13,4 +13,4 @@
 | Nombre | Código (sessionId) | Fecha | Qué se hizo |
 |--------|--------------------|-------|-------------|
 | auditoría de skills | c26595b6-67d6-4cbf-b0d6-a08c4746d93b | 2026-07-07 | Auditoría de ~50 skills/commands de los 4 agentes + 10 globales + 168 sesiones. Skills globales nuevos (agente-ops, renovar-token-meta, airtable-seguro, pendientes) + estandares-trabajo.md. FENIX: /masivo + export diario automatizado. |
-TV Guardianes + fixes | ab21583d-274b-40b9-943e-496dc7bb0d42 | 2026-07-11 | TV "Guardianes de Hoy" (/juego/dia + /lista) + fixes menú secre, acentos del selfie y cache del video del tótem
+| TV Guardianes + fixes | ab21583d-274b-40b9-943e-496dc7bb0d42 | 2026-07-11 | TV "Guardianes de Hoy" (/juego/dia + /lista) + fixes menú secre, acentos del selfie y cache del video del tótem |
