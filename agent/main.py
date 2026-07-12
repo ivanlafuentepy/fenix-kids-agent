@@ -505,6 +505,21 @@ async def checkin(record_id: str):
         "HORA_CHECKIN": ahora.isoformat(),
     })
 
+    # Fila en ASISTENCIA FENIX (modelo "una fila por presente") — antes solo
+    # la creaban los check-ins por familia/prueba (migración 2.B). Best-effort.
+    if tabla == _RESERVAS:
+        try:
+            from agent.airtable_client import crear_asistencia
+            _nino_id_ci = (fields.get("NINO") or [""])[0]
+            _fam_id_ci = (fields.get("FAMILIAS") or [""])[0]
+            await crear_asistencia(
+                nombre=nombre, fecha_iso=ahora.date().isoformat(),
+                hora_checkin_iso=ahora.isoformat(), nino_id=_nino_id_ci,
+                familia_id=_fam_id_ci, reserva_id=record_id, turno=hora, metodo="QR",
+            )
+        except Exception as _e_asis_ci:
+            logger.warning(f"[CHECKIN] Asistencia no creada para {record_id}: {_e_asis_ci}")
+
     return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ok", ahora.strftime("%H:%M")))
 
 
@@ -1336,27 +1351,51 @@ async def test_envio(telefono: str, msg: str = "Test desde Railway", _: bool = D
 @app.get("/enviar-qr/{telefono}")
 async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_require_admin)):
     """
-    Genera y envía QR de check-in. Busca registros en PRUEBA FENIX por {telefono}.
-    Si se pasa ?destino=XXXX, envía al número destino en vez de al lead (para preview).
+    Genera y envía QR de check-in — uno por RESERVA futura de la familia
+    (migración 2.B: el QR apunta a /checkin/{reserva_id}). Fallback temporal a
+    PRUEBA FENIX si el teléfono no tiene familia/reservas (se corta en 2.D).
+    Si se pasa ?destino=XXXX, envía al número destino en vez de al lead (preview).
     """
     from agent.qr import generar_qr
-    from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
+    from agent.airtable_client import buscar_familia_por_telefono, buscar_reservas_familia, marcar_qr_enviado_reserva
     from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic, group_id_para_agente
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-    if not pruebas:
-        return {"error": "No tiene registros en PRUEBA FENIX"}
     enviar_a = destino or telefono
     es_preview = bool(destino)
     enviados = 0
-    for pq in pruebas:
-        qr_bytes = generar_qr(pq["id"])
-        await proveedor.enviar_imagen_bytes(
-            enviar_a, qr_bytes, "image/png",
-            caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
-        )
-        if not es_preview:
-            await marcar_qr_enviado_prueba(pq["id"])
-        enviados += 1
+
+    _familia_qr = await buscar_familia_por_telefono(telefono)
+    _reservas_qr = []
+    if _familia_qr:
+        from datetime import datetime as _dt_qr
+        from zoneinfo import ZoneInfo as _ZI_qr
+        _hoy_qr = _dt_qr.now(_ZI_qr("America/Asuncion")).date().isoformat()
+        _reservas_qr = [r for r in await buscar_reservas_familia(_familia_qr["id"])
+                        if str(r.get("fecha", "")) >= _hoy_qr]
+    if _reservas_qr:
+        for _rq in _reservas_qr:
+            qr_bytes = generar_qr(_rq["id"])
+            await proveedor.enviar_imagen_bytes(
+                enviar_a, qr_bytes, "image/png",
+                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+            )
+            if not es_preview:
+                await marcar_qr_enviado_reserva(_rq["id"])
+            enviados += 1
+    else:
+        # Fallback legacy: registros PRUEBA FENIX (hasta 2.D)
+        from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
+        pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+        if not pruebas:
+            return {"error": "No tiene reservas futuras ni registros en PRUEBA FENIX"}
+        for pq in pruebas:
+            qr_bytes = generar_qr(pq["id"])
+            await proveedor.enviar_imagen_bytes(
+                enviar_a, qr_bytes, "image/png",
+                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+            )
+            if not es_preview:
+                await marcar_qr_enviado_prueba(pq["id"])
+            enviados += 1
     # Espejar en Telegram — grupo según el agente REAL del número (agent_actual),
     # no forzar leads: una familia reserva por QR y quedaría en el grupo equivocado,
     # haciendo rebotar su topic (se crea uno nuevo en cada salto de grupo).
