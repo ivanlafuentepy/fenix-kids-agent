@@ -43,13 +43,17 @@ def cargar_config_prompts() -> dict:
         return {}
 
 
-def _contexto_fechas() -> str:
+def _contexto_fechas(incluir_hora: bool = True) -> str:
     """
     Inyecta la fecha actual, los sábados restantes del MES CORRIENTE,
     y los sábados del mes siguiente (como backup por si al padre no le queda
     bien ninguno del mes actual).
 
     Se agrega al system prompt para que los agentes nunca tengan que calcular fechas.
+
+    incluir_hora=False lo deja estable durante todo el día: es lo que permite
+    cachearlo (la hora %H:%M cambiaba el bloque cada minuto y mataba el prompt
+    cache — auditoría 2026-07-12, A11). La hora va aparte, en el bloque sin cache.
     """
     from zoneinfo import ZoneInfo
     from datetime import date, timedelta as td
@@ -110,8 +114,9 @@ def _contexto_fechas() -> str:
 
     sabados_siguiente_str = "\n".join(f"  - {fmt(s)}" for s in sabados_siguiente)
 
+    _hora_frag = f", hora: {hora_str}" if incluir_hora else ""
     return (
-        f"HOY es {hoy_str}, hora: {hora_str} (Asunción, Paraguay).\n"
+        f"HOY es {hoy_str}{_hora_frag} (Asunción, Paraguay).\n"
         f"MAÑANA es {manana_str}.\n"
         f"PASADO MAÑANA es {pasado_str}.\n"
         f"🚨 NUNCA calcules qué día es hoy, mañana o pasado. Usá EXACTAMENTE lo de arriba.\n\n"
@@ -175,10 +180,24 @@ async def generar_respuesta(
         fallback = obtener_mensaje_fallback()
         return (fallback, []) if _usa_tools else fallback
 
-    system_prompt = cargar_prompt_agente(agent_actual)
-
+    # System en DOS bloques (auditoría 2026-07-12, A11):
+    #   Bloque 1 (CACHEADO): fechas del día SIN hora + prompt del YAML — estable
+    #     todo el día y compartido entre TODAS las conversaciones del agente.
+    #     Antes la hora %H:%M iba al inicio del bloque cacheado y lo invalidaba
+    #     cada minuto. OJO mínimo cacheable de Haiku 4.5 = 4096 tokens de
+    #     prefijo (tools+system): ivan ~4330 ✓ cachea; aurora ~2550 queda bajo
+    #     el mínimo (el cache_control se ignora en silencio, sin costo extra).
+    #   Bloque 2 (sin cache): hora actual + contexto del lead — cambia por
+    #     mensaje sin invalidar el bloque 1.
+    from zoneinfo import ZoneInfo as _ZI_sys
+    config = cargar_config_prompts()
+    clave = "aurora_prompt" if agent_actual == "aurora" else "ivan_prompt"
+    prompt_estatico = config.get(clave, f"Sos {agent_actual} de FENIX KIDS ACADEMY. Respondé en español.")
+    bloque_cacheado = f"{_contexto_fechas(incluir_hora=False)}\n\n{prompt_estatico}"
+    hora_actual = datetime.now(_ZI_sys("America/Asuncion")).strftime("%H:%M")
+    bloque_dinamico = f"Hora actual: {hora_actual} (Asunción, Paraguay)."
     if contexto_extra:
-        system_prompt += f"\n\n{contexto_extra}"
+        bloque_dinamico += f"\n\n{contexto_extra}"
 
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
     # Reservas de Airtable van en el mensaje del usuario (máxima prioridad para Haiku)
@@ -186,6 +205,15 @@ async def generar_respuesta(
         mensajes.append({"role": "user", "content": f"[DATOS AIRTABLE EN TIEMPO REAL]\n{reservas_airtable}\n\nMensaje del padre: {mensaje}"})
     else:
         mensajes.append({"role": "user", "content": mensaje})
+
+    # Segundo breakpoint de cache: en el mensaje ACTUAL del usuario. El prefijo
+    # tools+system+historial crece con la conversación y cruza el mínimo
+    # cacheable de Haiku aunque el system solo no llegue (verificado 12/07:
+    # ~4350 tokens no escriben cache, con más sí). Los hits se acumulan turno
+    # a turno: el grueso del gasto está en las conversaciones largas.
+    _ult = mensajes[-1]
+    if isinstance(_ult["content"], str):
+        _ult["content"] = [{"type": "text", "text": _ult["content"], "cache_control": {"type": "ephemeral"}}]
 
     acciones = []  # tools ejecutados en esta llamada
     _MAX_TOOL_ROUNDS = 3
@@ -204,9 +232,13 @@ async def generar_respuesta(
                     "system": [
                         {
                             "type": "text",
-                            "text": system_prompt,
+                            "text": bloque_cacheado,
                             "cache_control": {"type": "ephemeral"},
-                        }
+                        },
+                        {
+                            "type": "text",
+                            "text": bloque_dinamico,
+                        },
                     ],
                     "messages": mensajes,
                 }
@@ -218,9 +250,12 @@ async def generar_respuesta(
                 async with asyncio.timeout(25):
                     response = await _client.messages.create(**api_kwargs)
 
+                _cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+                _cache_write = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
                 logger.info(
                     f"[{agent_actual.upper()}] Round {_round + 1} "
-                    f"({response.usage.input_tokens} in / {response.usage.output_tokens} out) "
+                    f"({response.usage.input_tokens} in / {response.usage.output_tokens} out / "
+                    f"cache r{_cache_read} w{_cache_write}) "
                     f"stop={response.stop_reason}"
                 )
 
