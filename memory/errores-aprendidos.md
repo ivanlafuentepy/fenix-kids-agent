@@ -132,6 +132,24 @@ en el WABA correcto cuando se conecte su handler; META_CAPI_ACCESS_TOKEN está m
 
 ---
 
+## 2026-07-12 — Dos sesiones, un índice git: el stage de una viajó en el commit de la otra
+
+**Síntoma:** el Push 1.2 de la migración (staged con git apply --cached) apareció
+commiteado dentro de d2b3b33 ("docs(skill): plantilla...") de la sesión paralela,
+con mensaje que no describe ese cambio.
+
+**Causa raíz:** las dos sesiones comparten el MISMO working tree e índice. Sesión A
+stageó su hunk y ejecutó el commit en un tool call POSTERIOR; entre medio, sesión B
+corrió su propio git commit y se llevó el índice completo (su cambio + el hunk ajeno).
+
+**How to apply:** con sesiones paralelas, stage y commit SIEMPRE en una sola cadena
+atómica (git add/apply --cached && git commit && git push). Nunca separar stage y
+commit en pasos distintos. Antes de commitear, git diff --cached para confirmar que
+solo viaja lo propio. Si un hunk ajeno ya viajó en un commit propio: avisar a la otra
+sesión con el hash y NO reescribir historia (el push compartido lo resuelve).
+
+---
+
 ## 2026-07-11 — El atajo numérico del menú secre pisaba las selecciones pendientes
 
 **Síntoma:** `selfie Horacio González` encontró 2 candidatos y pidió responder con un
