@@ -263,3 +263,25 @@ Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agent
 **Fenix:** Plan aprobado (plan mode). Implementado: `agent/formulario_reserva.py` nuevo (envía el Flow `fenix_cargar_nino` y ACTUALIZA FAMILIA/NIÑO/TUTORES a prueba sin duplicar), `flujo_pagos.py` (post-pago manda el form + flag `esperando_formulario_reserva`, fallback a agenda), `main.py` (rama nfm_reply para leads), `prompts.yaml` FASE 4/5 (ya no pide datos por texto). Deploys `6ced372` (código) + `f84b3f7` (prompt), ambos SUCCESS. Falta probar end-to-end en WhatsApp real.
 
 **Commits de esta tanda:** `022b655` fix followups grupo real · `ea1cdab` fix QR grupo real · `1320dcb` memoria rebote topics · `6ced372` feat formulario reserva · `f84b3f7` config prompt FASE 4/5.
+
+---
+
+## 2026-07-12 — Migración final: eliminar PRUEBA FENIX (FASE 0 + 1 + 2.B)
+
+**Ivan:** "la tabla pruebas fenix ya se puede eliminar vd? ya hicimos toda la migración, no afecta en nada?"
+**Fenix:** NO — con evidencia dura: la tabla se leyó en prod ayer mismo (logs Railway), está referenciada en 9 archivos (>80 usos) y se sigue CREANDO en el flujo vivo (`crear_prueba_fenix` en formulario/agenda/promo). Lo que migramos (M1) fue solo el pago. El corte de la tabla nunca se hizo.
+
+**Ivan:** "en todo el proyecto ya no debería haber nada haciendo referencia a esa tabla."
+**Fenix:** Tampoco es así, lo probé: leída en prod el 11/07 18:12, se sigue escribiendo en cada agenda de prueba. Es la columna vertebral del flujo de leads. Es un proyecto de migración en sí, no un borrado.
+
+**Ivan:** "armemos el plan para terminar ya esa migración y eliminar esta tabla."
+**Fenix:** Plan mode. Lancé 3 agentes Explore (docs+modelo nuevo / escrituras / lecturas) + 1 Plan. Perfilé los datos reales (75 regs, 0 pruebas futuras, campos de RESERVAS/HORARIOS/ASISTENCIA). Descubrí un **bug activo de doble conteo** (RESERVAS dual-write + PRUEBA sumados). Plan por fases 0→2.D aprobado. Decisiones de Ivan: histórico con backup + tabla LEGACY 30 días; comando `resumen prueba` eliminado (no reconstruir).
+
+**Ivan:** "seguimos" (x varias) + "hace b5, b6 y b7 sin pedirme permiso de nada."
+**Fenix:** Ejecuté domingo (sin clases, riesgo bajo) 11 pushes incrementales, cada uno compilando + deploy SUCCESS + verificado en seco contra datos reales:
+- FASE 0 (`e503147`): lookup ESTADO PLAN en RESERVAS (Metadata API) + `es_prueba` + backup.
+- FASE 1 (`aae04e4` + dentro de `d2b3b33`): cerré los 2 gaps de dual-write.
+- FASE 2.B (`f0c2bd2`→`a85b786`): B1 contexto Aurora (fix doble conteo) · B2 resúmenes reservas/flias/telegram · B3 asistencia interactiva · B4 resumen asis + retiro de "resumen prueba" (−243 líneas) · B5 web pública · B6 QR por reserva + asistencia en /checkin · B7 señal reagendamiento OR familia+reservas.
+Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia: el guard del formulario NO se voltea hasta C2 (voltearlo hoy cortaría PRUEBA antes de migrar "cargar familia") — documentado en código y memoria.
+
+**Commits de la sesión (migración):** `e503147` Push 0 · `aae04e4` Push 1.1 · `7ec5810` memoria stage-atómico · `f0c2bd2` B1 · `bc09c3b` B2 · `36d2742` B3 · `3052039` B4 · `fbbc7d0` B5 · `88186aa` B6 · `a85b786` B7. (Push 1.2 viajó dentro de `d2b3b33` de la sesión paralela.)
