@@ -321,6 +321,26 @@ async def _require_admin(x_admin_key: str | None = Header(default=None, alias="X
     return True
 
 
+async def _require_admin_o_key(
+    x_admin_key: str | None = Header(default=None, alias="X-ADMIN-KEY"),
+    k: str = "",
+):
+    """Como _require_admin pero acepta también ?k= (para abrir en el navegador).
+
+    Protege los /api/* que exponen datos de niños: dejaron de ser públicos
+    (auditoría 2026-07-12 — la web pública ya no los consume desde que se
+    quitaron las páginas con datos de menores del sitio).
+    """
+    import hmac as _hmac
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="ADMIN_API_KEY no configurada en el servidor")
+    candidato = x_admin_key or k
+    if not candidato or not _hmac.compare_digest(candidato, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
+
+
 # ── Health & stats ────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -682,8 +702,10 @@ async def servir_followup(nombre_archivo: str, key: str = ""):
 
 
 @app.get("/api/reservas")
-async def api_reservas(fecha: str = ""):
-    """Devuelve reservas de un sábado agrupadas por turno. ?fecha=2026-05-24 o próximo sábado."""
+async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key)):
+    """Devuelve reservas de un sábado agrupadas por turno. ?fecha=2026-05-24 o próximo sábado.
+
+    Protegido (X-ADMIN-KEY o ?k=): expone niños por turno + teléfono del padre."""
     from datetime import date, timedelta, datetime, timezone
     from agent.airtable_client import obtener_ninos_por_horario
     import unicodedata
@@ -768,11 +790,11 @@ async def estadisticas(_: bool = Depends(_require_admin)):
     return {"conversion": stats}
 
 
-# ── API Pública: fichas de alumnos ────────────────────────────────────────────
+# ── API fichas de alumnos (protegida — datos de menores) ─────────────────────
 
 @app.get("/api/alumnos")
-async def api_alumnos():
-    """Devuelve todos los alumnos (NIÑOS FENIX) con datos para la web pública."""
+async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
+    """Devuelve todos los alumnos (NIÑOS FENIX). Protegido: X-ADMIN-KEY o ?k=."""
     from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
     from datetime import date
     import unicodedata
@@ -858,8 +880,8 @@ async def api_alumnos():
 
 
 @app.get("/api/alumno/{slug}")
-async def api_alumno_detalle(slug: str):
-    """Devuelve detalle de un alumno por slug (nombre-apellido)."""
+async def api_alumno_detalle(slug: str, _: bool = Depends(_require_admin_o_key)):
+    """Devuelve detalle de un alumno por slug (nombre-apellido). Protegido: X-ADMIN-KEY o ?k=."""
     from agent.airtable_client import _get_records, _NINOS, _PRUEBAS
     from datetime import date
     import unicodedata
