@@ -1423,9 +1423,11 @@ async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_r
         if not es_preview:
             await marcar_qr_enviado_prueba(pq["id"])
         enviados += 1
-    # Espejar en Telegram
+    # Espejar en Telegram — grupo según el agente REAL del número (agent_actual),
+    # no forzar leads: una familia reserva por QR y quedaría en el grupo equivocado,
+    # haciendo rebotar su topic (se crea uno nuevo en cada salto de grupo).
     try:
-        _tg_group = group_id_para_agente("ivan")
+        _tg_group = await grupo_telegram_para(telefono)
         topic_id = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_tg_group)
         if topic_id:
             await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({enviados})", telefono=telefono, group_override=_tg_group)
