@@ -191,3 +191,37 @@ Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agent
 - Frontend (Pages, `mundo-fenix/` untracked): `lista.html` nuevo + `_headers` nuevo
 
 **Pendiente inmediato:** posible duplicado en NIÑOS FENIX ("Thiago Gomez" aparece dos veces) — revisar si es real y limpiar.
+
+## 2026-07-11/12 — El sábado del Espejo: avatar + vueltas por cara + presentación en TV (probado con niños reales)
+
+**Ivan:** Los chicos llegan hoy y ninguno tiene avatar. Cuando el Espejo los reconozca y no tengan avatar, que la tablet les ofrezca elegirlo, y al elegir que las monedas queden en su billetera.
+**Fenix:** Backend: `checkin-face` devuelve el guardián (robot+billetera) + nuevo `POST /juego/elegir-robot` (commit `3667dfb`). Tótem: selector de 10 Guardianes. De paso cayó un bug: el backend nunca mandaba el robot y TODOS se fusionaban con Mamba.
+
+**Ivan:** Los NFC llegan en 10-15 días. Mientras tanto: si ya se escaneó hoy, que la tablet pregunte "¿completaste una vuelta?" con SÍ/NO (yo superviso) y cada SÍ pague monedas.
+**Fenix:** `POST /juego/vuelta-face` (+100 🥈, bonus 5ª/10ª, anti doble-tap 120s) + panel SÍ/NO en el tótem (commit `8082615`). Probado en prod con Mateo y revertido.
+
+**Ivan:** Cuando el niño llega que marque la asistencia. Y quiero el comando "selfie Nombre Apellido" como en Dorita para registrar caras.
+**Fenix:** La asistencia ya estaba implementada… pero descubrimos después que NUNCA funcionó (ver abajo). El flujo de registro de caras ya existía completo (`registrar cara`); solo se agregó el alias `selfie` (commit `1ace6ab`).
+
+**Ivan:** La tablet con Chrome; ¿la TV con Fully Kiosk o Chrome?
+**Fenix:** TV con Fully Kiosk (Autoplay Audio ON — la voz de George suena sin gesto); tablet con Chrome (Web Speech para el "Hola Fenix").
+
+**Ivan:** Quiero que el reposo de la TV sea el mapa a pantalla completa, y cuando hay evento aparezca el Fenix.
+**Fenix:** `mapa.html` como iframe-capa-idle dentro de la TV (singleton + fade). Después pidió el mapa PELADO: sin header, ticker, tótem, etiquetas de estaciones ni avatares flotantes (todo oculto por CSS, reversible).
+
+**Ivan:** Probé como AlanTest y no me ofreció el avatar.
+**Fenix:** No era el código: la tablet corría el totem VIEJO (cero POSTs a los endpoints nuevos en logs). Fix de raíz: auto-reload kiosk — tablet y TV hashean su HTML cada 10 min (Pages no manda ETag) y recargan solo en reposo; la TV salta la portada tras auto-reload y vigila index+mapa.
+
+**Ivan:** Elegí el avatar y me cargó el dinero en la tablet — eso tiene que pasar EN LA TV: elijo, me vuelvo a espejar, y ahí aparece en la TV.
+**Fenix:** `presentar_avatar` en ESTADO JSON al elegir; el próximo escaneo lo consume → evento llegada para la TV (celebra con monedas) + la tablet solo fusiona y manda a la pantalla grande (commit `c9d4163`).
+
+**Ivan:** Reseteá mi test para probar de cero. (3 veces)
+**Fenix:** `scripts/reset_alan_test.py` (commit `8f31122`). Al resetear cayó otro bug: **la asistencia FACE nunca se creó** — el select MÉTODO solo tenía "QR" → 422 silencioso desde el 08/07. Opción FACE creada via typecast; confirmado con asistencias reales después.
+
+**Ivan:** ¿Por qué a Fiorella no le dio las monedas? Dice 0.
+**Fenix:** **Dos Fiorellas**: el "¿ya llegó hoy?" comparaba por nombre de PILA en eventos → González quedó como repetida de Perinetto. Fix `d673c70`: repetido = gate `ult_oro_llegada` del guardián del NIÑO. Datos reparados (+10, movimiento, asistencia).
+
+**Ivan:** ¿Qué pasa con las reservas? En tutores marca "Lead", sin nombre. ¿Es porque no se registraron los datos del papá?
+**Fenix:** Confirmado con datos: 3 tutores "Lead" (`flujo_pagos.py:68` cae a "Lead" si el extractor no encuentra el nombre — y falló con "Carmen Vergara mamá", "Mamá: Rosa..."). Los nombres SÍ están en los chats: Carmen Vergara (familia sin niños ni reservas), Leticia Méndez (falta Valentina Buey), Rosa Marciana Duarte. Quedó esperando OK para cargar (pendiente 263) + rediseño del extractor (264: preguntar el nombre, no más regex).
+
+**Commits de la sesión:** `3667dfb` avatar desde el tótem · `8082615` vueltas por cara · `1ace6ab` alias selfie · `c9d4163` presentación TV · `d673c70` fix dos Fiorellas · `8f31122` script reset · `92cdaf6`/`dc2dfb2`/`7e9cd5e` docs errores-aprendidos. Frontend: ~8 deploys a `mundo-fenix.pages.dev` (no-git).
