@@ -1626,7 +1626,7 @@ async def obtener_contenido_de_ninos(nino_ids: list[str], max_items: int = 5) ->
     if not nino_ids:
         return []
     nset = set(nino_ids)
-    records = await _get_records(_CONTENIDO, max_records=100)
+    records = await _get_records(_CONTENIDO, max_records=1000)
     items = []
     for r in records:
         f = r.get("fields", {})
@@ -1696,7 +1696,7 @@ async def obtener_familias_inscriptas() -> list[dict]:
     aún no se inscribieron) — no son clientes, no reciben broadcasts.
     """
     formula = "AND(OR(LEN({CELL PADRE})>0, LEN({CELL MADRE})>0), {ESTADO PLAN}!='A PRUEBA')"
-    records = await _get_records(_FAMILIAS, formula=formula, max_records=100)
+    records = await _get_records(_FAMILIAS, formula=formula, max_records=1000)
     resultado = []
     for r in records:
         f = r.get("fields", {})

@@ -146,7 +146,7 @@ async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
     def _sin_tildes(s: str) -> str:
         return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 
-    pruebas = await _get_records(_PRUEBAS, formula="", max_records=100)
+    pruebas = await _get_records(_PRUEBAS, formula="", max_records=1000)
     _nombre_norm = _sin_tildes(nombre_buscar)
 
     matches = []

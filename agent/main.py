@@ -740,7 +740,7 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
 
     # Cargar familias + niños para fotos y teléfonos
     from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
-    _ninos_recs = await _get_records(_NINOS, max_records=100)
+    _ninos_recs = await _get_records(_NINOS, max_records=1000)
     _ninos_map = {}
     for _nr in _ninos_recs:
         _nf = _nr.get("fields", {})
@@ -748,7 +748,7 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
             "foto": (_nf.get("FOTO") or [{}])[0].get("url", "") if _nf.get("FOTO") else "",
             "familia_id": (_nf.get("FAMILIA") or [None])[0],
         }
-    _familias_recs = await _get_records(_FAMILIAS, max_records=100)
+    _familias_recs = await _get_records(_FAMILIAS, max_records=1000)
     _fam_map = {}
     for _fr in _familias_recs:
         _ff = _fr.get("fields", {})
@@ -802,11 +802,11 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
 
     # TODO(migración): _get_records trunca a 100 — NIÑOS/FAMILIAS van a superarlo;
     # paginar con offset cuando pase (regla airtable-seguro).
-    records = await _get_records(_NINOS, max_records=100)
+    records = await _get_records(_NINOS, max_records=1000)
 
     # Cargar familias para obtener teléfonos padres + estado del plan
     familias_cache = {}
-    familias_recs = await _get_records(_FAMILIAS, max_records=100)
+    familias_recs = await _get_records(_FAMILIAS, max_records=1000)
     for fam in familias_recs:
         ff = fam.get("fields", {})
         familias_cache[fam["id"]] = {
@@ -888,7 +888,7 @@ async def api_alumno_detalle(slug: str, _: bool = Depends(_require_admin_o_key))
     import re
 
     # Buscar en NIÑOS FENIX
-    records = await _get_records(_NINOS, max_records=100)
+    records = await _get_records(_NINOS, max_records=1000)
     alumno = None
     for rec in records:
         f = rec.get("fields", {})
