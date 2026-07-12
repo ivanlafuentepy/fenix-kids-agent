@@ -2599,12 +2599,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Comando PRESENTE nombre (solo admin) ──────────────────────────
         if telefono == admin_phone and texto.strip().upper().startswith("PRESENTE "):
             _args_presente = texto.strip()[len("PRESENTE "):].strip()
-            _solo_prueba = False
+            # "PRESENTE PRUEBA nombre" (hábito viejo): el prefijo se acepta y se
+            # ignora — la búsqueda unificada en RESERVAS ya incluye a los de prueba.
             if _args_presente.upper().startswith("PRUEBA "):
-                _solo_prueba = True
                 _args_presente = _args_presente[len("PRUEBA "):].strip()
             try:
-                await _marcar_presente_por_nombre(telefono, _args_presente, solo_prueba=_solo_prueba)
+                await _marcar_presente_por_nombre(telefono, _args_presente)
             except Exception as e:
                 logger.error(f"[PRESENTE] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error: {e}")
