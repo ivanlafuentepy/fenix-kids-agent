@@ -539,12 +539,19 @@ async def borrar_mensaje_procesado(mensaje_id: str):
 
 
 async def limpiar_mensajes_procesados_antiguos():
-    """Limpia mensajes procesados de más de 24h (evitar que la tabla crezca infinito)."""
+    """Limpia mensajes procesados de más de 24h (evitar que la tabla crezca infinito).
+
+    EXCEPCIÓN: las claves "pago-tarjeta:{spid}" son idempotencia de DINERO, no
+    dedup de transporte — un replay de la pasarela pasadas 24h creaba un PAGO
+    duplicado (auditoría 2026-07-12, A6). Se retienen (son pocas, no crece)."""
     from datetime import timedelta
     limite = datetime.utcnow() - timedelta(hours=24)
     async with async_session() as session:
         result = await session.execute(
-            select(MensajeProcesado).where(MensajeProcesado.procesado_en < limite)
+            select(MensajeProcesado).where(
+                MensajeProcesado.procesado_en < limite,
+                ~MensajeProcesado.mensaje_id.like("pago-tarjeta:%"),
+            )
         )
         for m in result.scalars().all():
             await session.delete(m)
