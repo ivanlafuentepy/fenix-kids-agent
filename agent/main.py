@@ -2291,11 +2291,12 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         logger.error(f"[AURORA] Error cargando reservas familia: {e}")
 
     # Total agendados por horario (inscriptos + prueba, sin nombres)
-    # Las consultas son independientes entre horarios → se corren en paralelo con un
-    # semáforo de 5 (límite de rate de Airtable: 5 req/s por base) para no recibir 429.
+    # Fuente ÚNICA: RESERVAS FENIX via obtener_ninos_por_horario (migración 2.B —
+    # antes se sumaban además los registros PRUEBA FENIX y los niños de prueba
+    # con dual-write se contaban DOS veces). Las consultas son independientes
+    # entre horarios → paralelo con semáforo de 5 (rate de Airtable).
     try:
         from datetime import date as _date_cls
-        from agent.airtable_client import _get_records, _PRUEBAS
         horarios = await obtener_horarios_disponibles(max_horarios=6)
         if horarios:
             _sem_airtable = asyncio.Semaphore(5)
@@ -2307,32 +2308,9 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                     return None
                 _fd = _date_cls.fromisoformat(fecha_iso)
                 fecha_texto = f"{_fd.day}/{_fd.month}"
-
-                async def _ninos():
-                    async with _sem_airtable:
-                        return await obtener_ninos_por_horario(fecha_iso, hora)
-
-                async def _pruebas(fecha: str):
-                    async with _sem_airtable:
-                        return await _get_records(
-                            _PRUEBAS,
-                            formula=f"AND({{FECHA RESERVA}}='{fecha}', {{HORA}}='{hora}', NOT({{INSCRIPTO}}))",
-                            max_records=50,
-                        )
-
-                # Inscriptos (RESERVAS FENIX) + pruebas (PRUEBA FENIX, dos formatos de fecha)
-                ninos_hor, pruebas, pruebas2 = await asyncio.gather(
-                    _ninos(), _pruebas(fecha_iso), _pruebas(fecha_texto)
-                )
-                # Dedup pruebas por teléfono
-                _tels_prueba = set()
-                n_prueba = 0
-                for p in pruebas + pruebas2:
-                    _tp = p.get("fields", {}).get("TELEFONO", "")
-                    if _tp not in _tels_prueba:
-                        _tels_prueba.add(_tp)
-                        n_prueba += 1
-                total = len(ninos_hor) + n_prueba
+                async with _sem_airtable:
+                    ninos_hor = await obtener_ninos_por_horario(fecha_iso, hora)
+                total = len(ninos_hor)
                 return f"  Sábado {fecha_texto} {hora}h: {total} agendados\n"
 
             # gather preserva el orden de los horarios
