@@ -27,7 +27,7 @@ import json
 import asyncio
 import random
 import logging
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from agent.memory import (
@@ -86,6 +86,38 @@ async def _programar_recordatorio_clase(telefono: str, fecha_iso: str, hora_clas
     payload = json.dumps({"template": "recordatorio_clase", "hora": hora_clase})
     rec_id = await crear_recordatorio(telefono, "clase", envio_utc, payload)
     logger.info(f"[RECORDATORIO] Clase programado id={rec_id} para {telefono} — {dia_clase} 07:00 PY")
+
+
+async def programar_rescate_formulario(telefono: str):
+    """Rescate del lead PAGADO que no completa el formulario Meta (auditoría
+    2026-07-12 A7, aprobado por Ivan): sin esto quedaba colgado para siempre
+    — el prompt le prohíbe al brain agendar y modo_agenda nunca se activaba.
+
+    +2h  → re-envía el Flow (recordatorio único).
+    +24h → suelta el formulario y cae al flujo de agenda por texto (modo_agenda).
+
+    Persistido en Postgres (sobrevive deploys). Se cancela al completar el
+    formulario. Si el horario cae de noche (21:00–08:00 PY) se corre a las
+    09:00 PY siguientes — a un padre que pagó no se le escribe de madrugada.
+    """
+    await cancelar_recordatorios_por_telefono(telefono, tipo="form_rescate")
+
+    def _clamp_nocturno(envio_utc):
+        local = envio_utc.replace(tzinfo=timezone.utc).astimezone(_TZ_PY)
+        if local.hour >= 21:
+            local = (local + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        elif local.hour < 8:
+            local = local.replace(hour=9, minute=0, second=0, microsecond=0)
+        return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    ahora = datetime.utcnow()
+    envio_2h = _clamp_nocturno(ahora + timedelta(hours=2))
+    envio_24h = _clamp_nocturno(ahora + timedelta(hours=24))
+    if envio_24h <= envio_2h:
+        envio_24h = envio_2h + timedelta(hours=12)
+    await crear_recordatorio(telefono, "form_rescate", envio_2h, json.dumps({"template": "form_rescate_2h"}))
+    await crear_recordatorio(telefono, "form_rescate", envio_24h, json.dumps({"template": "form_rescate_24h"}))
+    logger.info(f"[FORM-RESCATE] Programado para {telefono}: 2h={envio_2h}Z, 24h={envio_24h}Z")
 
 
 async def _programar_llamada(telefono: str, hora_llamada: str):
@@ -173,6 +205,43 @@ async def _enviar_recordatorio(rec):
             await notificar_llamada_urgente(telefono_lead, nombre_padre, wa_link)
         except Exception:
             pass
+        return ok
+
+    if template in ("form_rescate_2h", "form_rescate_24h"):
+        # Rescate del formulario post-pago (A7). Guard: solo si el lead SIGUE
+        # esperando el formulario — si ya lo completó, el recordatorio se marca
+        # enviado sin mandar nada (la cancelación al completar es best-effort).
+        from agent.ab_test import obtener_estado_flags
+        flags = await obtener_estado_flags(rec.telefono)
+        if not flags.get("esperando_formulario_reserva"):
+            logger.info(f"[FORM-RESCATE] {rec.telefono} ya no espera formulario — {template} omitido")
+            return True
+
+        if template == "form_rescate_2h":
+            # Recordatorio único: re-enviar el Flow
+            from agent.formulario_reserva import enviar_formulario_reserva
+            ok = await enviar_formulario_reserva(rec.telefono)
+            if ok:
+                await guardar_mensaje(rec.telefono, "assistant", "[formulario de reserva re-enviado +2h]")
+                logger.info(f"[FORM-RESCATE] Flow re-enviado a {rec.telefono} (+2h)")
+            return ok
+
+        # form_rescate_24h: soltar el formulario y caer al flujo de agenda por texto
+        from agent.ab_test import actualizar_estado_flags
+        from agent.flujo_pagos import _armar_mensaje_agenda_post_pago
+        await actualizar_estado_flags(rec.telefono, esperando_formulario_reserva=False, modo_agenda=True)
+        msg = await _armar_mensaje_agenda_post_pago()
+        ok = await proveedor.enviar_mensaje(rec.telefono, msg)
+        if ok:
+            await guardar_mensaje(rec.telefono, "assistant", msg)
+            logger.info(f"[FORM-RESCATE] {rec.telefono} pasado a agenda por texto (+24h)")
+        try:
+            _grp = await grupo_telegram_para(rec.telefono)
+            _topic = await obtener_o_crear_topic(rec.telefono, f"📱 {rec.telefono}", group_override=_grp)
+            if _topic:
+                await enviar_a_topic(_topic, "⏰ Lead pagado no completó el formulario en 24h — pasado a agenda por texto", telefono=rec.telefono, group_override=_grp)
+        except Exception as _e_fr:
+            logger.warning(f"[FORM-RESCATE] espejo Telegram falló: {_e_fr}")
         return ok
 
     # Recordatorio de clase (default)

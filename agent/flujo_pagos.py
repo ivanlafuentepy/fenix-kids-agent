@@ -283,6 +283,14 @@ async def _procesar_comprobante(
             if enviado:
                 await actualizar_estado_flags(telefono, esperando_formulario_reserva=True)
                 await guardar_mensaje(telefono, "assistant", "[formulario de reserva enviado]")
+                # Rescate A7 (aprobado 12/07): +2h re-envía el Flow, +24h cae a
+                # agenda por texto — sin esto un lead pagado que no completaba
+                # el formulario quedaba colgado para siempre.
+                try:
+                    from agent.loops import programar_rescate_formulario
+                    await programar_rescate_formulario(telefono)
+                except Exception as _e_resc:
+                    logger.error(f"[PAGOS] No se pudo programar rescate de formulario: {_e_resc}")
                 if topic_id:
                     await enviar_a_topic(topic_id, "📋 Formulario de reserva enviado al lead", telefono=telefono, group_override=group_override)
                 logger.info(f"[PAGOS] Formulario de reserva enviado a {telefono}")

@@ -141,6 +141,12 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
 
     # Ahora sí: cerrar el paso del formulario y ofrecer las fechas (activar modo agenda)
     await actualizar_estado_flags(telefono, esperando_formulario_reserva=False, modo_agenda=True)
+    # Cancelar el rescate A7 (+2h/+24h) — el formulario ya se completó
+    try:
+        from agent.memory import cancelar_recordatorios_por_telefono
+        await cancelar_recordatorios_por_telefono(telefono, tipo="form_rescate")
+    except Exception as e:
+        logger.warning(f"[RESERVA-FORM] no se pudo cancelar rescate: {e}")
     try:
         msg_agenda = await _armar_mensaje_agenda_post_pago()
         await guardar_mensaje(telefono, "assistant", msg_agenda)
