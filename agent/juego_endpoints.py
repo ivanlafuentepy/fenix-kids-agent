@@ -1090,13 +1090,17 @@ async def juego_dia():
             por_nino_id[item["nino_id"]] = item
         por_nombre[item["nombre"].lower()] = item
 
-    # 1b) Apellido — GUARDIANES no lo guarda; lo trae NIÑOS FENIX vía NINO ID
+    # 1b) Apellido — GUARDIANES no lo guarda; lo trae NIÑOS FENIX vía NINO ID.
+    #     Solo la INICIAL: el endpoint es público (TV) y el apellido completo de
+    #     menores no debe salir sin auth (auditoría 2026-07-12). La inicial
+    #     alcanza para desambiguar tocayos en pantalla ("Fiorella G.").
     if por_nino_id:
         from agent.airtable_client import _NINOS
         for r in await _get_records(_NINOS, max_records=500):
             item = por_nino_id.get(r.get("id", ""))
             if item:
-                item["apellido"] = (r.get("fields", {}).get("APELLIDO") or "").strip()
+                _ape = (r.get("fields", {}).get("APELLIDO") or "").strip()
+                item["apellido"] = f"{_ape[0].upper()}." if _ape else ""
 
     # 2) Monedas ganadas hoy — movimientos positivos desde la medianoche PY (en UTC)
     if ninos:
