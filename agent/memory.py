@@ -505,15 +505,25 @@ async def mensaje_ya_procesado(mensaje_id: str) -> bool:
 async def registrar_mensaje_procesado(mensaje_id: str) -> bool:
     """Registra un mensaje como procesado. Retorna True si lo registró ESTE
     llamado, False si ya estaba (el índice único actúa de candado atómico
-    contra webhooks duplicados concurrentes)."""
+    contra webhooks duplicados concurrentes).
+
+    Solo IntegrityError cuenta como duplicado. Cualquier otro error de DB
+    (timeout, conexión caída) se loguea y retorna True — procesar de más es
+    recuperable (el pago-tarjeta tiene su red río abajo con gestionado=False);
+    descartar un mensaje de lead en silencio no lo es (auditoría 2026-07-12 C2)."""
+    from sqlalchemy.exc import IntegrityError
     async with async_session() as session:
         try:
             session.add(MensajeProcesado(mensaje_id=mensaje_id))
             await session.commit()
             return True
-        except Exception:
+        except IntegrityError:
             await session.rollback()  # duplicado — OK, ya estaba
             return False
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"[DEDUP] Error de DB registrando {mensaje_id} (no es duplicado): {e}")
+            return True
 
 
 async def borrar_mensaje_procesado(mensaje_id: str):
