@@ -670,7 +670,7 @@ async def servir_followup(nombre_archivo: str, key: str = ""):
 async def api_reservas(fecha: str = ""):
     """Devuelve reservas de un sábado agrupadas por turno. ?fecha=2026-05-24 o próximo sábado."""
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+    from agent.airtable_client import obtener_ninos_por_horario
     import unicodedata
 
     _PY_TZ = timezone(timedelta(hours=-3))
@@ -691,9 +691,6 @@ async def api_reservas(fecha: str = ""):
         sabado = hoy + timedelta(days=dias_hasta_sabado)
 
     fecha_iso = sabado.isoformat()
-    _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
-              7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
-    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
     turnos = ["9:30", "11:00", "15:30"]
 
     def _slug(nombre, apellido):
@@ -724,14 +721,17 @@ async def api_reservas(fecha: str = ""):
             "cell": _ff.get("CELL PADRE", "") or _ff.get("CELL MADRE", ""),
         }
 
-    # Aurora (inscriptos)
+    # Fuente única: RESERVAS FENIX — inscriptos y pruebas split por es_prueba
+    # (migración 2.B: PRUEBA FENIX ya no se consulta; los datos del niño de
+    # prueba salen de NIÑOS y su familia, como los inscriptos).
     for hora in turnos:
-        ninos_aurora = await obtener_ninos_por_horario(fecha_iso, hora)
+        ninos_hora = await obtener_ninos_por_horario(fecha_iso, hora)
         turno_data = {"hora": hora, "aurora": [], "prueba": []}
-        for n in ninos_aurora:
+        for n in ninos_hora:
             _nino_extra = _ninos_map.get(n.get("id", ""), {})
-            _fam_extra = _fam_map.get(_nino_extra.get("familia_id"), {})
-            turno_data["aurora"].append({
+            _fam_extra = _fam_map.get(_nino_extra.get("familia_id") or n.get("familia_id"), {})
+            _destino = "prueba" if n.get("es_prueba") else "aurora"
+            turno_data[_destino].append({
                 "nombre": n.get("nombre", ""),
                 "apellido": n.get("apellido", ""),
                 "apodo": n.get("apodo", ""),
@@ -742,39 +742,6 @@ async def api_reservas(fecha: str = ""):
                 "cell": _fam_extra.get("cell", ""),
             })
         resultado["turnos"].append(turno_data)
-
-    # Prueba FENIX
-    pruebas_texto = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', NOT({{INSCRIPTO}}))", max_records=50)
-    pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))", max_records=50)
-    _seen = set()
-    pruebas = []
-    for rec in pruebas_texto + pruebas_iso:
-        if rec["id"] not in _seen:
-            _seen.add(rec["id"])
-            pruebas.append(rec)
-
-    for rec in pruebas:
-        f = rec.get("fields", {})
-        hora_raw = (f.get("HORA") or "").strip().replace("h", "").replace("hs", "").strip()
-        matched_turno = None
-        for i, t in enumerate(turnos):
-            if hora_raw == t or hora_raw == t.split(":")[0]:
-                matched_turno = i
-                break
-        if matched_turno is not None:
-            nombre = f.get("NOMBRE HIJO", "")
-            apellido = f.get("APELLIDO HIJO", "")
-            foto_prueba = (f.get("FOTO") or [{}])[0].get("url", "") if f.get("FOTO") else ""
-            resultado["turnos"][matched_turno]["prueba"].append({
-                "nombre": nombre,
-                "apellido": apellido,
-                "apodo": "",
-                "edad": str(f.get("EDAD HIJO", "")),
-                "slug": _slug(nombre, apellido),
-                "foto": foto_prueba,
-                "padre": f.get("NOMBRE", ""),
-                "cell": f.get("TELEFONO", ""),
-            })
 
     from fastapi.responses import JSONResponse
     return JSONResponse(content=resultado, headers={"Access-Control-Allow-Origin": "*"})
@@ -796,9 +763,11 @@ async def api_alumnos():
     import unicodedata
     import re
 
+    # TODO(migración): _get_records trunca a 100 — NIÑOS/FAMILIAS van a superarlo;
+    # paginar con offset cuando pase (regla airtable-seguro).
     records = await _get_records(_NINOS, max_records=100)
 
-    # Cargar familias para obtener teléfonos padres
+    # Cargar familias para obtener teléfonos padres + estado del plan
     familias_cache = {}
     familias_recs = await _get_records(_FAMILIAS, max_records=100)
     for fam in familias_recs:
@@ -808,6 +777,7 @@ async def api_alumnos():
             "madre": ff.get("NOMBRE MADRE", ""),
             "cell_padre": ff.get("CELL PADRE", ""),
             "cell_madre": ff.get("CELL MADRE", ""),
+            "estado_plan": ff.get("ESTADO PLAN", ""),
         }
 
     alumnos = []
@@ -846,6 +816,9 @@ async def api_alumnos():
         if familia_ids and isinstance(familia_ids, list):
             padre_info = familias_cache.get(familia_ids[0], {})
 
+        # es_prueba: la familia del niño está A PRUEBA (migración 2.B — antes
+        # los de prueba venían de la tabla PRUEBA FENIX, ahora viven en NIÑOS)
+        _es_prueba_al = padre_info.get("estado_plan", "") == "A PRUEBA"
         alumnos.append({
             "id": rec["id"],
             "nombre": nombre,
@@ -861,54 +834,7 @@ async def api_alumnos():
             "madre": padre_info.get("madre", ""),
             "cell_padre": padre_info.get("cell_padre", ""),
             "cell_madre": padre_info.get("cell_madre", ""),
-        })
-    # Agregar niños de PRUEBA FENIX (que no estén ya en NIÑOS)
-    from agent.airtable_client import _PRUEBAS
-    pruebas_recs = await _get_records(_PRUEBAS, formula="{INSCRIPTO}!=TRUE()", max_records=100)
-    # Dedup por nombre+apellido
-    _slugs_existentes = {a["slug"] for a in alumnos}
-    for rec in pruebas_recs:
-        f = rec.get("fields", {})
-        nombre = f.get("NOMBRE HIJO", "").strip()
-        apellido = f.get("APELLIDO HIJO", "").strip()
-        if not nombre:
-            continue
-        _slug_raw = f"{nombre} {apellido}".lower().strip()
-        _slug_norm = unicodedata.normalize("NFD", _slug_raw)
-        _slug_norm = "".join(c for c in _slug_norm if unicodedata.category(c) != "Mn")
-        slug = re.sub(r"[^a-z0-9]+", "-", _slug_norm).strip("-")
-        if slug in _slugs_existentes:
-            continue
-        _slugs_existentes.add(slug)
-        fn = f.get("FECHA NACIMIENTO", "")
-        edad = None
-        if fn:
-            try:
-                nacimiento = date.fromisoformat(fn)
-                hoy = date.today()
-                edad = hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
-            except ValueError:
-                pass
-        foto_url = ""
-        fotos_raw = f.get("FOTO", [])
-        if fotos_raw and isinstance(fotos_raw, list):
-            foto_url = fotos_raw[0].get("url", "")
-        alumnos.append({
-            "id": rec["id"],
-            "nombre": nombre,
-            "apellido": apellido,
-            "apodo": "",
-            "slug": slug,
-            "edad": edad,
-            "sexo": f.get("GENERO", ""),
-            "foto": foto_url,
-            "reservas": 0,
-            "fecha_nacimiento": fn,
-            "padre": f.get("NOMBRE", ""),
-            "madre": "",
-            "cell_padre": f.get("TELEFONO", ""),
-            "cell_madre": "",
-            "es_prueba": True,
+            **({"es_prueba": True} if _es_prueba_al else {}),
         })
 
     # CORS header para Cloudflare Pages
