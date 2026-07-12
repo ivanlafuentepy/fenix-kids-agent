@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-07-11 — Un número abría VARIOS temas en Telegram (rebote de grupo por dos fuentes de verdad)
+
+**Síntoma:** un mismo número de WhatsApp abría 2-5 temas (topics) en Telegram, sobre todo
+familias. Iván lo vio en el grupo "FENIX KIDS RESERVAS" (que es el grupo de LEADS, nombre
+confuso).
+
+**Diagnóstico — mi error primero:** afirmé "un topic por teléfono" leyendo el comentario
+del código, y después culpé a que faltaba `unique=True` en el modelo. AMBAS sin mirar los
+datos. La base SÍ tiene índice UNIQUE en `telefono` (0 duplicados en DB, 1 fila/teléfono).
+
+**Causa raíz (confirmada con datos):** `obtener_o_crear_topic` crea un topic NUEVO en
+Telegram cada vez que el grupo destino ≠ el grupo del topic guardado (cierra el viejo, que
+queda VISIBLE). Había DOS fuentes de verdad del grupo que se peleaban: el flujo principal
+usa `grupo_telegram_para` (agent_actual), pero los 3 followups de `loops.py` forzaban
+`group_id_para_agente("ivan")` = grupo LEADS. Para una familia (aurora): followup→LEADS
+(topic nuevo), mensaje→FLIAS (otro topic), followup→LEADS… cada salto = 1 topic. Evidencia
+dura: 15 de 25 familias tenían su topic en el grupo de LEADS (cruzando `topics_telegram.group_id`
+con `conversaciones_ab.agent_actual`).
+
+**Fix (commit 022b655):** los 3 followups usan `grupo_telegram_para(telefono)`, misma
+fuente de verdad que el flujo principal y el envío de facturas. Los 15 desalineados se
+auto-corrigen en su próximo mensaje (1 vez, ya sin loop).
+
+**How to apply:** el grupo/topic de un número debe decidirse SIEMPRE por `agent_actual`
+(una sola fuente de verdad). Nunca hardcodear el grupo en un call site. Y ante "se abren
+muchos X", ir a los DATOS (cruzar tablas en la DB de prod con asyncpg + DATABASE_PUBLIC_URL),
+no al comentario del código. La DB de prod se consulta con el token de Railway.
+
+---
+
 ## 2026-07-11 — El video del tótem tardaba y se cortaba: Cloudflare Pages sirve TODO con cache 0
 
 **Síntoma:** en la TV del tótem el video del Fenix (fenix_saludo.mp4) tardaba en cargar,
