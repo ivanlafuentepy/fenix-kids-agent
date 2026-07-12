@@ -153,6 +153,31 @@ def es_posible_comprobante(texto: str, historial: list[dict]) -> bool:
     return True
 
 
+def es_segundo_comprobante(texto: str, historial: list[dict]) -> bool:
+    """Detecta una imagen/documento que llega DESPUÉS de un pago ya confirmado.
+
+    es_posible_comprobante la descarta a propósito (condición 3) para no
+    re-disparar el flujo de prueba, pero podía ser un pago real (cuota,
+    hermano, inscripción) que moría en silencio: nadie se enteraba salvo que
+    el admin mirara Telegram (auditoría 2026-07-12, A3). El caller solo avisa
+    al admin — no dispara ningún flujo automático ni responde al padre.
+    """
+    if texto not in ("[imagen]", "[documento]"):
+        return False
+    datos_enviados = any(
+        CI_BANCARIO in m.get("content", "")
+        for m in historial
+        if m.get("role") == "assistant"
+    )
+    if not datos_enviados:
+        return False
+    return any(
+        "pago confirmado" in m.get("content", "").lower()
+        for m in historial
+        if m.get("role") == "assistant"
+    )
+
+
 # ── Estado persistente en PostgreSQL (sobrevive reinicios) ────────────────────
 
 from agent.memory import (

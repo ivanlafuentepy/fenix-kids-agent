@@ -3389,6 +3389,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
             return
 
+        # Imagen/documento de alguien que YA pagó: puede ser un pago nuevo
+        # (cuota, hermano, inscripción) — avisar al admin y seguir el flujo
+        # normal, sin disparar nada automático (auditoría 2026-07-12, A3).
+        from agent.pagos import es_segundo_comprobante
+        if es_segundo_comprobante(texto, historial_pago):
+            try:
+                await enviar_a_topic(
+                    topic_id,
+                    "💳 OJO: llegó una imagen/documento de un número que YA tiene pago confirmado. "
+                    "Puede ser un pago nuevo (cuota, hermano, inscripción) — revisar manualmente.",
+                    telefono=telefono,
+                    group_override=_tg_group,
+                )
+            except Exception as _e_2c:
+                logger.warning(f"[PAGOS] No se pudo avisar segundo comprobante de {telefono}: {_e_2c}")
+
         # ── Pedido de llamada → dos escenarios ─────────────────────────────
         #  1) Ivan ofreció llamar ("te puedo llamar") y padre acepta → "Super, te llamo"
         #  2) Padre pide llamar por su cuenta → "Aguantame un ratito, te llamo"
