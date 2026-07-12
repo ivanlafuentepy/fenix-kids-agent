@@ -245,3 +245,21 @@ Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agent
 **Fenix:** Skill `/plantilla` corregido (WABA propio + token FENIX + molde posicional con botones). Memorias: `feedback_dos_sesiones_git` y `project_confirmacion_sabado`.
 
 **Commits de la sesión:** `d2b3b33` fix skill plantilla (WABA propio) · `ca1ceb3` feat confirmación sábado + QR solo leads. (La parte Airtable `obtener_familias_para_confirmacion` quedó en `e503147`, commit de la sesión paralela.)
+
+---
+
+## 2026-07-12 — Bug de topics en Telegram + reserva por formulario Meta (sesión "TV Guardianes", continuación)
+
+**Ivan:** "se está abriendo un tema en Telegram por cada familia que escribe, analizá qué se espeja por grupo."
+**Fenix:** Mapeé los 4 grupos (LEADS="FENIX KIDS RESERVAS", FLIAS="☀️FLIAS FENIX", "THE GUARDIAN" monitor, "ALERTAS FENIX" notificaciones). Primero afirmé "un topic por teléfono" leyendo el comentario del código — Ivan me corrigió con datos reales (un número abría 5 temas).
+
+**Ivan:** "mentira, el número 595982778542 abrió 5 temas, no puedo creer que no lo veas."
+**Fenix:** Fui a los DATOS (asyncpg contra la DB de prod). Causa raíz: `obtener_o_crear_topic` crea un topic nuevo cada vez que el grupo destino ≠ el guardado; había dos fuentes de verdad del grupo (flujo usa `agent_actual`, pero followups de `loops.py` + QR de `main.py` forzaban LEADS). 15 de 25 familias desalineadas. Fix `022b655` + `ea1cdab` (todos usan `grupo_telegram_para`). Realineé las 13 familias a FLIAS por script.
+
+**Ivan:** "analizá el flujo de reserva de 595981900294."
+**Fenix:** `/endpoint` — Mel Antonella. La reserva se materializó (pago 100k + RESERVA + QR + niño con cara), PERO la mamá preguntó 2 veces por el horario y el bot no aclaró; y los datos del padre (CI/email/tel) nunca llegaron a FAMILIA/NIÑO, solo a PRUEBA.
+
+**Ivan:** "ahora la reserva se pide con formulario de Meta: niño (nombre/apellido/fecha) + padre y madre (nombre/apellido/fecha/CI/email/tel), padre y madre opcionales. Reusar el que ya existe, teléfono en el form, después del pago antes de las fechas."
+**Fenix:** Plan aprobado (plan mode). Implementado: `agent/formulario_reserva.py` nuevo (envía el Flow `fenix_cargar_nino` y ACTUALIZA FAMILIA/NIÑO/TUTORES a prueba sin duplicar), `flujo_pagos.py` (post-pago manda el form + flag `esperando_formulario_reserva`, fallback a agenda), `main.py` (rama nfm_reply para leads), `prompts.yaml` FASE 4/5 (ya no pide datos por texto). Deploys `6ced372` (código) + `f84b3f7` (prompt), ambos SUCCESS. Falta probar end-to-end en WhatsApp real.
+
+**Commits de esta tanda:** `022b655` fix followups grupo real · `ea1cdab` fix QR grupo real · `1320dcb` memoria rebote topics · `6ced372` feat formulario reserva · `f84b3f7` config prompt FASE 4/5.
