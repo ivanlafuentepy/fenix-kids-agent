@@ -225,3 +225,23 @@ Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agent
 **Fenix:** Confirmado con datos: 3 tutores "Lead" (`flujo_pagos.py:68` cae a "Lead" si el extractor no encuentra el nombre — y falló con "Carmen Vergara mamá", "Mamá: Rosa..."). Los nombres SÍ están en los chats: Carmen Vergara (familia sin niños ni reservas), Leticia Méndez (falta Valentina Buey), Rosa Marciana Duarte. Quedó esperando OK para cargar (pendiente 263) + rediseño del extractor (264: preguntar el nombre, no más regex).
 
 **Commits de la sesión:** `3667dfb` avatar desde el tótem · `8082615` vueltas por cara · `1ace6ab` alias selfie · `c9d4163` presentación TV · `d673c70` fix dos Fiorellas · `8f31122` script reset · `92cdaf6`/`dc2dfb2`/`7e9cd5e` docs errores-aprendidos. Frontend: ~8 deploys a `mundo-fenix.pages.dev` (no-git).
+
+## 2026-07-12 — Confirmación proactiva del sábado + QR solo para leads
+
+**Ivan:** Eliminemos toda la reserva de familias por QR. El QR queda solo para leads. Y para las familias, los jueves 9am Aurora les escribe con plantilla preguntando si el hijo viene el sábado — botón Sí, botón No.
+**Fenix:** Mapeé el flujo real primero: el "QR de familia" no era una reserva, era check-in de asistencia; la reserva de familias se hacía por chat con `gestionar_reserva`. Aclaramos: la reserva por chat SE MANTIENE (fallback), lo que se saca es el QR del lado familia (ahora check-in facial). Diseño en 3 fases + la plantilla.
+
+**Ivan:** El copy: "Hola nombre! Te escribo para saber si este sábado viene nombre a entrenar. ¿Confirmás asistencia?" Turno lo preguntamos después. Solo familias con pago al día. La plantilla de utility se aprueba en minutos.
+**Fenix:** Creé `confirmacion_sabado_fenix` (UTILITY, es_AR, botones Sí/No). Ojo: el skill `/plantilla` decía WABA compartido + token Dorita — falso. Verifiqué que el token de FENIX administra su WABA propio `896276490105251` y creé la plantilla ahí. APPROVED en minutos. Corregí el skill (`d2b3b33`).
+
+**Fenix (Fase 1):** Saqué el botón "QR familia" de `alumno_menu` y el QR post-reserva cuando el agente es Aurora (main.py); leads intactos.
+**Fenix (Fase 2):** `agent/confirmacion_sabado.py` — handler del Sí/No (estado en flag DB `esperando_confirmacion_sabado`): Sí → pregunta turno con botones 11:00/15:30 → agenda; No → no reserva. Fecha del sábado calculada en Python.
+**Fenix (Fase 3):** loop jueves 9AM en `loops.py` + `obtener_familias_para_confirmacion` (filtra AL DÍA=✅ en Python). Probado en lectura real: 10 familias al día, arma bien nombre+hijos. **Loop APAGADO por default** (`CONFIRMACION_SABADO_ACTIVA`).
+
+**Ivan:** Vamos, ojo que hay otra sesión corriendo.
+**Fenix:** Diagnostiqué git antes de tocar: la otra sesión ya había arrastrado mi función `obtener_familias_para_confirmacion` a su commit `e503147` (working tree compartido). Commiteé por nombre explícito (nunca `-a`), verifiqué integridad (compila, sin duplicados) y pushié mis 2 commits limpios. Deploy SUCCESS, log `[CONF-SAB] Próximo envío jueves en 101.7h (2026-07-16 09:00 PY)`.
+
+**Ivan:** Actualizá el skill / guardá la memoria.
+**Fenix:** Skill `/plantilla` corregido (WABA propio + token FENIX + molde posicional con botones). Memorias: `feedback_dos_sesiones_git` y `project_confirmacion_sabado`.
+
+**Commits de la sesión:** `d2b3b33` fix skill plantilla (WABA propio) · `ca1ceb3` feat confirmación sábado + QR solo leads. (La parte Airtable `obtener_familias_para_confirmacion` quedó en `e503147`, commit de la sesión paralela.)
