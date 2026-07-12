@@ -4318,6 +4318,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Crear PRUEBA FENIX si el padre completó el formulario ─────────
         if _es_formulario_completo:
             # Guard: no crear si ya existe en PRUEBA FENIX (reagendamiento, re-deploy, etc.)
+            # OJO (migración 2.C): este guard se voltea a señal por familia/reservas
+            # RECIÉN cuando se corte crear_prueba_fenix (C2) — voltearlo antes haría
+            # que ningún lead nuevo cree PRUEBA (la familia ya existe desde el pago)
+            # y "cargar familia" (C5) todavía la necesita.
             from agent.airtable_client import _get_records as _get_r_form, _PRUEBAS as _PR_FORM
             _ya_existe_prueba = await _get_r_form(_PR_FORM, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
             if _ya_existe_prueba:
@@ -4663,12 +4667,29 @@ async def _procesar_confirmacion_reserva(
 
     logger.info(f"Confirmación detectada ({agent_actual}): {fecha_str} {hora_str} para {telefono}")
 
-    # ── Verificar si es REAGENDAMIENTO (ya tiene PRUEBA FENIX) ────────────────
+    # ── Verificar si es REAGENDAMIENTO ─────────────────────────────────────────
+    # Señal OR (migración 2.B/B7): PRUEBA existente (modelo viejo, se corta en
+    # 2.C) o familia A PRUEBA con reservas futuras (modelo nuevo). Un lead nuevo
+    # en su primera confirmación tiene familia (creada al pagar) pero NO reservas
+    # → False, correcto.
     _es_reagendamiento = False
     if agent_actual == "ivan":
         from agent.airtable_client import _get_records as _get_recs_conf, _PRUEBAS as _PR_CONF
         _pruebas_prev = await _get_recs_conf(_PR_CONF, formula=f"{{TELEFONO}}='{telefono}'", max_records=5)
         _es_reagendamiento = len(_pruebas_prev) > 0
+        if not _es_reagendamiento:
+            try:
+                from agent.airtable_client import buscar_familia_por_telefono, buscar_reservas_familia
+                _fam_conf = await buscar_familia_por_telefono(telefono)
+                if _fam_conf and _fam_conf.get("fields", {}).get("ESTADO PLAN") == "A PRUEBA":
+                    from datetime import datetime as _dt_conf
+                    from zoneinfo import ZoneInfo as _ZI_conf
+                    _hoy_conf = _dt_conf.now(_ZI_conf("America/Asuncion")).date().isoformat()
+                    _res_conf = [r for r in await buscar_reservas_familia(_fam_conf["id"])
+                                 if str(r.get("fecha", "")) >= _hoy_conf]
+                    _es_reagendamiento = len(_res_conf) > 0
+            except Exception as _e_reag:
+                logger.warning(f"[REAGENDAR] Señal familia falló para {telefono}: {_e_reag}")
 
     # Solo Ivan toca LEADS FENIX — Aurora NUNCA toca LEADS ni PRUEBA
     if agent_actual == "ivan" and not _es_reagendamiento:

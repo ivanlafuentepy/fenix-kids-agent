@@ -1719,9 +1719,10 @@ async def obtener_familias_inscriptas() -> list[dict]:
 
 
 async def obtener_nombre_nino(nino_id: str) -> dict | None:
-    """Retorna nombre y apodo de un niño por su record_id (busca en NIÑOS y PRUEBA)."""
+    """Retorna nombre y apodo de un niño por su record_id (NIÑOS FENIX).
+    El fallback a PRUEBA FENIX se retiró (migración 2.B): todo niño vive en
+    NIÑOS por el dual-write, y los links de contenido apuntan a NIÑOS."""
     async with httpx.AsyncClient() as client:
-        # Primero buscar en NIÑOS FENIX
         try:
             r = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
             if r.status_code == 200:
@@ -1735,21 +1736,7 @@ async def obtener_nombre_nino(nino_id: str) -> dict | None:
                 }
         except Exception:
             pass
-        # Buscar en PRUEBA FENIX
-        try:
-            r = await client.get(f"{_BASE_URL}/{_PRUEBAS}/{nino_id}", headers=_headers(), timeout=10)
-            if r.status_code == 200:
-                f = r.json().get("fields", {})
-                return {
-                    "id": nino_id,
-                    "tabla": _PRUEBAS,
-                    "nombre": f.get("NOMBRE HIJO", ""),
-                    "apellido": f.get("APELLIDO HIJO", ""),
-                    "apodo": "",
-                }
-        except Exception:
-            pass
-        logger.error(f"GET NIÑO/PRUEBA {nino_id}: no encontrado")
+        logger.error(f"GET NIÑO {nino_id}: no encontrado")
     return None
 
 
