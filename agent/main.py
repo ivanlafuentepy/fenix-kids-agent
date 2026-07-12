@@ -140,6 +140,7 @@ from agent.loops import (
     _horarios_mensuales_loop,
     _keepalive_ventana_admin_loop,
     _envio_facturas_fenix_loop,
+    _confirmacion_sabado_loop,
     _procesar_pendientes_noche,
     _followup_loop, _ejecutar_followup,
     _resetear_seguimiento, _incrementar_seguimiento,
@@ -256,6 +257,10 @@ async def lifespan(app: FastAPI):
 
     # Facturas Fenix: reparte a la familia el PDF que emitió el robot facturador
     _facturas_task = _fire_and_forget(_envio_facturas_fenix_loop())
+
+    # Confirmación sábado: jueves 9AM manda plantilla a familias al día (al que paga).
+    # APAGADO por default — requiere CONFIRMACION_SABADO_ACTIVA=true para enviar.
+    _conf_sabado_task = _fire_and_forget(_confirmacion_sabado_loop())
 
     # Registrar todos los background tasks para que el monitor los vigile
     _monitor_bg_tasks.update({
@@ -3620,6 +3625,22 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Si el menú maneja el turno (saludo+botones o una acción como QR),
             # cortamos acá. Si retorna None, sigue el flujo conversacional normal.
             if familia_existente:
+                # ── Confirmación proactiva del sábado (respuesta a la plantilla del jueves) ──
+                # Se intercepta ANTES del menú: el "Sí"/"No" de la plantilla y el turno
+                # elegido no deben caer en el flujo conversacional ni en el menú genérico.
+                from agent.confirmacion_sabado import manejar_respuesta as _manejar_conf_sab
+                _flags_sab = await obtener_estado_flags(telefono)
+                _resp_sab = await _manejar_conf_sab(
+                    telefono, texto,
+                    getattr(msg, "btn_id", None),
+                    getattr(msg, "es_boton", False),
+                    _flags_sab, proveedor,
+                    topic_id=topic_id, tg_group=_tg_group,
+                )
+                if _resp_sab is not None:
+                    logger.info(f"[CONF-SAB] {telefono}: {_resp_sab}")
+                    return {"status": "ok"}
+
                 _menu_alum = await procesar_menu_inscripto(
                     telefono, texto, proveedor,
                     familia=familia_existente,
@@ -3872,12 +3893,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _admin_phone_tool = os.getenv("ADMIN_PHONE", "")
                         if telefono != _admin_phone_tool:
                             await proveedor.enviar_mensaje(_admin_phone_tool, _ta_result["mensaje_admin"])
-                    # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva
+                    # QR Check-in: enviar QR al padre cuando se confirma/reagenda reserva.
+                    # Solo para LEADS (ivan): las familias inscriptas (aurora) ya NO usan
+                    # QR — su check-in de asistencia es facial (Mundo Fenix). El resultado
+                    # del lead puede traer reserva_ids por el dual-write a RESERVAS, por eso
+                    # se filtra por agent_actual, no por el tipo de id.
                     _reserva_ids_raw = _ta_result.get("reserva_ids", [])
                     _prueba_ids_raw = _ta_result.get("prueba_ids", [])
                     _reserva_ids = _reserva_ids_raw or _prueba_ids_raw
                     _es_reserva_qr = bool(_reserva_ids_raw)
-                    if _reserva_ids and (_ta_result.get("agendada") or _ta_result.get("reagendada") or _ta_result.get("confirmada")):
+                    if _reserva_ids and agent_actual != "aurora" and (_ta_result.get("agendada") or _ta_result.get("reagendada") or _ta_result.get("confirmada")):
                         try:
                             from agent.qr import generar_qr
                             from agent.airtable_client import marcar_qr_enviado_reserva, marcar_qr_enviado_prueba

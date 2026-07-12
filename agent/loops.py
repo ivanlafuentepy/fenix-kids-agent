@@ -210,6 +210,60 @@ async def _resumen_diario_loop():
             logger.error(f"[RESUMEN DIARIO] Error: {e}")
 
 
+async def _confirmacion_sabado_loop():
+    """Los jueves 9:00 AM PY manda la plantilla de confirmación de asistencia del
+    sábado a cada familia con pago al día, dirigida al tutor que paga. Botón "Sí"
+    → Aurora pregunta el turno (11:00/15:30) y agenda; botón "No" → no reserva.
+    (La respuesta se maneja en agent/confirmacion_sabado.py, interceptada en main.)
+
+    APAGADO por default: solo envía si CONFIRMACION_SABADO_ACTIVA=true en el env.
+    Es un masivo a familias reales → no se dispara sin activación explícita de Ivan
+    (misma disciplina que el follow-up de leads). El loop igual corre y duerme hasta
+    el jueves; solo el envío está detrás del flag."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from agent.confirmacion_sabado import recolectar_envios, enviar_confirmacion_sabado
+    _PY = ZoneInfo("America/Asuncion")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
+    while True:
+        ahora = datetime.now(_PY)
+        # Próximo jueves (weekday 3) 9:00 AM PY.
+        dias = (3 - ahora.weekday()) % 7
+        proximo = ahora.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=dias)
+        if proximo <= ahora:
+            proximo += timedelta(days=7)
+        espera = (proximo - ahora).total_seconds()
+        logger.info(f"[CONF-SAB] Próximo envío jueves en {espera/3600:.1f}h ({proximo.strftime('%Y-%m-%d %H:%M')} PY)")
+        await asyncio.sleep(espera)
+
+        if os.getenv("CONFIRMACION_SABADO_ACTIVA", "").strip().lower() not in ("1", "true", "si", "sí"):
+            logger.info("[CONF-SAB] CONFIRMACION_SABADO_ACTIVA apagado — no se envía este jueves")
+            continue
+        try:
+            envios = await recolectar_envios()
+            logger.info(f"[CONF-SAB] {len(envios)} familias al día para confirmar")
+            enviados = 0
+            for e in envios:
+                try:
+                    ok = await enviar_confirmacion_sabado(
+                        e["telefono"], proveedor, e["nombre_padre"], e["hijos_str"])
+                    if ok:
+                        enviados += 1
+                    await asyncio.sleep(2)  # rate limit — Meta silencia números por spam
+                except Exception as ex:
+                    logger.error(f"[CONF-SAB] Error enviando a {e.get('telefono')}: {ex}")
+            logger.info(f"[CONF-SAB] Enviados {enviados}/{len(envios)}")
+            if admin_phone:
+                try:
+                    await proveedor.enviar_mensaje(
+                        admin_phone,
+                        f"📅 Confirmación sábado enviada a {enviados}/{len(envios)} familias al día.")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"[CONF-SAB] Error en loop: {e}")
+
+
 async def _recordatorios_loop():
     """Loop que cada 60s revisa recordatorios pendientes en PostgreSQL y los envía.
     Marca ENVIADO solo si el envío salió (antes un 4xx de Meta lo marcaba igual
