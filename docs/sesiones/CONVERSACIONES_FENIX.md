@@ -159,3 +159,35 @@ Sesión de auditoría de Mundo Fenix + mejoras a la TV de recibimiento. El agent
 - Repo `mundo-fenix-app` (frontend, deployado a Cloudflare Pages): `3e7907c`, `1f72605`, `efa8850`, `4fff5c4`, `60680af`, `a19bcc7`, `8d363ff`, `5b546e6`
 
 **Pendiente inmediato:** A2 — conectar la plata de las vueltas NFC al ledger Airtable (hueco H2). Registro de prueba ALAN quedó en NIÑOS FENIX con la cara de Ivan indexada (decidir si borrar).
+
+---
+
+## 2026-07-11 — TV "Guardianes de Hoy" + 3 fixes de producción del juego
+
+**Ivan:** "cargar selfie no funciona, pongo selfie de un niño, me encuentra dos y cuando selecciono 1 o 2 me pasa la lista de reservas."
+**Fenix:** Bug reproducido. El atajo numérico del menú secre (`"1"`→"resumen reservas") corría ANTES del handler de selección de candidatos. Fix en `main.py`: `_admin_espera_respuesta` — el atajo se salta cuando hay `_cara_candidatos`/`_asistencia_pendiente`/`_inscripcion_pendiente`. Quedó mezclado en el commit `82d196c` de una sesión paralela.
+
+**Ivan:** "misma cosa!!" (seguía fallando tras el fix)
+**Fenix:** Diagnóstico con logs de Railway: el reintento cayó en medio de una tormenta de deploys (mi push + los de la sesión paralela reiniciaron el proceso). La lista de candidatos vive en memoria del proceso → el restart la borró. No era el fix; era timing. Se pidió reintentar sin deploys en curso.
+
+**Ivan:** "quiero en otra TV la lista de los niños del día: cuántas vueltas, cuántas monedas ganaron hoy y cuántas tienen en total, con logo Fenix, nombre y avatar."
+**Fenix:** Nuevo `GET /juego/dia` (público, CORS) que cruza GUARDIANES + MOVIMIENTOS BRASAS + `juego_vueltas`. Frontend `mundo-fenix/lista.html` (`/lista`) con estética de brasas, avatar del guardián, auto-reload kiosk. Deploy a Pages.
+
+**Ivan:** "que la lista sea con el apellido" + "se ven solo 6, se tienen que ver todos."
+**Fenix:** Apellido cruzado desde NIÑOS FENIX por NINO ID (GUARDIANES no lo guarda). Layout rehecho: grid que reparte el alto + columnas automáticas (1/2/3/4 según cantidad) → entran todos sin scroll. Las dos Fiorella ahora se distinguen (Perinetto / González Aguero).
+
+**Ivan:** "cuando subo un selfie con dos nombres y dos apellidos no lo agarra."
+**Fenix:** Causa raíz: no era "dos nombres/apellidos" sino acentos. La búsqueda multi-palabra usaba las palabras crudas contra `FIND` (sensible a acentos) → apellido con tilde no matchea sin tilde. Fix en `fotos.py`: cada palabra matchea por OR de sus variantes de acento. Probado contra Airtable real.
+
+**Ivan:** "de nuevo no carga el video en la TV, tarda, dura un segundo, carga el mp4 desde cero."
+**Fenix:** El archivo estaba perfecto (5s, faststart OK). Causa: Pages sirve todo con `Cache-Control: max-age=0, must-revalidate` → la TV re-baja el video en cada reproducción. Fix: `mundo-fenix/_headers` cachea `/assets/*` 30 días (HTML sin cache para no romper el auto-reload). Verificado el header en prod.
+
+**Commits de esta sesión (repo agente):**
+- `82d196c` — fix: menú secre pisaba selecciones pendientes (mezclado con log WABA de sesión paralela)
+- `e7502b9` — feat(juego): GET /juego/dia — resumen del día para la TV lista
+- `e59f2c0` — feat(juego): /juego/dia incluye apellido (cruzado desde NIÑOS FENIX)
+- `556f15e` — fix(fotos): selfie tolera acentos en nombres de varias palabras
+- Memorias: `78818cc`, `9e03975`, `69754be`
+- Frontend (Pages, `mundo-fenix/` untracked): `lista.html` nuevo + `_headers` nuevo
+
+**Pendiente inmediato:** posible duplicado en NIÑOS FENIX ("Thiago Gomez" aparece dos veces) — revisar si es real y limpiar.
