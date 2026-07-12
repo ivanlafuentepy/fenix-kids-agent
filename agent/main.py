@@ -350,14 +350,20 @@ async def health_check():
 
 # ── QR Check-in ──────────────────────────────────────────────────────────────
 
-def _render_checkin_html(nombre: str, edad: str, hora: str, foto_url: str, estado: str, checkin_hora: str = "") -> str:
-    """Genera HTML de ficha/credencial del niño para la página de check-in QR."""
+def _render_checkin_html(nombre: str, edad: str, hora: str, foto_url: str, estado: str, checkin_hora: str = "", confirmar_action: str = "") -> str:
+    """Genera HTML de ficha/credencial del niño para la página de check-in QR.
+
+    estado "confirmar": muestra un botón que POSTea a `confirmar_action` —
+    el GET ya no marca PRESENTE (un prefetch de navegador/bot marcaba
+    asistencia solo, auditoría 2026-07-12)."""
     if estado == "ok":
         badge_color, badge_icon, badge_text = "#27ae60", "✅", "Check-in confirmado"
         if checkin_hora:
             badge_text += f" — {checkin_hora}"
     elif estado == "ya_presente":
         badge_color, badge_icon, badge_text = "#f39c12", "⚠️", "Ya registrado"
+    elif estado == "confirmar":
+        badge_color, badge_icon, badge_text = "#2980b9", "👋", "Confirmar llegada"
     else:
         badge_color, badge_icon, badge_text = "#e74c3c", "❌", "Reserva no encontrada"
 
@@ -389,20 +395,19 @@ def _render_checkin_html(nombre: str, edad: str, hora: str, foto_url: str, estad
   {foto_html}
   <h1 style="margin:0 0 4px;font-size:24px;color:#333">{nombre}</h1>
   {detalles_html}
-  <div style="margin:20px 0;padding:12px 20px;background:{badge_color};color:white;border-radius:12px;font-size:18px;font-weight:600">
-    {badge_icon} {badge_text}
-  </div>
+  {(f'<form method="post" action="{confirmar_action}" style="margin:20px 0"><button type="submit" style="width:100%;border:none;padding:16px 20px;background:{badge_color};color:white;border-radius:12px;font-size:18px;font-weight:600;cursor:pointer">{badge_icon} {badge_text}</button></form>' if estado == "confirmar" and confirmar_action else f'<div style="margin:20px 0;padding:12px 20px;background:{badge_color};color:white;border-radius:12px;font-size:18px;font-weight:600">{badge_icon} {badge_text}</div>')}
   <p style="color:#aaa;font-size:12px;margin:16px 0 0">Maestras Paraguayas 2056 — Asuncion</p>
 </div>
 </body>
 </html>"""
 
 
-def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict], fecha_label: str, estado: str = "ok") -> str:
+def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict], fecha_label: str, estado: str = "ok", toggle_qs: str = "") -> str:
     """
     Página de check-in con lista de hijos para marcar/desmarcar asistencia.
     Sirve tanto para familias inscriptas como para leads en prueba.
     `toggle_base`: prefijo de la acción del form (ej. "/checkin/familia/recX").
+    `toggle_qs`: query string a arrastrar en cada acción (ej. "?t=abc" del token de prueba).
     `items`: lista de {"id", "nombre", "presente": bool}.
     """
     if estado == "no_encontrado":
@@ -425,7 +430,7 @@ def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict],
             avatar_bg = "#bbb"
         avatar = f'<div style="width:48px;height:48px;border-radius:50%;background:{avatar_bg};display:flex;align-items:center;justify-content:center;font-size:20px;color:white;font-weight:bold;flex-shrink:0">{iniciales}</div>'
         filas += f"""
-  <form method="post" action="{toggle_base}/toggle/{n['id']}" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:14px;background:#fafafa;margin-bottom:10px">
+  <form method="post" action="{toggle_base}/toggle/{n['id']}{toggle_qs}" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:14px;background:#fafafa;margin-bottom:10px">
     {avatar}
     <div style="flex:1;text-align:left;font-size:18px;font-weight:600;color:#333">{n['nombre']}</div>
     {btn}
@@ -455,10 +460,13 @@ def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict],
 </html>"""
 
 
-@app.get("/checkin/{record_id}")
-async def checkin(record_id: str):
-    """Marca PRESENTE en Airtable al escanear QR. Muestra ficha del niño."""
-    from agent.airtable_client import _get_records, _patch, _RESERVAS, _PRUEBAS, _NINOS
+async def _buscar_ficha_checkin(record_id: str):
+    """Busca el registro del QR (RESERVAS o PRUEBA legacy) y arma la ficha.
+
+    Retorna (tabla, fields, nombre, edad, hora, foto_url) o None si no existe.
+    Compartido por el GET (mostrar) y el POST (confirmar) de /checkin/{record_id}.
+    """
+    from agent.airtable_client import _get_records, _RESERVAS, _PRUEBAS, _NINOS
 
     formula = f"RECORD_ID()='{record_id}'"
     nombre = "Alumno"
@@ -512,7 +520,37 @@ async def checkin(record_id: str):
                 foto_url = fotos[0].get("url", "")
 
     if not records:
+        return None
+    return tabla, fields, nombre, edad, hora, foto_url
+
+
+@app.get("/checkin/{record_id}")
+async def checkin(record_id: str):
+    """Ficha del niño al escanear QR. Ya NO marca presente en el GET (un
+    prefetch de navegador/bot marcaba asistencia solo — auditoría 2026-07-12):
+    muestra un botón que confirma con POST."""
+    ficha = await _buscar_ficha_checkin(record_id)
+    if not ficha:
         return HTMLResponse(_render_checkin_html("", "", "", "", "no_encontrado"), status_code=404)
+    tabla, fields, nombre, edad, hora, foto_url = ficha
+
+    if fields.get("PRESENTE"):
+        return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ya_presente"))
+    return HTMLResponse(_render_checkin_html(
+        nombre, edad, hora, foto_url, "confirmar",
+        confirmar_action=f"/checkin/{record_id}/confirmar",
+    ))
+
+
+@app.post("/checkin/{record_id}/confirmar")
+async def checkin_confirmar(record_id: str):
+    """Marca PRESENTE (patch + fila en ASISTENCIA) al tocar el botón de la ficha."""
+    from agent.airtable_client import _patch, _RESERVAS
+
+    ficha = await _buscar_ficha_checkin(record_id)
+    if not ficha:
+        return HTMLResponse(_render_checkin_html("", "", "", "", "no_encontrado"), status_code=404)
+    tabla, fields, nombre, edad, hora, foto_url = ficha
 
     if fields.get("PRESENTE"):
         return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ya_presente"))
@@ -616,12 +654,26 @@ async def checkin_familia_toggle(familia_id: str, nino_id: str):
     return RedirectResponse(url=f"/checkin/familia/{familia_id}", status_code=303)
 
 
+def _token_prueba_valido(telefono: str, t: str) -> bool:
+    """Valida el token firmado del QR de prueba (ver qr.token_checkin_prueba).
+
+    Sin token válido la página responde 404: la URL era enumerable probando
+    números paraguayos y listaba nombres de hijos (auditoría 2026-07-12, C1).
+    """
+    import hmac as _hmac
+    from agent.qr import token_checkin_prueba
+    return bool(t) and _hmac.compare_digest(t, token_checkin_prueba(telefono))
+
+
 @app.get("/checkin/prueba/{telefono}")
-async def checkin_prueba(telefono: str):
+async def checkin_prueba(telefono: str, t: str = ""):
     """QR de prueba por teléfono: lista a los hermanos en PRUEBA FENIX para marcar asistencia."""
     from agent.airtable_client import _get_records, _PRUEBAS, obtener_asistencias_pruebas_fecha
     from datetime import datetime
     from zoneinfo import ZoneInfo
+
+    if not _token_prueba_valido(telefono, t):
+        return HTMLResponse(_render_checkin_lista_html("", "", [], "", "no_encontrado"), status_code=404)
 
     ahora = datetime.now(ZoneInfo("America/Asuncion"))
     fecha_iso = ahora.strftime("%Y-%m-%d")
@@ -645,11 +697,11 @@ async def checkin_prueba(telefono: str):
         "presente": p["id"] in presentes,
     } for p in pruebas]
 
-    return HTMLResponse(_render_checkin_lista_html("Clase de prueba", f"/checkin/prueba/{telefono}", items, fecha_label, "ok"))
+    return HTMLResponse(_render_checkin_lista_html("Clase de prueba", f"/checkin/prueba/{telefono}", items, fecha_label, "ok", toggle_qs=f"?t={t}"))
 
 
 @app.post("/checkin/prueba/{telefono}/toggle/{prueba_id}")
-async def checkin_prueba_toggle(telefono: str, prueba_id: str):
+async def checkin_prueba_toggle(telefono: str, prueba_id: str, t: str = ""):
     """Marca (crea fila) o desmarca (borra fila) la asistencia de un hijo en prueba hoy."""
     from agent.airtable_client import (
         _get_records, _PRUEBAS, obtener_asistencias_pruebas_fecha,
@@ -658,6 +710,9 @@ async def checkin_prueba_toggle(telefono: str, prueba_id: str):
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from fastapi.responses import RedirectResponse
+
+    if not _token_prueba_valido(telefono, t):
+        raise HTTPException(status_code=404, detail="No encontrado")
 
     ahora = datetime.now(ZoneInfo("America/Asuncion"))
     fecha_iso = ahora.strftime("%Y-%m-%d")
@@ -683,7 +738,7 @@ async def checkin_prueba_toggle(telefono: str, prueba_id: str):
             )
             logger.info(f"[ASISTENCIA] Presente prueba {prueba_id} (tel {telefono})")
 
-    return RedirectResponse(url=f"/checkin/prueba/{telefono}", status_code=303)
+    return RedirectResponse(url=f"/checkin/prueba/{telefono}?t={t}", status_code=303)
 
 
 @app.get("/fu/{nombre_archivo}")
