@@ -26,6 +26,28 @@ def _registrar_fallo(status: int, texto_error: str, contexto: str):
         logger.warning(f"No se pudo registrar error Meta en monitor: {e}")
 
 
+# WhatsApp corta el body de texto en 4096 chars — mensajes más largos daban 400
+# y el lead se quedaba sin respuesta (solo un log). Se parten en el último salto
+# de línea (o espacio) antes del límite.
+_MAX_TEXTO = 4096
+
+
+def _partir_mensaje(texto: str, limite: int = _MAX_TEXTO) -> list[str]:
+    """Parte un texto en pedazos <= limite, cortando en salto de línea o espacio."""
+    partes = []
+    while len(texto) > limite:
+        corte = texto.rfind("\n", 0, limite)
+        if corte < limite // 2:
+            corte = texto.rfind(" ", 0, limite)
+        if corte <= 0:
+            corte = limite
+        partes.append(texto[:corte])
+        texto = texto[corte:].lstrip("\n ")
+    if texto:
+        partes.append(texto)
+    return partes
+
+
 class ProveedorMeta(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando la API oficial de Meta (Cloud API)."""
 
@@ -34,6 +56,32 @@ class ProveedorMeta(ProveedorWhatsApp):
         self.phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
         self.verify_token = os.getenv("META_VERIFY_TOKEN", "")
         self.api_version = "v21.0"
+
+    async def _post_mensajes(self, payload: dict, contexto: str) -> bool:
+        """POST a /messages con manejo de errores de red (única puerta de envío).
+
+        Antes cada método hacía el POST pelado: un ConnectError/ReadTimeout
+        propagaba al caller (y mataba loops de envío enteros), y el monitor
+        solo veía errores HTTP — era ciego a "Meta inalcanzable". Ahora el
+        error de red se registra con status 0 y el método retorna False.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(
+                    f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages",
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {self.access_token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+        except Exception as e:
+            _registrar_fallo(0, f"red: {type(e).__name__}: {e}", contexto)
+            return False
+        if r.status_code != 200:
+            _registrar_fallo(r.status_code, r.text, contexto)
+            return False
+        return True
 
     async def validar_webhook(self, request: Request) -> int | None:
         """Meta requiere verificación GET con hub.verify_token."""
@@ -183,11 +231,6 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "messaging_product": "whatsapp",
             "to": telefono,
@@ -203,11 +246,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                 },
             },
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "botones")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "botones")
 
     async def enviar_lista(
         self,
@@ -231,11 +270,6 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "messaging_product": "whatsapp",
             "to": telefono,
@@ -249,11 +283,7 @@ class ProveedorMeta(ProveedorWhatsApp):
                 },
             },
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "lista")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "lista")
 
     async def enviar_flow(
         self,
@@ -273,11 +303,6 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "messaging_product": "whatsapp",
             "to": telefono,
@@ -298,21 +323,12 @@ class ProveedorMeta(ProveedorWhatsApp):
                 },
             },
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "flow")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "flow")
 
     async def enviar_imagen(self, telefono: str, media_id: str, caption: str = "") -> bool:
         """Reenvía una imagen por media_id ya subido a Meta."""
         if not self.access_token or not self.phone_number_id:
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         image_obj = {"id": media_id}
         if caption:
             image_obj["caption"] = caption
@@ -322,11 +338,7 @@ class ProveedorMeta(ProveedorWhatsApp):
             "type": "image",
             "image": image_obj,
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "imagen")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "imagen")
 
     async def enviar_documento_url(
         self, telefono: str, doc_url: str, filename: str = "documento.pdf", caption: str = ""
@@ -334,11 +346,6 @@ class ProveedorMeta(ProveedorWhatsApp):
         """Envía un documento por URL pública (ej. el PDF de factura desde Airtable)."""
         if not self.access_token or not self.phone_number_id:
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         doc_obj = {"link": doc_url, "filename": filename}
         if caption:
             doc_obj["caption"] = caption
@@ -348,11 +355,7 @@ class ProveedorMeta(ProveedorWhatsApp):
             "type": "document",
             "document": doc_obj,
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "documento")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "documento")
 
     async def subir_media(self, image_bytes: bytes, mime_type: str = "image/png") -> str | None:
         """Sube un archivo a Meta y retorna el media_id."""
@@ -398,11 +401,6 @@ class ProveedorMeta(ProveedorWhatsApp):
             return False
         if not self.access_token or not self.phone_number_id:
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         video_obj = {"id": media_id}
         if caption:
             video_obj["caption"] = caption
@@ -412,11 +410,7 @@ class ProveedorMeta(ProveedorWhatsApp):
             "type": "video",
             "video": video_obj,
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "video")
-            return r.status_code == 200
+        return await self._post_mensajes(payload, "video")
 
     async def enviar_plantilla(
         self,
@@ -440,11 +434,6 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
         template = {
             "name": template_name,
             "language": {"code": language},
@@ -467,35 +456,31 @@ class ProveedorMeta(ProveedorWhatsApp):
             "type": "template",
             "template": template,
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, f"plantilla '{template_name}'")
-            else:
-                logger.info(f"Plantilla '{template_name}' enviada a {telefono}")
-            return r.status_code == 200
+        ok = await self._post_mensajes(payload, f"plantilla '{template_name}'")
+        if ok:
+            logger.info(f"Plantilla '{template_name}' enviada a {telefono}")
+        return ok
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
-        """Envía mensaje via Meta WhatsApp Cloud API."""
+        """Envía mensaje via Meta WhatsApp Cloud API.
+
+        Textos > 4096 chars se parten en varios mensajes (antes Meta devolvía
+        400 y el destinatario no recibía nada)."""
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
-        url = f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": telefono,
-            "type": "text",
-            "text": {"body": mensaje},
-        }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code != 200:
-                _registrar_fallo(r.status_code, r.text, "texto")
-            return r.status_code == 200
+        ok = True
+        for parte in _partir_mensaje(mensaje):
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": telefono,
+                "type": "text",
+                "text": {"body": parte},
+            }
+            if not await self._post_mensajes(payload, "texto"):
+                ok = False
+                break  # si una parte falla, no mandar las siguientes sueltas
+        return ok
 
     async def descargar_media(self, media_id: str) -> bytes | None:
         """
@@ -514,26 +499,30 @@ class ProveedorMeta(ProveedorWhatsApp):
 
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            # Paso 1: obtener URL
-            r = await client.get(
-                f"https://graph.facebook.com/{self.api_version}/{media_id}",
-                headers=headers,
-            )
-            if r.status_code != 200:
-                logger.error(f"[Meta] Error obteniendo URL de media {media_id}: {r.status_code}")
-                return None
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                # Paso 1: obtener URL
+                r = await client.get(
+                    f"https://graph.facebook.com/{self.api_version}/{media_id}",
+                    headers=headers,
+                )
+                if r.status_code != 200:
+                    logger.error(f"[Meta] Error obteniendo URL de media {media_id}: {r.status_code}")
+                    return None
 
-            media_url = r.json().get("url")
-            if not media_url:
-                logger.error(f"[Meta] No se obtuvo URL para media {media_id}")
-                return None
+                media_url = r.json().get("url")
+                if not media_url:
+                    logger.error(f"[Meta] No se obtuvo URL para media {media_id}")
+                    return None
 
-            # Paso 2: descargar bytes
-            r = await client.get(media_url, headers=headers)
-            if r.status_code != 200:
-                logger.error(f"[Meta] Error descargando media: {r.status_code}")
-                return None
+                # Paso 2: descargar bytes
+                r = await client.get(media_url, headers=headers)
+                if r.status_code != 200:
+                    logger.error(f"[Meta] Error descargando media: {r.status_code}")
+                    return None
 
-            logger.info(f"[Meta] Media descargado: {media_id} ({len(r.content)} bytes)")
-            return r.content
+                logger.info(f"[Meta] Media descargado: {media_id} ({len(r.content)} bytes)")
+                return r.content
+        except Exception as e:
+            logger.error(f"[Meta] Error de red descargando media {media_id}: {e}")
+            return None
