@@ -228,15 +228,22 @@ fórmula 'FAMILIA' a secas, fallbacks legacy de tutores.
 - `a2b1f1a` A6: dedup pago-tarjeta exenta de la purga de 24h
 - `406e4d0` A3: aviso al admin ante posible segundo comprobante
 
+**F2 segunda tanda (misma noche, aprobada "vamos con todo"):**
+- `a3adffa` A7: rescate del lead pagado que no completa el formulario — +2h re-envía
+  el Flow, +24h cae a agenda por texto. Recordatorios en Postgres (tipo `form_rescate`),
+  clamp nocturno 21-08→09:00 PY, se cancelan al completar, guard al disparar.
+- `eb58b43` + pagos-bancard `4f5017f` A5: la firma del link de tarjeta cubre el
+  teléfono (`fenix:{monto}:{cliente}`). La pasarela rechaza firma legacy de fenix con
+  cliente presente; salsa/curso toleran legacy hasta migrar sus bots (TODO anotado
+  en pagos-bancard). Verificado contra prod: las 5 combinaciones (nueva válida,
+  cliente cambiado rechazado, legacy+cliente rechazado, legacy sin cliente OK,
+  monto manipulado rechazado).
+
 **F2 pendiente:**
-- A5 (firma del teléfono en link tarjeta): CROSS-REPO — la valida `pagos-bancard`
-  (`firmar_link` en su app/main.py). Diseño: firma sobre `fenix:{monto}:{cliente}`,
-  la pasarela acepta ambas 48h, después corta. Coordinar los dos deploys.
-- A7 (rescate del lead pagado que no completa el formulario): NECESITA OK de Ivan
-  — es un mensaje automático nuevo a un cliente (regla dura). Propuesta: recordatorio
-  único a las 2h con re-envío del Flow + fallback al flujo de agenda por texto a las 24h.
 - A2 (ampliar guard de registrar_pago_fenix más allá de "PRUEBA hoy"): pensarlo
   junto con la migración cuota-al-niño para no rehacerlo dos veces.
+- Migrar bots de salsa/curso a firma-con-cliente y volver estricta la pasarela
+  para todos los negocios.
 
 ### Plan original
 
