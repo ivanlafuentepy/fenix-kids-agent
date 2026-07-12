@@ -125,7 +125,7 @@ from agent.resumenes import (
     _generar_lista_asistencia, _procesar_respuesta_asistencia,
     _agregar_presentes_por_nombres, _marcar_presente_por_nombre,
     _enviar_asistencia_automatica,
-    _generar_resumen_asistencia, _generar_resumen_prueba,
+    _generar_resumen_asistencia,
     _generar_resumen_seguimiento, _generar_resumen_followup,
     _generar_resumen_anuncios,
     _asistencia_pendiente,
@@ -2446,7 +2446,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if telefono == admin_phone and telefono not in _admin_modo_padre and not _admin_espera_respuesta:
             _MENU_SECRE = {
                 "1": "resumen reservas", "2": "resumen anuncios", "3": "resumen flias",
-                "4": "resumen asis", "5": "resumen prueba", "6": "resumen seguimiento",
+                "4": "resumen asis", "6": "resumen seguimiento",
                 "7": "resumen telegram", "8": "resumen followup",
                 "12": "modo padre", "13": "modo alumno",
             }
@@ -2464,7 +2464,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `resumen reservas` — reservas del sábado próximo por turno\n"
                 "• `resumen flias` — familias con nombre hijo + padre + link wa.me\n"
                 "• `resumen asis` / `resumen asis 10/5` — quién vino (presentes por turno)\n"
-                "• `resumen prueba` / `resumen prueba 9/5` — dashboard pruebas (asis+pagos+seguimiento)\n"
                 "• `resumen seguimiento` / `seguimiento 9/5` — estado mensajes personalizados\n"
                 "• `resumen telegram` — reservas + link Telegram de cada conversación\n"
                 "• `resumen followup` — mapa completo de FU\n\n"
@@ -2848,23 +2847,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen asistencia: {e}")
             return
 
-        # ── Comando resumen prueba (solo admin) ────────────────────────────
-        # Acepta: "resumen prueba", "resumen prueba 9/5"
+        # ── Comando resumen prueba: RETIRADO (migración 2.B) ───────────────
+        # El dashboard salía de PRUEBA FENIX (en retiro). Decisión de Ivan
+        # 2026-07-12: se elimina, no se reconstruye.
         if telefono == admin_phone and "resumen" in _texto_cmd and "prueba" in _texto_cmd:
-            _fecha_pr = None
-            _m_fecha_pr = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
-            if _m_fecha_pr:
-                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
-                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
-                try:
-                    _fecha_pr = _date_cls(_anio, int(_m_fecha_pr.group(2)), int(_m_fecha_pr.group(1)))
-                except ValueError:
-                    pass
-            try:
-                await _generar_resumen_prueba(telefono, fecha_override=_fecha_pr)
-            except Exception as e:
-                logger.error(f"[RESUMEN PRUEBA] Error: {e}")
-                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
+            await proveedor.enviar_mensaje(
+                telefono,
+                "El comando *resumen prueba* fue retirado (migración PRUEBA FENIX).\n"
+                "Usá: resumen reservas · resumen asis · resumen flias · resumen seguimiento"
+            )
             return
 
         # ── Comando resumen seguimiento (solo admin) ─────────────────────
@@ -3000,7 +2991,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     "2. Anuncios — métricas Meta\n"
                     "3. Familias — nombre + wa.me\n"
                     "4. Asistencia — quién vino\n"
-                    "5. Pruebas — dashboard completo\n"
                     "6. Seguimiento — mensajes post-clase\n"
                     "7. Telegram — reservas + links TG\n"
                     "8. Follow-up — mapa FU\n\n"

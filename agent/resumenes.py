@@ -621,12 +621,12 @@ async def _enviar_asistencia_automatica(turno: str):
 async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
     """
     Genera resumen de quién VINO a clase (PRESENTE=true), por turno.
-    Separa inscriptos (Aurora/RESERVAS) y pruebas (Fenix/PRUEBA FENIX).
+    Fuente única: RESERVAS FENIX via obtener_ninos_por_horario — inscriptos
+    y pruebas juntos, split por es_prueba (migración 2.B).
     Si fecha_override=None, usa el sábado más reciente.
     """
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import _get_records, _PRUEBAS, _RESERVAS, _HORARIOS, _NINOS, _BASE_URL, _headers
-    import httpx
+    from agent.airtable_client import obtener_ninos_por_horario
 
     _PY_TZ = timezone(timedelta(hours=-3))
     hoy = datetime.now(_PY_TZ).date()
@@ -640,9 +640,6 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
         sabado = hoy - timedelta(days=dias_desde_sabado)
 
     fecha_iso = sabado.isoformat()
-    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
-              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
-    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
 
     turnos = ["9:30", "11:00", "15:30"]
     lineas = [f"📋 *ASISTENCIA — SÁB {sabado.day}/{sabado.month}*\n"]
@@ -656,59 +653,21 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
         presentes_turno = []
         ausentes_turno = []
 
-        # ── Inscriptos (RESERVAS FENIX) ── buscar horario → reservas → verificar PRESENTE
-        horarios = await _get_records(_HORARIOS, formula=f"AND(DATESTR({{FECHA}})='{fecha_iso}', {{HORA}}='{hora}')", max_records=1)
-        if horarios:
-            reserva_ids = horarios[0].get("fields", {}).get("RESERVAS FENIX", [])
-            async with httpx.AsyncClient() as client:
-                for res_id in reserva_ids:
-                    try:
-                        r = await client.get(f"{_BASE_URL}/{_RESERVAS}/{res_id}", headers=_headers(), timeout=10)
-                        if r.status_code != 200:
-                            continue
-                        res_f = r.json().get("fields", {})
-                        presente = res_f.get("PRESENTE", False)
-                        nino_ids = res_f.get("NINO", [])
-                        for nino_id in nino_ids:
-                            rn = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
-                            if rn.status_code != 200:
-                                continue
-                            nf = rn.json().get("fields", {})
-                            nombre = (nf.get("APODO") or nf.get("NOMBRE") or "?").strip().split()[0] if (nf.get("APODO") or nf.get("NOMBRE")) else "?"
-                            apellido = (nf.get("APELLIDO") or "").strip().split()[0] if nf.get("APELLIDO") else ""
-                            nombre_full = f"{nombre} {apellido}".strip()
-                            edad = str(nf.get("EDAD", "")) if nf.get("EDAD") else ""
-                            edad_str = f" ({edad})" if edad else ""
-                            if presente:
-                                presentes_turno.append(f"✅ {nombre_full}{edad_str}")
-                                total_aurora += 1
-                            else:
-                                ausentes_turno.append(f"❌ {nombre_full}{edad_str}")
-                    except Exception as e:
-                        logger.warning(f"[RESUMEN ASIS] Error reserva {res_id}: {e}")
-
-        # ── Pruebas (PRUEBA FENIX) ──
-        pruebas = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', {{HORA}}='{hora}')", max_records=50)
-        pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', {{HORA}}='{hora}')", max_records=50)
-        _seen = set()
-        for p in pruebas + pruebas_iso:
-            if p["id"] in _seen:
-                continue
-            _seen.add(p["id"])
-            f = p.get("fields", {})
-            if f.get("CONVERSION") == "CANCELADO":
-                continue
-            nombre = (f.get("NOMBRE HIJO") or "?").strip().split()[0] if f.get("NOMBRE HIJO") else "?"
-            apellido = (f.get("APELLIDO HIJO") or "").strip().split()[0] if f.get("APELLIDO HIJO") else ""
+        ninos = await obtener_ninos_por_horario(fecha_iso, hora)
+        for n in ninos:
+            nombre = (n.get("apodo") or n.get("nombre") or "?").strip().split()[0]
+            apellido = (n.get("apellido") or "").strip().split()[0] if n.get("apellido") else ""
             nombre_full = f"{nombre} {apellido}".strip()
-            edad = f.get("EDAD HIJO", "")
-            edad_str = f" ({edad})" if edad else ""
-            presente = f.get("PRESENTE", False)
-            if presente:
-                presentes_turno.append(f"✅ {nombre_full}{edad_str} 🔥")
-                total_fenix += 1
+            edad_str = f" ({n['edad']})" if n.get("edad") else ""
+            fuego = " 🔥" if n.get("es_prueba") else ""
+            if n.get("presente"):
+                presentes_turno.append(f"✅ {nombre_full}{edad_str}{fuego}")
+                if n.get("es_prueba"):
+                    total_fenix += 1
+                else:
+                    total_aurora += 1
             else:
-                ausentes_turno.append(f"❌ {nombre_full}{edad_str} 🔥")
+                ausentes_turno.append(f"❌ {nombre_full}{edad_str}{fuego}")
 
         n_presentes = len(presentes_turno)
         n_total = n_presentes + len(ausentes_turno)
@@ -731,249 +690,6 @@ async def _generar_resumen_asistencia(telefono: str, fecha_override=None):
 
     lineas.append(f"*TOTAL: {total_presentes} presentes, {total_ausentes} ausentes*")
     lineas.append(f"Aurora: {total_aurora} | Fenix (prueba): {total_fenix}")
-
-    await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
-
-
-async def _generar_resumen_prueba(telefono: str, fecha_override=None):
-    """
-    Dashboard de PRUEBA FENIX para un sábado:
-    - Asistencia por turno
-    - Total pagos prueba
-    - Inscriptos
-    - Seguimiento enviado/descartado/pendiente
-    """
-    from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import _get_records, _PRUEBAS
-
-    _PY_TZ = timezone(timedelta(hours=-3))
-    hoy = datetime.now(_PY_TZ).date()
-
-    if fecha_override:
-        sabado = fecha_override
-    else:
-        dias_desde_sabado = (hoy.weekday() - 5) % 7
-        if dias_desde_sabado == 0 and hoy.weekday() != 5:
-            dias_desde_sabado = 7
-        sabado = hoy - timedelta(days=dias_desde_sabado)
-
-    fecha_iso = sabado.isoformat()
-    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
-              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
-    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
-
-    # Obtener todas las pruebas de esa fecha
-    pruebas_t = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_texto}'", max_records=50)
-    pruebas_i = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
-    _seen = set()
-    pruebas = []
-    for p in pruebas_t + pruebas_i:
-        if p["id"] not in _seen:
-            _seen.add(p["id"])
-            pruebas.append(p)
-
-    # Filtrar cancelados
-    pruebas = [p for p in pruebas if p.get("fields", {}).get("CONVERSION") != "CANCELADO"]
-
-    if not pruebas:
-        await proveedor.enviar_mensaje(telefono, f"No hay pruebas para el {sabado.day}/{sabado.month}.")
-        return
-
-    # Obtener seguimiento de esa fecha
-    seg_records = await _get_records("SEGUIMIENTO FENIX", formula=f"DATESTR({{FECHA}})='{fecha_iso}'", max_records=50)
-    # Indexar seguimiento por teléfono
-    seg_por_tel = {}
-    for s in seg_records:
-        sf = s.get("fields", {})
-        tel = sf.get("TELEFONO", "")
-        if tel:
-            seg_por_tel[tel] = sf
-
-    # Leer pagos vinculados de cada prueba
-    import httpx
-    from agent.airtable_client import _BASE_URL, _headers
-
-    async with httpx.AsyncClient() as _hc:
-        for p in pruebas:
-            f = p.get("fields", {})
-            pagos_ids = f.get("PAGOS", [])
-            monto_total = 0
-            monto_inscripcion = 0
-            for pid in pagos_ids:
-                try:
-                    r = await _hc.get(f"{_BASE_URL}/PAGOS/{pid}", headers=_headers(), timeout=10)
-                    if r.status_code == 200:
-                        pf = r.json().get("fields", {})
-                        m = pf.get("MONTO", 0) or 0
-                        concepto = pf.get("CONCEPTO", "")
-                        if "PRUEBA" in concepto:
-                            monto_total += m
-                        else:
-                            monto_inscripcion += m
-                except Exception:
-                    pass
-            f["_monto_prueba"] = monto_total
-            f["_monto_inscripcion"] = monto_inscripcion
-
-    # Agrupar por teléfono (familia) y turno
-    familias = {}
-    for p in pruebas:
-        f = p.get("fields", {})
-        tel = f.get("TELEFONO", "?")
-        hora = (f.get("HORA") or "").strip().replace("h", "").replace("hs", "")
-        for t in ["9:30", "11:00", "15:30"]:
-            if hora == t or hora == t.split(":")[0] or hora.lstrip("0") == t:
-                hora = t
-                break
-        if hora not in ["9:30", "11:00", "15:30"]:
-            hora = "15:30"
-
-        nombre_hijo = (f.get("NOMBRE HIJO") or "?").strip()
-        edad = f.get("EDAD HIJO", "")
-        presente = f.get("PRESENTE", False)
-        conversion = f.get("CONVERSION", "")
-        inscripcion = f.get("INSCRIPCION", False)
-        nombre_padre = f"{f.get('NOMBRE RESPONSABLE', '')} {f.get('APELLIDO RESPONSABLE', '')}".strip()
-
-        # Si no tiene nombre, buscar en seguimiento (tiene el nombre en el mensaje)
-        if not nombre_padre and tel in seg_por_tel:
-            _seg_msg = seg_por_tel[tel].get("MENSAJE", "")
-            if _seg_msg.startswith("Hola "):
-                nombre_padre = _seg_msg.split("!")[0].replace("Hola ", "")
-
-        # Si sigue sin nombre, buscar en LEADS
-        if not nombre_padre:
-            try:
-                _leads = await _get_records("LEADS FENIX", formula=f"{{TELEFONO}}='{tel}'", max_records=1)
-                if _leads:
-                    _lf = _leads[0].get("fields", {})
-                    nombre_padre = _lf.get("NOMBRE RESPONSABLE", "")
-            except Exception:
-                pass
-
-        if tel not in familias:
-            familias[tel] = {
-                "padre": nombre_padre,
-                "turno": hora,
-                "hijos": [],
-                "monto_prueba": 0,
-                "monto_inscripcion": 0,
-                "conversion": conversion,
-                "inscripcion": inscripcion,
-            }
-        familias[tel]["hijos"].append({
-            "nombre": nombre_hijo,
-            "edad": edad,
-            "presente": presente,
-        })
-        familias[tel]["monto_prueba"] += f.get("_monto_prueba", 0)
-        _conv_order = {"CONSULTA": 0, "AGENDA": 1, "PAGO": 2, "INSCRIPTO": 3}
-        if _conv_order.get(conversion, 0) > _conv_order.get(familias[tel]["conversion"], 0):
-            familias[tel]["conversion"] = conversion
-        if inscripcion:
-            familias[tel]["inscripcion"] = True
-        # Guardar familia_id para buscar pagos de inscripción
-        familia_ids = f.get("FAMILIA", [])
-        if familia_ids and "familia_id" not in familias[tel]:
-            familias[tel]["familia_id"] = familia_ids[0]
-
-    # Buscar pagos de inscripción por familia_id
-    # Filtrar por FUENTE=FENIX para no traer pagos de Dorita (base compartida)
-    _pagos_fenix = await _get_records("PAGOS", formula="{FUENTE}='FENIX KIDS ACADEMY'", max_records=100)
-    for tel, fam in familias.items():
-        if (fam["conversion"] == "INSCRIPTO" or fam["inscripcion"]) and fam.get("familia_id"):
-            fam_id = fam["familia_id"]
-            for pg in _pagos_fenix:
-                pf = pg.get("fields", {})
-                fam_links = pf.get("FAMILIA FENIX", []) or []
-                if fam_id in fam_links:
-                    concepto = pf.get("CONCEPTO", "")
-                    m = pf.get("MONTO", 0) or 0
-                    if "PRUEBA" not in concepto:
-                        fam["monto_inscripcion"] += m
-
-    total_ninos = 0
-    total_presentes = 0
-    total_ausentes = 0
-    total_pagaron_prueba = 0
-    total_inscriptos = 0
-    total_seg_enviado = 0
-    total_seg_descartado = 0
-    total_seg_pendiente = 0
-    monto_prueba_total = 0
-    monto_inscripcion_total = 0
-
-    lineas = [f"🔥 *RESUMEN PRUEBA — SÁB {sabado.day}/{sabado.month}*\n"]
-
-    # Agrupar familias por turno
-    for hora in ["9:30", "11:00", "15:30"]:
-        fams_turno = [(tel, fam) for tel, fam in familias.items() if fam["turno"] == hora]
-        if not fams_turno:
-            continue
-
-        n_hijos_turno = sum(len(fam["hijos"]) for _, fam in fams_turno)
-        lineas.append(f"⏰ *{hora}h* ({n_hijos_turno} niños, {len(fams_turno)} familias)")
-
-        for tel, fam in fams_turno:
-            padre = fam["padre"] or tel
-            conversion = fam["conversion"]
-            monto_pr = fam["monto_prueba"]
-            monto_insc = fam["monto_inscripcion"]
-            inscripto = fam["inscripcion"] or conversion == "INSCRIPTO"
-
-            # Seguimiento
-            seg = seg_por_tel.get(tel, {})
-            if seg:
-                if seg.get("ENVIADO"):
-                    seg_ico = "📩"
-                    total_seg_enviado += 1
-                elif seg.get("DESCARTADO"):
-                    seg_ico = "🚫"
-                    total_seg_descartado += 1
-                else:
-                    seg_ico = "⏳"
-                    total_seg_pendiente += 1
-            else:
-                seg_ico = "⏳"
-                total_seg_pendiente += 1
-
-            # Línea padre
-            padre_info = f"   *{padre}*"
-            if monto_pr > 0:
-                padre_info += f" | prueba {monto_pr // 1000}mil"
-                total_pagaron_prueba += 1
-                monto_prueba_total += monto_pr
-            if inscripto:
-                total_inscriptos += 1
-                padre_info += f" | 🎓 INSCRIPTO"
-                if monto_insc > 0:
-                    padre_info += f" {monto_insc // 1000}mil"
-                    monto_inscripcion_total += monto_insc
-            padre_info += f" {seg_ico}"
-            lineas.append(padre_info)
-
-            # Líneas hijos
-            for h in fam["hijos"]:
-                total_ninos += 1
-                asis = "✅" if h["presente"] else "❌"
-                if h["presente"]:
-                    total_presentes += 1
-                else:
-                    total_ausentes += 1
-                edad_str = f" ({h['edad']})" if h["edad"] else ""
-                lineas.append(f"      {asis} {h['nombre']}{edad_str}")
-
-        lineas.append("")
-
-    recaudado_total = monto_prueba_total + monto_inscripcion_total
-
-    lineas.append(f"📊 *TOTALES*")
-    lineas.append(f"👨‍👩‍👧 Familias: {len(familias)} | Niños: {total_ninos}")
-    lineas.append(f"✅ Vinieron: {total_presentes} | ❌ No vinieron: {total_ausentes}")
-    lineas.append(f"💰 Pagaron prueba: {total_pagaron_prueba} ({monto_prueba_total // 1000}mil)")
-    lineas.append(f"🎓 Inscriptos: {total_inscriptos} ({monto_inscripcion_total // 1000}mil)")
-    lineas.append(f"💵 *Recaudado total: {recaudado_total // 1000}mil*")
-    lineas.append(f"📩 Seguimiento: {total_seg_enviado} | 🚫 {total_seg_descartado} | ⏳ {total_seg_pendiente}")
 
     await proveedor.enviar_mensaje(telefono, "\n".join(lineas))
 
