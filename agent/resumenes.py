@@ -85,13 +85,34 @@ def _generar_slug(nombre: str, apellido: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", norm).strip("-")
 
 
+async def _tutor_de_familia(familia_id: str) -> tuple[str, str]:
+    """(nombre, telefono) del tutor de contacto de una FAMILIA (madre primero).
+    Devuelve ("", "") si falla — los resúmenes nunca se rompen por esto."""
+    if not familia_id:
+        return "", ""
+    try:
+        from agent.airtable_client import _BASE_URL, _headers
+        import httpx
+        async with httpx.AsyncClient() as _cl:
+            _r = await _cl.get(f"{_BASE_URL}/FAMILIAS%20FENIX/{familia_id}", headers=_headers(), timeout=10)
+            if _r.status_code == 200:
+                _ff = _r.json().get("fields", {})
+                if _ff.get("CELL MADRE"):
+                    return f"{_ff.get('NOMBRE MADRE', '')} {_ff.get('APELLIDO MADRE', '')}".strip(), _ff["CELL MADRE"]
+                if _ff.get("CELL PADRE"):
+                    return f"{_ff.get('NOMBRE PADRE', '')} {_ff.get('APELLIDO PADRE', '')}".strip(), _ff["CELL PADRE"]
+    except Exception:
+        pass
+    return "", ""
+
+
 async def _generar_resumen_reservas(telefono: str, fecha_override=None):
     """Genera resumen de reservas de un sábado, agrupado por turno.
     Si fecha_override es None, usa el sábado más cercano.
-    Separa AURORA (alumnos inscriptos) y FENIX (clases de prueba)."""
+    Separa AURORA (inscriptos) y FENIX (prueba) por es_prueba — fuente única
+    RESERVAS FENIX (migración 2.B: PRUEBA FENIX ya no se consulta)."""
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
-    import httpx as _httpx_res
+    from agent.airtable_client import obtener_ninos_por_horario
 
     _PY_TZ = timezone(timedelta(hours=-3))
     hoy = datetime.now(_PY_TZ).date()
@@ -107,59 +128,17 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
     fecha_iso = sabado.isoformat()
 
     _DIAS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]
-    _MESES = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
-              7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"}
     fecha_label = f"{_DIAS[sabado.weekday()]} {sabado.day}/{sabado.month}"
-    # FECHA RESERVA en PRUEBA FENIX se guarda como "9 de mayo" (texto, no ISO)
-    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
 
     turnos = ["9:30", "11:00", "15:30"]
 
-    # ── AURORA: alumnos inscriptos (RESERVAS FENIX via HORARIOS) ──
-    aurora_por_turno = {}
+    # ── Fuente única: RESERVAS FENIX (inscriptos + pruebas, split por es_prueba) ──
+    aurora_por_turno: dict[str, list[dict]] = {}
+    fenix_por_turno: dict[str, list[dict]] = {}
     for hora in turnos:
         ninos = await obtener_ninos_por_horario(fecha_iso, hora)
-        aurora_por_turno[hora] = ninos
-
-    # ── FENIX: clases de prueba (PRUEBA FENIX con FECHA RESERVA = sábado) ──
-    # Buscar por formato texto ("9 de mayo") y también ISO por si se normaliza a futuro
-    pruebas_texto = await _get_records(
-        _PRUEBAS,
-        formula=f"AND({{FECHA RESERVA}}='{fecha_texto}', NOT({{INSCRIPTO}}))",
-        max_records=50,
-    )
-    pruebas_iso = await _get_records(
-        _PRUEBAS,
-        formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))",
-        max_records=50,
-    )
-    # Dedup por record id
-    _seen_ids = set()
-    pruebas = []
-    for rec in pruebas_texto + pruebas_iso:
-        if rec["id"] not in _seen_ids:
-            _seen_ids.add(rec["id"])
-            pruebas.append(rec)
-    fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
-    for rec in pruebas:
-        f = rec.get("fields", {})
-        hora_raw = (f.get("HORA") or "").strip()
-        # Normalizar para matchear turnos (ej: "11h" → "11:00", "9:30h" → "9:30")
-        if hora_raw not in fenix_por_turno:
-            _h_clean = hora_raw.replace("h", "").replace("hs", "").strip()
-            for t in turnos:
-                if _h_clean == t or _h_clean.lstrip("0") == t or _h_clean == t.split(":")[0]:
-                    hora_raw = t
-                    break
-        if hora_raw in fenix_por_turno:
-            nombre = f.get("NOMBRE HIJO", "")
-            apellido = f.get("APELLIDO HIJO", "")
-            edad = str(f["EDAD HIJO"]) if f.get("EDAD HIJO") else ""
-            fenix_por_turno[hora_raw].append({
-                "nombre": nombre,
-                "apellido": apellido,
-                "edad": edad,
-            })
+        aurora_por_turno[hora] = [n for n in ninos if not n.get("es_prueba")]
+        fenix_por_turno[hora] = [n for n in ninos if n.get("es_prueba")]
 
     # ── Armar mensaje ──
     emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆"]
@@ -245,33 +224,12 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
 
     turnos = ["9:30", "11:00", "15:30"]
 
-    # AURORA: inscriptos
-    aurora_por_turno = {}
+    # Fuente única: RESERVAS FENIX — inscriptos y pruebas juntos, marcados
+    # por es_prueba (migración 2.B). Padre/teléfono salen de la FAMILIA
+    # también para los de prueba (existe por el dual-write al pagar).
+    ninos_por_turno: dict[str, list[dict]] = {}
     for hora in turnos:
-        ninos = await obtener_ninos_por_horario(fecha_iso, hora)
-        aurora_por_turno[hora] = ninos
-
-    # FENIX: pruebas (excluir INSCRIPTO=true, ya están en RESERVAS)
-    pruebas_iso = await _get_records(_PRUEBAS, formula=f"AND({{FECHA RESERVA}}='{fecha_iso}', NOT({{INSCRIPTO}}))", max_records=50)
-    fenix_por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
-    for rec in pruebas_iso:
-        f = rec.get("fields", {})
-        hora_raw = (f.get("HORA") or "").strip()
-        if hora_raw not in fenix_por_turno:
-            _h_clean = hora_raw.replace("h", "").replace("hs", "").strip()
-            for t in turnos:
-                if _h_clean == t or _h_clean.lstrip("0") == t or _h_clean == t.split(":")[0]:
-                    hora_raw = t
-                    break
-        if hora_raw in fenix_por_turno:
-            tel_padre = f.get("TELEFONO", "")
-            nombre_hijo = (f.get("NOMBRE HIJO") or "").split()[0]
-            nombre_padre = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
-            fenix_por_turno[hora_raw].append({
-                "nombre_hijo": nombre_hijo,
-                "nombre_padre": nombre_padre,
-                "telefono": tel_padre,
-            })
+        ninos_por_turno[hora] = await obtener_ninos_por_horario(fecha_iso, hora)
 
     # Armar mensaje
     emojis = ["🦁", "🐯", "🦊", "🐻", "🐼", "🦋", "🌟", "⚡", "🔥", "🎯", "🦅", "🐺", "🌈", "🎪", "🏆", "🦈", "🐉", "🦖", "🌵", "🎸"]
@@ -280,52 +238,22 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
     _emoji_idx = 0
 
     for hora in turnos:
-        aurora = aurora_por_turno[hora]
-        fenix = fenix_por_turno[hora]
-        total_turno = len(aurora) + len(fenix)
-        total += total_turno
+        ninos = ninos_por_turno[hora]
+        total += len(ninos)
 
-        lineas.append(f"⏰ *{hora}h* — {total_turno}")
+        lineas.append(f"⏰ *{hora}h* — {len(ninos)}")
 
-        if aurora:
-            for n in aurora:
-                emoji = emojis[_emoji_idx % len(emojis)]
-                _emoji_idx += 1
-                nombre_hijo = (n.get("apodo") or n["nombre"]).split()[0]
-                _fam_id = n.get("familia_id", "")
-                _padre_nombre = ""
-                _tel_padre = ""
-                if _fam_id:
-                    try:
-                        from agent.airtable_client import _BASE_URL, _headers
-                        import httpx
-                        async with httpx.AsyncClient() as _cl:
-                            _r = await _cl.get(f"{_BASE_URL}/FAMILIAS%20FENIX/{_fam_id}", headers=_headers(), timeout=10)
-                            if _r.status_code == 200:
-                                _ff = _r.json().get("fields", {})
-                                if _ff.get("CELL MADRE"):
-                                    _padre_nombre = f"{_ff.get('NOMBRE MADRE', '')} {_ff.get('APELLIDO MADRE', '')}".strip()
-                                    _tel_padre = _ff["CELL MADRE"]
-                                elif _ff.get("CELL PADRE"):
-                                    _padre_nombre = f"{_ff.get('NOMBRE PADRE', '')} {_ff.get('APELLIDO PADRE', '')}".strip()
-                                    _tel_padre = _ff["CELL PADRE"]
-                    except Exception:
-                        pass
-                wa_link = f"wa.me/{_tel_padre}" if _tel_padre else ""
-                lineas.append(f"  {emoji} {nombre_hijo} | {_padre_nombre}")
-                if wa_link:
-                    lineas.append(f"      {wa_link}")
+        for n in ninos:
+            emoji = emojis[_emoji_idx % len(emojis)]
+            _emoji_idx += 1
+            nombre_hijo = (n.get("apodo") or n["nombre"]).split()[0]
+            _padre_nombre, _tel_padre = await _tutor_de_familia(n.get("familia_id", ""))
+            _marca = " 🔥" if n.get("es_prueba") else ""
+            lineas.append(f"  {emoji} {nombre_hijo}{_marca} | {_padre_nombre}")
+            if _tel_padre:
+                lineas.append(f"      wa.me/{_tel_padre}")
 
-        if fenix:
-            for n in fenix:
-                emoji = emojis[_emoji_idx % len(emojis)]
-                _emoji_idx += 1
-                wa_link = f"wa.me/{n['telefono']}" if n["telefono"] else ""
-                lineas.append(f"  {emoji} {n['nombre_hijo']} | {n['nombre_padre']}")
-                if wa_link:
-                    lineas.append(f"      {wa_link}")
-
-        if not aurora and not fenix:
+        if not ninos:
             lineas.append("   — vacio")
         lineas.append("")
 
@@ -335,9 +263,12 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
 
 
 async def _generar_resumen_telegram(telefono: str):
-    """Genera resumen de reservas con link de Telegram debajo de cada nombre."""
+    """Genera resumen de las clases de PRUEBA del sábado con link de Telegram
+    por familia. Fuente: RESERVAS FENIX con es_prueba (migración 2.B) — el
+    teléfono y el responsable salen de la FAMILIA; hermanos se agrupan por
+    familia_id. Los cancelados ya no aparecen (la reserva se borra al cancelar)."""
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import _get_records, _PRUEBAS
+    from agent.airtable_client import obtener_ninos_por_horario
     from agent.telegram_bridge import obtener_topic
 
     _PY_TZ = timezone(timedelta(hours=-3))
@@ -347,67 +278,33 @@ async def _generar_resumen_telegram(telefono: str):
     if dias_hasta_sabado == 0 and hoy.weekday() != 5:
         dias_hasta_sabado = 7
     sabado = hoy + timedelta(days=dias_hasta_sabado)
-    _MESES = {1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
-              7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"}
-    fecha_texto = f"{sabado.day} de {_MESES[sabado.month]}"
     fecha_iso = sabado.isoformat()
 
-    # Buscar PRUEBA FENIX por texto e ISO
-    pruebas_texto = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_texto}'", max_records=50)
-    pruebas_iso = await _get_records(_PRUEBAS, formula=f"{{FECHA RESERVA}}='{fecha_iso}'", max_records=50)
-    _seen = set()
-    pruebas = []
-    for rec in pruebas_texto + pruebas_iso:
-        if rec["id"] not in _seen:
-            _seen.add(rec["id"])
-            pruebas.append(rec)
-
     turnos = ["9:30", "11:00", "15:30"]
-    por_turno: dict[str, list[dict]] = {h: [] for h in turnos}
 
-    for rec in pruebas:
-        f = rec.get("fields", {})
-        hora_raw = (f.get("HORA") or "").strip()
-        # Normalizar
-        if hora_raw not in por_turno:
-            _h = hora_raw.replace("h", "").replace("hs", "").strip()
-            for t in turnos:
-                if _h == t or _h.lstrip("0") == t or _h == t.split(":")[0]:
-                    hora_raw = t
-                    break
-        if hora_raw in por_turno:
-            por_turno[hora_raw].append({
-                "nombre": f.get("NOMBRE HIJO", ""),
-                "apellido": f.get("APELLIDO HIJO", ""),
-                "tel": f.get("TELEFONO", ""),
-                "conversion": f.get("CONVERSION", ""),
-                "responsable": f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip(),
-            })
-
-    # Agrupar por teléfono dentro de cada turno para hermanos
     lineas = [f"📋 *RESERVAS + TELEGRAM — SAB {sabado.day}/{sabado.month}*\n"]
     total = 0
 
     for hora in turnos:
-        kids = por_turno[hora]
-        # Agrupar por tel
-        by_tel: dict[str, list] = {}
-        for k in kids:
-            tel = k["tel"]
-            if tel not in by_tel:
-                by_tel[tel] = {"nombres": [], "responsable": k.get("responsable", "")}
-            nombre = f"{k['nombre']} {k['apellido']}".strip()
-            if k.get("conversion") == "CANCELADO":
-                nombre += " (CANCELADO)"
-            by_tel[tel]["nombres"].append(nombre)
+        ninos = await obtener_ninos_por_horario(fecha_iso, hora)
+        kids = [n for n in ninos if n.get("es_prueba")]
 
-        count = sum(len(v["nombres"]) for v in by_tel.values())
+        # Agrupar hermanos por familia
+        by_fam: dict[str, dict] = {}
+        for k in kids:
+            fam_id = k.get("familia_id", "") or f"_sin_fam_{k['id']}"
+            if fam_id not in by_fam:
+                by_fam[fam_id] = {"nombres": [], "familia_id": k.get("familia_id", "")}
+            by_fam[fam_id]["nombres"].append(f"{k['nombre']} {k['apellido']}".strip())
+
+        count = len(kids)
         total += count
         lineas.append(f"⏰ *{hora}h* — {count} niño{'s' if count != 1 else ''}")
 
-        for tel, data in by_tel.items():
-            # Get Telegram topic link
-            topic = await obtener_topic(tel)
+        for fam_id, data in by_fam.items():
+            responsable, tel = await _tutor_de_familia(data["familia_id"])
+            # Link al topic de Telegram de esa conversación
+            topic = await obtener_topic(tel) if tel else None
             if topic and topic.group_id:
                 gid = str(topic.group_id).replace("-100", "", 1)
                 tg_link = f"https://t.me/c/{gid}/{topic.topic_id}"
@@ -418,8 +315,8 @@ async def _generar_resumen_telegram(telefono: str):
 
             for nombre in data["nombres"]:
                 lineas.append(f"   - {nombre}")
-            if data["responsable"]:
-                lineas.append(f"     👤 {data['responsable']}")
+            if responsable:
+                lineas.append(f"     👤 {responsable}")
             lineas.append(f"     💬 {tg_link}")
             lineas.append("")
 
