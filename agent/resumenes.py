@@ -85,22 +85,30 @@ def _generar_slug(nombre: str, apellido: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", norm).strip("-")
 
 
-async def _tutor_de_familia(familia_id: str) -> tuple[str, str]:
-    """(nombre, telefono) del tutor de contacto de una FAMILIA (madre primero).
-    Devuelve ("", "") si falla — los resúmenes nunca se rompen por esto."""
-    if not familia_id:
+async def _tutor_de_nino(nino_id: str) -> tuple[str, str]:
+    """(nombre, telefono) del tutor de contacto de un NIÑO (madre primero,
+    niño-eje: links MADRE/PADRE del niño → TUTORES FENIX).
+    El teléfono sale de CELL LIMPIO (595..., sirve para wa.me y el topic de
+    Telegram) con fallback al CELL crudo. ("", "") si falla — los resúmenes
+    nunca se rompen por esto."""
+    if not nino_id:
         return "", ""
     try:
-        from agent.airtable_client import _BASE_URL, _headers
+        from agent.airtable_client import _BASE_URL, _headers, _NINOS, _TUTORES
         import httpx
         async with httpx.AsyncClient() as _cl:
-            _r = await _cl.get(f"{_BASE_URL}/FAMILIAS%20FENIX/{familia_id}", headers=_headers(), timeout=10)
-            if _r.status_code == 200:
-                _ff = _r.json().get("fields", {})
-                if _ff.get("CELL MADRE"):
-                    return f"{_ff.get('NOMBRE MADRE', '')} {_ff.get('APELLIDO MADRE', '')}".strip(), _ff["CELL MADRE"]
-                if _ff.get("CELL PADRE"):
-                    return f"{_ff.get('NOMBRE PADRE', '')} {_ff.get('APELLIDO PADRE', '')}".strip(), _ff["CELL PADRE"]
+            _r = await _cl.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
+            if _r.status_code != 200:
+                return "", ""
+            _nf = _r.json().get("fields", {})
+            for tid in (_nf.get("MADRE") or []) + (_nf.get("PADRE") or []):
+                _rt = await _cl.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
+                if _rt.status_code != 200:
+                    continue
+                _tf = _rt.json().get("fields", {})
+                _tel = (_tf.get("CELL LIMPIO") or _tf.get("CELL") or "").strip()
+                if _tel:
+                    return f"{_tf.get('NOMBRE', '')} {_tf.get('APELLIDO', '')}".strip(), _tel
     except Exception:
         pass
     return "", ""
@@ -247,7 +255,7 @@ async def _generar_resumen_flias(telefono: str, fecha_override=None):
             emoji = emojis[_emoji_idx % len(emojis)]
             _emoji_idx += 1
             nombre_hijo = (n.get("apodo") or n["nombre"]).split()[0]
-            _padre_nombre, _tel_padre = await _tutor_de_familia(n.get("familia_id", ""))
+            _padre_nombre, _tel_padre = await _tutor_de_nino(n.get("id", ""))
             _marca = " 🔥" if n.get("es_prueba") else ""
             lineas.append(f"  {emoji} {nombre_hijo}{_marca} | {_padre_nombre}")
             if _tel_padre:
@@ -289,20 +297,22 @@ async def _generar_resumen_telegram(telefono: str):
         ninos = await obtener_ninos_por_horario(fecha_iso, hora)
         kids = [n for n in ninos if n.get("es_prueba")]
 
-        # Agrupar hermanos por familia
-        by_fam: dict[str, dict] = {}
+        # Agrupar hermanos por tutor de contacto (niño-eje: hermanos comparten
+        # madre/padre → mismo teléfono; antes se agrupaba por familia_id)
+        by_tutor: dict[str, dict] = {}
         for k in kids:
-            fam_id = k.get("familia_id", "") or f"_sin_fam_{k['id']}"
-            if fam_id not in by_fam:
-                by_fam[fam_id] = {"nombres": [], "familia_id": k.get("familia_id", "")}
-            by_fam[fam_id]["nombres"].append(f"{k['nombre']} {k['apellido']}".strip())
+            _resp_k, _tel_k = await _tutor_de_nino(k.get("id", ""))
+            clave = _tel_k or f"_sin_tutor_{k['id']}"
+            if clave not in by_tutor:
+                by_tutor[clave] = {"nombres": [], "responsable": _resp_k, "tel": _tel_k}
+            by_tutor[clave]["nombres"].append(f"{k['nombre']} {k['apellido']}".strip())
 
         count = len(kids)
         total += count
         lineas.append(f"⏰ *{hora}h* — {count} niño{'s' if count != 1 else ''}")
 
-        for fam_id, data in by_fam.items():
-            responsable, tel = await _tutor_de_familia(data["familia_id"])
+        for clave, data in by_tutor.items():
+            responsable, tel = data["responsable"], data["tel"]
             # Link al topic de Telegram de esa conversación
             topic = await obtener_topic(tel) if tel else None
             if topic and topic.group_id:
