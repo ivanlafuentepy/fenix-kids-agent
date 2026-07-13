@@ -178,17 +178,25 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
             "message": "No hay reservas activas para reagendar. Usar agendar en su lugar.",
         }
 
-    # Cancelar todas las reservas futuras actuales
     fecha_actual = reservas_futuras[0]["fecha"]
     hora_actual = reservas_futuras[0]["hora"]
-    for r in reservas_futuras:
-        await _delete(_RESERVAS, r["id"])
-        logger.info(f"[REAGENDAR] Borrada reserva {r['id']} ({r['fecha']} {r['hora']})")
 
-    # Crear nueva
+    # Crear la reserva nueva PRIMERO: si _agendar falla (Airtable caído,
+    # horario inválido), las reservas viejas quedan intactas. Antes se
+    # borraba primero y un fallo dejaba a la familia SIN ninguna reserva
+    # (auditoría 2026-07-12, A9).
     result = await _agendar(telefono, fecha_nueva, hora_nueva, familia_id)
     if result.get("error"):
         return result
+    _ids_nuevas = set(result.get("reserva_ids", []) or [])
+
+    # Recién ahora borrar las futuras viejas — sin tocar las recién creadas
+    # (crear_reserva es idempotente y puede devolver una que ya existía)
+    for r in reservas_futuras:
+        if r["id"] in _ids_nuevas:
+            continue
+        await _delete(_RESERVAS, r["id"])
+        logger.info(f"[REAGENDAR] Borrada reserva {r['id']} ({r['fecha']} {r['hora']})")
 
     hijos = result.get("hijos", "?")
     return {
