@@ -1239,9 +1239,13 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                                 except ValueError:
                                     pass
                         familia_ids = res_fields.get("FAMILIAS", []) or nf.get("FAMILIA", [])
-                        # es_prueba: lookup ESTADO PLAN de la familia (viene como lista).
-                        # Sin lookup (reserva vieja sin link FAMILIAS) → inscripto.
+                        # es_prueba (niño-eje, F7.b): el ESTADO vive en el NIÑO
+                        # (backfilleado C0, se setea al crear). Respaldo durante
+                        # la transición: lookup ESTADO PLAN de la familia (lista)
+                        # — las reservas nuevas sin link FAMILIAS no lo traen.
+                        _estado_nino = (nf.get("ESTADO") or "").strip()
                         _estado_plan = res_fields.get("ESTADO PLAN") or [""]
+                        _estado_plan = _estado_plan[0] if isinstance(_estado_plan, list) else _estado_plan
                         ninos.append({
                             "id": nino_id,
                             "reserva_id": res_id,
@@ -1252,7 +1256,7 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                             "familia_id": familia_ids[0] if familia_ids else "",
                             "presente": res_fields.get("PRESENTE", False),
                             "ausente": res_fields.get("AUSENTE", False),
-                            "es_prueba": (_estado_plan[0] if isinstance(_estado_plan, list) else _estado_plan) == "A PRUEBA",
+                            "es_prueba": _estado_nino == "A PRUEBA" or _estado_plan == "A PRUEBA",
                         })
             except Exception as e:
                 logger.error(f"Error obteniendo reserva/niño: {e}")
