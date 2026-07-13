@@ -1307,9 +1307,16 @@ async def registrar_pago_fenix(
     concepto: str = "PRUEBA",
     metodo: str = "TRANSFER",
     lead_id: str | None = None,
+    telefono: str = "",
 ) -> str | None:
     """Crea un registro de PAGO en la tabla PAGOS vinculado a la FAMILIA FENIX
     (y al LEAD FENIX si se pasa lead_id, para verlo desde la tabla de leads).
+
+    Migración niño-eje (dual-write): el PAGO además linkea a NIÑOS FENIX (los
+    hermanos que cubre — un pago, un monto, N hermanos; NUNCA se parte) y a
+    PAGA (el tutor que puso la plata). FAMILIA FENIX se sigue escribiendo hasta
+    el corte final. Si la derivación de niños/tutor falla, el pago se crea
+    igual solo con FAMILIA FENIX — nunca se pierde un pago por esto.
 
     El código es la ÚNICA fuente del pago (reemplaza la automatización de Airtable
     PRUEBA FENIX → PAGOS). Idempotente: si la familia ya tiene un PAGO de prueba
@@ -1321,24 +1328,56 @@ async def registrar_pago_fenix(
         logger.warning(f"[PAGO] registrar_pago_fenix sin familia o monto<=0: familia={familia_id} monto={monto}")
         return None
 
-    # Guard anti-duplicado: ¿la familia ya tiene un PAGO de prueba creado hoy?
     fam = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-    if fam:
-        pago_ids = fam[0].get("fields", {}).get("PAGOS", []) or []
-        if pago_ids:
-            _or = ",".join(f"RECORD_ID()='{pid}'" for pid in pago_ids)
-            _formula = f"OR({_or})" if len(pago_ids) > 1 else _or
-            pagos = await _get_records(_PAGOS, formula=_formula, max_records=len(pago_ids))
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
-            for p in pagos:
-                pf = p.get("fields", {})
-                pconc = (pf.get("CONCEPTO") or "")
-                pfecha = (pf.get("FECHA") or "")[:10]
-                if pconc.startswith("PRUEBA") and pfecha == hoy:
-                    logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para familia {familia_id} → no duplico ({p['id']})")
-                    return p["id"]
+    fam_fields = (fam[0].get("fields", {}) or {}) if fam else {}
+    nino_ids = fam_fields.get("NIÑOS FENIX", []) or []
+
+    # Guard anti-duplicado: ¿ya hay un PAGO de prueba creado hoy? Se mira la
+    # UNIÓN de los PAGOS de la familia (modelo viejo) y de sus niños (link
+    # inverso NIÑOS.PAGOS, modelo nuevo) — así el guard sigue funcionando
+    # cuando se corte la escritura de FAMILIA FENIX.
+    pago_ids = list(fam_fields.get("PAGOS", []) or [])
+    if nino_ids:
+        async with httpx.AsyncClient() as client:
+            for nid in nino_ids:
+                try:
+                    r = await client.get(f"{_BASE_URL}/{_NINOS}/{nid}", headers=_headers(), timeout=10)
+                    if r.status_code == 200:
+                        for pid in r.json().get("fields", {}).get("PAGOS", []) or []:
+                            if pid not in pago_ids:
+                                pago_ids.append(pid)
+                except Exception as e:
+                    logger.warning(f"[PAGO] Guard: no pude leer PAGOS del niño {nid}: {e}")
+    if pago_ids:
+        _or = ",".join(f"RECORD_ID()='{pid}'" for pid in pago_ids)
+        _formula = f"OR({_or})" if len(pago_ids) > 1 else _or
+        pagos = await _get_records(_PAGOS, formula=_formula, max_records=len(pago_ids))
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+        for p in pagos:
+            pf = p.get("fields", {})
+            pconc = (pf.get("CONCEPTO") or "")
+            pfecha = (pf.get("FECHA") or "")[:10]
+            if pconc.startswith("PRUEBA") and pfecha == hoy:
+                logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para familia {familia_id} → no duplico ({p['id']})")
+                return p["id"]
+
+    # Tutor pagador (PAGA): el tutor cuyo cel coincide con quien mandó el
+    # comprobante; si no, el marcado ES QUIEN PAGA; si no, el único tutor.
+    # Con 2+ tutores sin señal clara, no se adivina (queda sin PAGA).
+    tutor_paga_id = None
+    try:
+        tutores = [t for t in await obtener_tutores_de_familia(familia_id) if t.get("id")]
+        _por_cell = next(
+            (t for t in tutores if telefono and telefono in (t.get("cell_limpio"), t.get("cell"))),
+            None,
+        ) if telefono else None
+        _marcado = next((t for t in tutores if t.get("es_quien_paga")), None)
+        _elegido = _por_cell or _marcado or (tutores[0] if len(tutores) == 1 else None)
+        tutor_paga_id = _elegido["id"] if _elegido else None
+    except Exception as e:
+        logger.warning(f"[PAGO] No pude resolver el tutor pagador de {familia_id}: {e}")
 
     campos_pago = {
         "MONTO": monto,
@@ -1349,6 +1388,10 @@ async def registrar_pago_fenix(
         "FAMILIA FENIX": [familia_id],
         "EXCEL": True,
     }
+    if nino_ids:
+        campos_pago["NIÑOS FENIX"] = nino_ids
+    if tutor_paga_id:
+        campos_pago["PAGA"] = [tutor_paga_id]
     if lead_id:
         campos_pago["LEAD FENIX"] = [lead_id]
     record = await _post(_PAGOS, campos_pago)
