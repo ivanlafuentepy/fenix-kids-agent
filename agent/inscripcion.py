@@ -110,13 +110,73 @@ def _parsear_inscripcion(texto: str) -> dict:
     return result
 
 
+async def _candidatos_a_prueba() -> list[dict]:
+    """Candidatos a inscribir (migración 2.C-C5): FAMILIAS en ESTADO A PRUEBA
+    con sus NIÑOS y el tutor de contacto — la tabla PRUEBA FENIX ya no se lee.
+
+    Cada candidato tiene el formato pseudo-PRUEBA que espera el resto del flujo:
+    {"prueba": {"id": "", "fields": {TELEFONO, NOMBRE, APELLIDO}},
+     "todas_pruebas": [{"id": "", "_nino_id", "fields": {NOMBRE HIJO, APELLIDO HIJO,
+                        EDAD HIJO, FECHA NACIMIENTO, GENERO}}, ...]}
+    """
+    from agent.airtable_client import _get_records, _FAMILIAS, _NINOS
+
+    fams = await _get_records(_FAMILIAS, formula="{ESTADO PLAN}='A PRUEBA'", max_records=1000)
+    if not fams:
+        return []
+    ninos = await _get_records(_NINOS, max_records=2000)
+    nino_por_id = {n["id"]: (n.get("fields", {}) or {}) for n in ninos}
+
+    candidatos = []
+    for fam in fams:
+        ff = fam.get("fields", {}) or {}
+        nombres_tut = ff.get("NOMBRES TUTORES", []) or []
+        if not isinstance(nombres_tut, list):
+            nombres_tut = [nombres_tut]
+        cells_tut = ff.get("CELLS LIMPIOS TUTORES", []) or []
+        if not isinstance(cells_tut, list):
+            cells_tut = [cells_tut]
+        _nom_completo = (nombres_tut[0] if nombres_tut else "").strip()
+        _partes = _nom_completo.split()
+        tel = (cells_tut[0] if cells_tut else "").strip()
+
+        hijos = []
+        for nid in ff.get("NIÑOS FENIX", []) or []:
+            nf = nino_por_id.get(nid, {})
+            if not (nf.get("NOMBRE") or "").strip():
+                continue
+            hijos.append({
+                "id": "",  # sin registro PRUEBA — nada que patchear ahí
+                "_nino_id": nid,
+                "fields": {
+                    "NOMBRE HIJO": nf.get("NOMBRE", ""),
+                    "APELLIDO HIJO": nf.get("APELLIDO", ""),
+                    "EDAD HIJO": nf.get("EDAD", "?"),
+                    "FECHA NACIMIENTO": nf.get("FECHA NACIMIENTO", ""),
+                    "GENERO": nf.get("SEXO", ""),
+                },
+            })
+
+        candidatos.append({
+            "prueba": {
+                "id": "",
+                "fields": {
+                    "TELEFONO": tel,
+                    "NOMBRE": _partes[0] if _partes else "",
+                    "APELLIDO": " ".join(_partes[1:]) if len(_partes) > 1 else "",
+                },
+            },
+            "todas_pruebas": hijos,
+            "familia_id": fam["id"],
+        })
+    return candidatos
+
+
 async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
     """
     Parsea texto libre: extrae nombre + datos de inscripción.
     Si tiene todo, ejecuta directo. Si falta algo, pide lo que falta.
     """
-    from agent.airtable_client import _get_records, _PRUEBAS
-
     # Extraer datos del texto
     parsed = _parsear_inscripcion(texto_completo)
 
@@ -141,57 +201,49 @@ async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
         await proveedor.enviar_mensaje(admin_phone, "No entendí el nombre. Ej: cargar familia Diana Jara trimestral full monto 690 matricula 50")
         return
 
-    # Buscar en PRUEBA FENIX — normalizar tildes para comparación
+    # Buscar en FAMILIAS A PRUEBA + NIÑOS (2.C-C5: PRUEBA FENIX ya no se lee)
+    # — normalizar tildes para comparación
     import unicodedata
     def _sin_tildes(s: str) -> str:
         return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 
-    pruebas = await _get_records(_PRUEBAS, formula="", max_records=1000)
+    candidatos = await _candidatos_a_prueba()
     _nombre_norm = _sin_tildes(nombre_buscar)
 
     matches = []
-    for p in pruebas:
-        f = p.get("fields", {})
+    for c in candidatos:
+        f = c["prueba"]["fields"]
         nombre_completo = _sin_tildes(f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip())
-        if _nombre_norm in nombre_completo or nombre_completo in _nombre_norm:
-            matches.append(p)
+        if nombre_completo and (_nombre_norm in nombre_completo or nombre_completo in _nombre_norm):
+            matches.append(c)
 
     if not matches:
-        for p in pruebas:
-            f = p.get("fields", {})
-            hijo_completo = _sin_tildes(f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip())
-            if _nombre_norm in hijo_completo:
-                matches.append(p)
+        for c in candidatos:
+            for op in c["todas_pruebas"]:
+                hf = op["fields"]
+                hijo_completo = _sin_tildes(f"{hf.get('NOMBRE HIJO', '')} {hf.get('APELLIDO HIJO', '')}".strip())
+                if hijo_completo and _nombre_norm in hijo_completo:
+                    matches.append(c)
+                    break
 
     if not matches:
-        await proveedor.enviar_mensaje(admin_phone, f"No encontré prueba para '{nombre_buscar}'")
+        await proveedor.enviar_mensaje(admin_phone, f"No encontré familia A PRUEBA para '{nombre_buscar}'")
         return
 
     if len(matches) > 1:
-        # Dedup por teléfono (hermanos = mismo tel)
-        _tels_vistos = set()
-        matches_uniq = []
-        for m in matches:
-            _tel = m.get("fields", {}).get("TELEFONO", "")
-            if _tel not in _tels_vistos:
-                _tels_vistos.add(_tel)
-                matches_uniq.append(m)
-        if len(matches_uniq) > 1:
-            msg = f"Encontré {len(matches_uniq)} familias:\n\n"
-            for i, m in enumerate(matches_uniq, 1):
-                f = m.get("fields", {})
-                msg += f"{i}. {f.get('NOMBRE', '')} {f.get('APELLIDO', '')} → {f.get('NOMBRE HIJO', '')} ({f.get('TELEFONO', '')})\n"
-            msg += "\nEscribí el número para elegir:"
-            _inscripcion_pendiente[admin_phone] = {"step": "elegir", "matches": matches_uniq, "parsed": parsed}
-            await proveedor.enviar_mensaje(admin_phone, msg)
-            return
-        matches = matches_uniq
+        msg = f"Encontré {len(matches)} familias:\n\n"
+        for i, c in enumerate(matches, 1):
+            f = c["prueba"]["fields"]
+            _h0 = c["todas_pruebas"][0]["fields"].get("NOMBRE HIJO", "") if c["todas_pruebas"] else ""
+            msg += f"{i}. {f.get('NOMBRE', '')} {f.get('APELLIDO', '')} → {_h0} ({f.get('TELEFONO', '')})\n"
+        msg += "\nEscribí el número para elegir:"
+        _inscripcion_pendiente[admin_phone] = {"step": "elegir", "matches": matches, "parsed": parsed}
+        await proveedor.enviar_mensaje(admin_phone, msg)
+        return
 
-    prueba = matches[0]
+    prueba = matches[0]["prueba"]
+    todas_pruebas = matches[0]["todas_pruebas"]
     tel = prueba.get("fields", {}).get("TELEFONO", "")
-
-    # Buscar todas las pruebas de este teléfono (hermanos)
-    todas_pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
 
     # Si tenemos todo → ejecutar directo
     faltantes = []
@@ -252,10 +304,10 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
             parsed = datos.get("parsed", {})
             if 0 <= idx < len(matches):
                 _inscripcion_pendiente.pop(admin_phone, None)
-                prueba = matches[idx]
-                tel = prueba.get("fields", {}).get("TELEFONO", "")
-                from agent.airtable_client import _get_records, _PRUEBAS
-                todas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
+                # 2.C-C5: los matches ya traen prueba + hijos (pseudo-PRUEBA
+                # armados desde FAMILIAS A PRUEBA/NIÑOS) — nada que re-consultar
+                prueba = matches[idx]["prueba"]
+                todas = matches[idx]["todas_pruebas"]
                 # Re-iniciar con los datos parseados originales
                 faltantes = []
                 if "plan" not in parsed:
@@ -429,7 +481,8 @@ async def _ejecutar_inscripcion(
         h_fn = of.get("FECHA NACIMIENTO", "")
         h_genero = of.get("GENERO", "")
         if h_nombre:
-            nino_id = _match_nino_previo(h_nombre)
+            # 2.C-C5: si el candidato vino de NIÑOS (pseudo-PRUEBA), ya trae el id
+            nino_id = op.get("_nino_id") or _match_nino_previo(h_nombre)
             if nino_id:
                 logger.info(f"[INSCRIPCION] Reutilizando NIÑO existente {nino_id} ({h_nombre})")
             else:
@@ -441,12 +494,13 @@ async def _ejecutar_inscripcion(
                 }, familia_id)
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
-                # Vincular PRUEBA FENIX → NIÑO FENIX
-                try:
-                    await _patch(_PRUEBAS, op["id"], {"NINO FENIX": [nino_id]})
-                    logger.info(f"[INSCRIPCION] Vinculado PRUEBA {op['id']} → NIÑO {nino_id}")
-                except Exception as e:
-                    logger.warning(f"[INSCRIPCION] Error vinculando PRUEBA→NIÑO: {e}")
+                # Vincular PRUEBA FENIX → NIÑO FENIX (solo registros PRUEBA reales, legacy)
+                if op.get("id"):
+                    try:
+                        await _patch(_PRUEBAS, op["id"], {"NINO FENIX": [nino_id]})
+                        logger.info(f"[INSCRIPCION] Vinculado PRUEBA {op['id']} → NIÑO {nino_id}")
+                    except Exception as e:
+                        logger.warning(f"[INSCRIPCION] Error vinculando PRUEBA→NIÑO: {e}")
                 # Migrar cara de PRUEBA FENIX → NIÑOS FENIX
                 prueba_face_id = of.get("FACE_ID", "")
                 prueba_foto = of.get("FOTO", [])
@@ -605,11 +659,18 @@ async def _ejecutar_inscripcion(
             pagos_creados.append(f"Plan {monto // 1000}mil")
 
     # ── 4. Marcar INSCRIPTO ──────────────────────────────────────────
-    for op in todas_pruebas:
-        await _patch(_PRUEBAS, op["id"], {
-            "CONVERSION": "INSCRIPTO",
-            "FAMILIA": [familia_id],
-        })
+    # 2.C-C5: los registros PRUEBA legacy del teléfono (si existen) se marcan
+    # best-effort — la tabla ya no es fuente de nada, pero queda consistente
+    # hasta el rename de 2.D.
+    try:
+        _pruebas_legacy = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
+        for op in _pruebas_legacy:
+            await _patch(_PRUEBAS, op["id"], {
+                "CONVERSION": "INSCRIPTO",
+                "FAMILIA": [familia_id],
+            })
+    except Exception as _e_leg:
+        logger.warning(f"[INSCRIPCION] No pude marcar PRUEBA legacy INSCRIPTO: {_e_leg}")
 
     leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
     for lead in leads:
