@@ -482,6 +482,7 @@ async def _ejecutar_inscripcion(
     # (sobrevive al corte futuro de FAMILIA FENIX en los pagos).
     _conceptos_hoy: set[str] = set()
     _nino_ids_pago: list[str] = []
+    _ninos_a_promover: list[str] = []
     try:
         _fam_g = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
         _fam_g_fields = (_fam_g[0].get("fields", {}) or {}) if _fam_g else {}
@@ -496,9 +497,14 @@ async def _ejecutar_inscripcion(
                     try:
                         _r_g = await _cl_g.get(f"{_BURL_g}/{_NINOS_g}/{_nid_g}", headers=_hdrs_g(), timeout=10)
                         if _r_g.status_code == 200:
-                            for _pid_g in _r_g.json().get("fields", {}).get("PAGOS", []) or []:
+                            _f_n_g = _r_g.json().get("fields", {})
+                            for _pid_g in _f_n_g.get("PAGOS", []) or []:
                                 if _pid_g not in _pago_ids_g:
                                     _pago_ids_g.append(_pid_g)
+                            # Niño-eje: los reutilizados de la prueba quedaron A PRUEBA
+                            # → al inscribirse la familia, el niño pasa a ACTIVO.
+                            if (_f_n_g.get("ESTADO") or "") != "ACTIVO":
+                                _ninos_a_promover.append(_nid_g)
                     except Exception as _e_n:
                         logger.warning(f"[INSCRIPCION] Guard: no pude leer PAGOS del niño {_nid_g}: {_e_n}")
         if _pago_ids_g:
@@ -514,6 +520,16 @@ async def _ejecutar_inscripcion(
                     _conceptos_hoy.add(_pf_g.get("CONCEPTO") or "")
     except Exception as _e_g:
         logger.warning(f"[INSCRIPCION] Guard anti-dup no pudo leer PAGOS: {_e_g}")
+
+    # Promover los niños a ACTIVO (espejo del ESTADO PLAN de la familia, paso 1).
+    # Best-effort: si falla, el niño queda A PRUEBA y se corrige a mano.
+    for _nid_p in _ninos_a_promover:
+        try:
+            from agent.airtable_client import _NINOS as _NINOS_p
+            await _patch(_NINOS_p, _nid_p, {"ESTADO": "ACTIVO"})
+            logger.info(f"[INSCRIPCION] NIÑO {_nid_p} promovido a ESTADO=ACTIVO")
+        except Exception as _e_p:
+            logger.warning(f"[INSCRIPCION] No pude promover ESTADO del niño {_nid_p}: {_e_p}")
 
     # Tutor pagador (PAGA, niño-eje): el marcado ES QUIEN PAGA; si no, el del
     # teléfono de la prueba; si no, el único tutor. Best-effort: si falla, los

@@ -828,6 +828,20 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
 
     campos["FAMILIA"] = [familia_id]
 
+    # Migración niño-eje: ESTADO del niño espeja el ESTADO PLAN de su familia
+    # al crearse (A PRUEBA / ACTIVO / etc). Todos los flujos setean el estado de
+    # la familia ANTES de crear los niños. Familia sin ESTADO PLAN → niño sin
+    # ESTADO (vacío = cliente, misma semántica que familia_es_activa).
+    try:
+        async with httpx.AsyncClient() as _cl_est:
+            _r_est = await _cl_est.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
+            if _r_est.status_code == 200:
+                _estado_flia = (_r_est.json().get("fields", {}).get("ESTADO PLAN") or "").strip()
+                if _estado_flia:
+                    campos["ESTADO"] = _estado_flia
+    except Exception as e:
+        logger.warning(f"[NIÑO] No pude espejar ESTADO de la familia {familia_id}: {e}")
+
     resultado = await _post(_NINOS, campos)
     if resultado:
         logger.info(f"Niño creado: {resultado['id']} en familia {familia_id}")
