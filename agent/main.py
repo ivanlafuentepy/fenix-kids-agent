@@ -83,6 +83,7 @@ from agent.airtable_client import (
     marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
     obtener_ninos_de_familia, obtener_tutores_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
+    es_cliente_activo_por_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
@@ -3501,9 +3502,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Modo nocturno (23:00–07:00 PY) — admin y padres inscriptos sin límite
         if es_horario_nocturno() and telefono not in _PHONES_SIN_DELAY:
-            # Padres inscriptos no tienen restricción nocturna
-            _familia_nocturno = await buscar_familia_por_telefono(telefono)
-            if not familia_es_activa(_familia_nocturno):
+            # Padres inscriptos no tienen restricción nocturna (niño-eje:
+            # decide el tutor por teléfono → hijos con ESTADO, fallback FAMILIAS)
+            if not await es_cliente_activo_por_telefono(telefono):
                 # De noche el lead SIEMPRE corta acá: antes, el 2do mensaje de la
                 # noche (con noche_pendiente ya marcado) caía al flujo normal y
                 # Claude respondía a las 2:30 AM — y night_mode respondía OTRA vez
@@ -3569,8 +3570,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Lead nuevo: router leads/alumno por teléfono ──────────────────
         if es_nuevo:
             if agent_actual != "aurora":
-                familia_inscripta = await buscar_familia_por_telefono(telefono)
-                if familia_es_activa(familia_inscripta):
+                # Niño-eje: tutor por teléfono → hijos con ESTADO (fallback FAMILIAS)
+                if await es_cliente_activo_por_telefono(telefono):
                     agent_actual = "aurora"
                     modo_nixie = "cliente_inscripto"
                     await actualizar_agent_actual(telefono, "aurora", modo_nixie)

@@ -565,6 +565,54 @@ async def buscar_familia_por_telefono(telefono: str) -> dict | None:
     return records[0] if records else None
 
 
+async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
+    """Busca un TUTOR por su CELL LIMPIO (niño-eje).
+
+    CELL LIMPIO es una fórmula (texto) de TUTORES FENIX — FIND funciona directo.
+    El teléfono de WhatsApp llega normalizado (595...), igual que CELL LIMPIO.
+    """
+    if not telefono:
+        return None
+    formula = f"FIND('{telefono}', {{CELL LIMPIO}})>0"
+    records = await _get_records(_TUTORES, formula=formula, max_records=1)
+    return records[0] if records else None
+
+
+async def es_cliente_activo_por_telefono(telefono: str) -> bool:
+    """Router niño-eje: ¿este teléfono es de un cliente (Aurora) o un lead (Ivan)?
+
+    Camino nuevo: TUTOR por CELL LIMPIO → sus hijos (links HIJOS COMO PADRE/MADRE)
+    → cliente si al menos un hijo tiene ESTADO != 'A PRUEBA' (vacío = cliente,
+    misma semántica que familia_es_activa). Todos A PRUEBA → lead.
+
+    FALLBACK legacy: tutor sin registro o sin hijos linkeados (fichas viejas
+    incompletas, hoy 10) → decisión vieja por FAMILIAS (familia_es_activa),
+    hasta que esas fichas se completen. Verificado 13/07: 109 tutores, el único
+    cambio de ruteo vs el modelo viejo es un caso donde el viejo ruteaba MAL
+    (hijo A PRUEBA con familia sin ESTADO PLAN → iba a Aurora siendo prueba).
+    """
+    tutor = await buscar_tutor_por_telefono(telefono)
+    if tutor:
+        f = tutor.get("fields", {}) or {}
+        hijo_ids = (f.get("HIJOS (COMO PADRE)") or []) + (f.get("HIJOS (COMO MADRE)") or [])
+        if hijo_ids:
+            async with httpx.AsyncClient() as client:
+                for hid in hijo_ids:
+                    try:
+                        r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
+                        if r.status_code == 200:
+                            estado = (r.json().get("fields", {}).get("ESTADO") or "").strip().upper()
+                            if estado != "A PRUEBA":
+                                return True
+                    except Exception as e:
+                        logger.error(f"[ROUTER] Error leyendo hijo {hid} de tutor {tutor.get('id')}: {e}")
+            return False
+
+    # Fallback legacy (sin tutor o sin hijos linkeados): decidir por FAMILIAS.
+    familia = await buscar_familia_por_telefono(telefono)
+    return familia_es_activa(familia)
+
+
 def familia_es_activa(familia: dict | None) -> bool:
     """True si la familia es un cliente real (no un lead en prueba ni una ficha vacía).
 
