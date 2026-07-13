@@ -2322,7 +2322,9 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
                 _fecha = r.get("fecha", "?")
                 _hora = r.get("hora", "?")
                 try:
-                    _fd = _hoy_cls.fromisoformat(_fecha)
+                    # _hoy_cls no existía (NameError tragado por el except):
+                    # Aurora mostraba SIEMPRE la fecha ISO cruda (auditoría 12/07)
+                    _fd = _dt_cls.fromisoformat(_fecha)
                     _fecha_label = f"Sábado {_fd.day}/{_fd.month}"
                 except Exception:
                     _fecha_label = _fecha
@@ -2797,7 +2799,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando asistencia (solo admin) ───────────────────────────────
         _texto_cmd = texto.lower().strip().rstrip(".,!?")
-        if telefono == admin_phone and ("asistencia" in _texto_cmd or "control asis" in _texto_cmd or _texto_cmd.startswith("asis ")):
+        # "resumen" excluido: "resumen asistencia" debe llegar a SU comando más
+        # abajo — este bloque lo capturaba antes y pasaba lista en vez de resumir
+        if telefono == admin_phone and "resumen" not in _texto_cmd and ("asistencia" in _texto_cmd or "control asis" in _texto_cmd or _texto_cmd.startswith("asis ")):
             try:
                 # Detectar turno específico: "asistencia 9:30", "asistencia 11", "asistencia 15:30"
                 _turno_cmd = ""
@@ -2902,6 +2906,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
         # ── Comando resumen seguimiento (solo admin) ─────────────────────
         # Acepta: "resumen seguimiento", "seguimiento 9/5"
+        # (había un segundo bloque idéntico e inalcanzable más abajo — eliminado 12/07)
         if telefono == admin_phone and ("seguimiento" in _texto_cmd or "seguim" in _texto_cmd):
             _fecha_seg = None
             _m_fecha_seg = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
@@ -2926,25 +2931,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[RESUMEN FU] Error: {e}")
                 await proveedor.enviar_mensaje(telefono, f"Error generando resumen followup: {e}")
-            return
-
-        # ── Comando resumen seguimiento (solo admin) ─────────────────────
-        # Acepta: "resumen seguimiento", "seguimiento 9/5"
-        if telefono == admin_phone and ("seguimiento" in _texto_cmd or "seguim" in _texto_cmd):
-            _fecha_seg = None
-            _m_fecha_seg = re.search(r'(\d{1,2})/(\d{1,2})', _texto_cmd)
-            if _m_fecha_seg:
-                from datetime import date as _date_cls, datetime as _dt_cls, timezone as _tz_cls, timedelta as _td_cls
-                _anio = _dt_cls.now(_tz_cls(_td_cls(hours=-3))).year
-                try:
-                    _fecha_seg = _date_cls(_anio, int(_m_fecha_seg.group(2)), int(_m_fecha_seg.group(1)))
-                except ValueError:
-                    pass
-            try:
-                await _generar_resumen_seguimiento(telefono, fecha_override=_fecha_seg)
-            except Exception as e:
-                logger.error(f"[RESUMEN SEG] Error: {e}")
-                await proveedor.enviar_mensaje(telefono, f"Error: {e}")
             return
 
         # ── Comando modo alumno (solo admin) — reset sin tocar Airtable ───
