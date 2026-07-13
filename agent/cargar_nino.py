@@ -3,7 +3,7 @@
 Flujo: el admin escribe "cargar niño" → recibe el formulario nativo de Meta
 (Flow fenix_cargar_nino, 3 pantallas: niño obligatorio, papá/mamá opcionales)
 → al enviarlo, el webhook recibe el nfm_reply con flow="cargar_nino" y acá se
-crea FAMILIA (ESTADO PLAN=ACTIVO) + NIÑO en Airtable.
+crean TUTORES + NIÑO (ESTADO=ACTIVO, niño-eje F7.b) en Airtable.
 
 El audio del Guardián Fenix se genera solo: crear_nino() lo dispara en
 background (agent/voces_alumnos.py).
@@ -70,8 +70,9 @@ def _tutor_desde_flow(d: dict, prefijo: str) -> dict:
 
 
 async def procesar_formulario_cargar_nino(admin_phone: str, flow_data: dict) -> None:
-    """Crea FAMILIA (ACTIVO) + NIÑO desde la respuesta del Flow y confirma al admin."""
-    from agent.airtable_client import crear_familia, crear_nino, _patch, _FAMILIAS
+    """Crea TUTORES + NIÑO ACTIVO (niño-eje, F7.b — FAMILIAS ya no se crea)
+    desde la respuesta del Flow y confirma al admin."""
+    from agent.airtable_client import crear_o_actualizar_tutor, crear_nino
 
     nino_nombre = (flow_data.get("nino_nombre") or "").strip()
     nino_apellido = (flow_data.get("nino_apellido") or "").strip()
@@ -82,17 +83,10 @@ async def procesar_formulario_cargar_nino(admin_phone: str, flow_data: dict) -> 
     padre = _tutor_desde_flow(flow_data, "padre")
     madre = _tutor_desde_flow(flow_data, "madre")
 
-    # FAMILIA — crear_familia necesita al menos un campo; si no vino ningún
-    # dato de tutores, usamos el apellido del niño como apellido del padre
-    # para que el registro tenga identidad (sin mostrarlo como dato real).
-    padre_registro = padre
-    if not padre and not madre:
-        padre_registro = {"apellido": nino_apellido or nino_nombre}
-    familia_id = await crear_familia({"padre": padre_registro, "madre": madre})
-    if not familia_id:
-        await proveedor.enviar_mensaje(admin_phone, "Error creando la FAMILIA en Airtable — no cargué al niño.")
-        return
-    await _patch(_FAMILIAS, familia_id, {"ESTADO PLAN": "ACTIVO"})
+    # TUTORES — idempotentes por CELL LIMPIO; el niño los linkea PADRE/MADRE.
+    # Sin datos de tutores el niño se crea igual (ficha incompleta, se completa después).
+    padre_id = await crear_o_actualizar_tutor(padre, "Papá") if padre.get("nombre") else None
+    madre_id = await crear_o_actualizar_tutor(madre, "Mamá") if madre.get("nombre") else None
 
     # NIÑO — crear_nino dispara la generación del audio en background
     nino_id = await crear_nino({
@@ -100,11 +94,11 @@ async def procesar_formulario_cargar_nino(admin_phone: str, flow_data: dict) -> 
         "apellido": nino_apellido,
         "ci": (flow_data.get("nino_ci") or "").strip(),
         "fecha_nacimiento": _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", "")),
-    }, familia_id)
+    }, padre_id=padre_id or "", madre_id=madre_id or "", estado="ACTIVO")
     if not nino_id:
         await proveedor.enviar_mensaje(
             admin_phone,
-            f"⚠️ FAMILIA creada ({familia_id}) pero falló la creación del NIÑO — revisá Airtable."
+            "⚠️ Falló la creación del NIÑO — revisá Airtable."
         )
         return
 
@@ -127,8 +121,8 @@ async def procesar_formulario_cargar_nino(admin_phone: str, flow_data: dict) -> 
         + (f"\n🎂 {_fecha_desde_flow(flow_data.get('nino_fecha_nacimiento', ''))}" if _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", "")) else "")
         + f"\n👨 {_resumen_tutor(padre, 'Papá')}"
         + f"\n👩 {_resumen_tutor(madre, 'Mamá')}"
-        + f"\n\n🟢 FAMILIA en estado ACTIVO"
+        + f"\n\n🟢 NIÑO en estado ACTIVO"
         + f"\n🔊 Audio del Guardián generándose..."
     )
     await proveedor.enviar_mensaje(admin_phone, msg)
-    logger.info(f"[CARGAR-NINO] Alumno cargado: {nino_nombre} {nino_apellido} familia={familia_id} nino={nino_id}")
+    logger.info(f"[CARGAR-NINO] Alumno cargado: {nino_nombre} {nino_apellido} nino={nino_id} padre={padre_id} madre={madre_id}")

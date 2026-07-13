@@ -2684,12 +2684,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await limpiar_estado_completo(telefono)
             # Pre-setear Aurora + cliente_inscripto para que el router no lo mande a Ivan
             await asignar_variante(telefono)  # crea la fila en ConversacionAB
-            # Asegurar la familia de prueba para que Aurora reconozca al admin
-            # (si 'modo padre' la borró, se recrea acá automáticamente).
-            from agent.airtable_client import asegurar_familia_prueba_admin
-            _fam_prueba_id = await asegurar_familia_prueba_admin(telefono)
-            if _fam_prueba_id:
-                await guardar_familia_id(telefono, _fam_prueba_id)
+            # Asegurar el grupo de prueba (tutor + Mateo) para que Aurora
+            # reconozca al admin (si 'modo padre' lo borró, se recrea acá).
+            from agent.airtable_client import asegurar_grupo_prueba_admin
+            _tutor_prueba_id = await asegurar_grupo_prueba_admin(telefono)
+            if _tutor_prueba_id:
+                await actualizar_estado_flags(telefono, tutor_id=_tutor_prueba_id)
             await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
             _admin_modo_padre.add(telefono)  # activar flujo normal para que responda
             await proveedor.enviar_mensaje(

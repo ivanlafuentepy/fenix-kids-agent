@@ -414,37 +414,53 @@ async def eliminar_lead(telefono: str) -> bool:
 
 async def eliminar_todo_de_telefono(telefono: str) -> dict:
     """
-    Reset completo en Airtable para un teléfono:
-      1. Busca FAMILIA por teléfono
-      2. Borra todas las RESERVAS de cada NIÑO de esa familia
-      3. Borra los NIÑOS
-      4. Borra la FAMILIA
-      5. Borra el LEAD
+    Reset completo en Airtable para un teléfono (niño-eje + legacy):
+      1. TUTOR por CELL LIMPIO → borra sus NIÑOS con las RESERVAS de cada uno
+         (por los links RESERVAS FENIX del niño) y el TUTOR
+      2. FAMILIA legacy por teléfono → ídem niños/reservas + la FAMILIA
+      3. Borra el LEAD
 
-    Retorna dict con contadores: {"familia", "ninos", "reservas", "lead"}.
+    Retorna dict con contadores: {"familia", "ninos", "reservas", "lead", "tutor"}.
     """
-    contador = {"familia": 0, "ninos": 0, "reservas": 0, "lead": 0}
+    contador = {"familia": 0, "ninos": 0, "reservas": 0, "lead": 0, "tutor": 0}
 
+    async def _borrar_nino_con_reservas(nino_id: str, reserva_ids: list[str]):
+        # Los links del niño son la fuente (el FIND viejo sobre ARRAYJOIN({NINO})
+        # comparaba record_id contra NOMBRES → nunca matcheaba, bug conocido).
+        for rid in reserva_ids or []:
+            if await _delete(_RESERVAS, rid):
+                contador["reservas"] += 1
+        if await _delete(_NINOS, nino_id):
+            contador["ninos"] += 1
+
+    # 1. Camino niño-eje: tutor → hijos → reservas
+    tutor = await buscar_tutor_por_telefono(telefono)
+    if tutor:
+        tf = tutor.get("fields", {}) or {}
+        hijo_ids = (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or [])
+        async with httpx.AsyncClient() as client:
+            for hid in hijo_ids:
+                reserva_ids: list[str] = []
+                try:
+                    r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
+                    if r.status_code == 200:
+                        reserva_ids = r.json().get("fields", {}).get("RESERVAS FENIX", []) or []
+                except Exception as e:
+                    logger.error(f"[RESET] Error leyendo niño {hid}: {e}")
+                await _borrar_nino_con_reservas(hid, reserva_ids)
+        if await _delete(_TUTORES, tutor["id"]):
+            contador["tutor"] += 1
+
+    # 2. Camino legacy: familia → niños → reservas (por si quedaba ficha vieja)
     familia = await buscar_familia_por_telefono(telefono)
     if familia:
         familia_id = familia["id"]
-        # Borrar niños y sus reservas
-        ninos = await obtener_ninos_de_familia(familia_id)
-        for nino in ninos:
-            nino_id = nino["id"]
-            # Las reservas del niño
-            formula = f"FIND('{nino_id}', ARRAYJOIN({{NINO}}))"
-            reservas = await _get_records(_RESERVAS, formula=formula, max_records=20)
-            for r in reservas:
-                if await _delete(_RESERVAS, r["id"]):
-                    contador["reservas"] += 1
-            if await _delete(_NINOS, nino_id):
-                contador["ninos"] += 1
-        # Borrar familia
+        for nino in await obtener_ninos_de_familia(familia_id):
+            await _borrar_nino_con_reservas(nino["id"], nino.get("reserva_ids") or [])
         if await _delete(_FAMILIAS, familia_id):
             contador["familia"] += 1
 
-    # Borrar lead
+    # 3. Borrar lead
     lead_id = await obtener_lead_record_id(telefono)
     if lead_id and await _delete(_LEADS, lead_id):
         contador["lead"] += 1
@@ -453,32 +469,35 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
     return contador
 
 
-async def asegurar_familia_prueba_admin(telefono: str) -> str | None:
-    """Garantiza que exista una familia de prueba para 'modo alumno'.
+async def asegurar_grupo_prueba_admin(telefono: str) -> str | None:
+    """Garantiza el grupo de prueba para 'modo alumno' (niño-eje, F7.b).
 
-    Si ya existe una familia para ese teléfono, la devuelve sin tocar nada.
-    Si no existe (ej: la borró 'modo padre'), la crea con un hijo de prueba para
-    que Aurora reconozca al admin como inscripto y no pregunte quién es.
+    Si el tutor del teléfono ya existe con hijos linkeados, lo devuelve sin
+    tocar nada. Si no existe (ej: lo borró 'modo padre'), crea el tutor Iván +
+    Mateo (ACTIVO) linkeado, para que Aurora reconozca al admin como inscripto.
 
-    Retorna el familia_id (existente o recién creado), o None si falló.
+    Retorna el tutor_id (existente o recién creado), o None si falló.
     """
-    familia = await buscar_familia_por_telefono(telefono)
-    if familia:
-        return familia["id"]
-
-    familia_id = await crear_familia({
-        "padre": {"nombre": "Iván", "apellido": "Lafuente", "telefono": telefono},
-    })
-    if not familia_id:
-        logger.error(f"[PRUEBA] No se pudo crear la familia de prueba para {telefono}")
+    tutor = await buscar_tutor_por_telefono(telefono)
+    if tutor:
+        tf = tutor.get("fields", {}) or {}
+        if (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or []):
+            return tutor["id"]
+        tutor_id = tutor["id"]
+    else:
+        tutor_id = await crear_o_actualizar_tutor(
+            {"nombre": "Iván", "apellido": "Lafuente", "telefono": telefono}, "Papá",
+        )
+    if not tutor_id:
+        logger.error(f"[PRUEBA] No se pudo crear el tutor de prueba para {telefono}")
         return None
 
     await crear_nino(
         {"nombre": "Mateo", "apellido": "Lafuente", "fecha_nacimiento": "2019-03-15"},
-        familia_id,
+        padre_id=tutor_id, estado="ACTIVO",
     )
-    logger.info(f"[PRUEBA] Familia de prueba admin creada: {familia_id}")
-    return familia_id
+    logger.info(f"[PRUEBA] Grupo de prueba admin creado: tutor={tutor_id}")
+    return tutor_id
 
 
 # ── FAMILIAS ──────────────────────────────────────────────────────────────────
