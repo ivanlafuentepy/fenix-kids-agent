@@ -902,21 +902,26 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     return resultado
 
 
-async def obtener_familias_para_confirmacion() -> list[dict]:
-    """Familias con pago AL DÍA para la confirmación proactiva del sábado.
+async def obtener_ninos_al_dia() -> list[dict]:
+    """Niños con pago AL DÍA para la confirmación proactiva del sábado (niño-eje).
 
-    El campo {AL DÍA?} es una fórmula que devuelve "✅ AL DÍA" / "❌ VENCIDO" /
-    vacío. Se traen TODAS las familias (paginando con max_records alto) y se
-    filtra en Python: un FIND sobre un campo fórmula con emoji + acento en
-    filterByFormula da 422 silenciosos (ver reference_airtable_errores).
+    Migración FAMILIAS→NIÑO: el vencimiento vive en el NIÑO ({AL DÍA?} =
+    fórmula sobre VENCE EL, rollup de sus PAGOS). Reemplaza a la vieja
+    obtener_familias_para_confirmacion que leía {AL DÍA?} de FAMILIAS.
 
-    Devuelve los records crudos (id + fields). El armado del envío (tutor que
-    paga, hijos) lo hace agent/confirmacion_sabado.py.
+    El campo {AL DÍA?} devuelve "✅ AL DÍA" / "❌ VENCIDO" / vacío. Se traen
+    TODOS los niños (paginando con max_records alto) y se filtra en Python:
+    un FIND sobre un campo fórmula con emoji + acento en filterByFormula da
+    422 silenciosos (ver reference_airtable_errores).
+
+    Devuelve los records crudos (id + fields, incluye PADRE/MADRE/FAMILIA).
+    El armado del envío (tutor pagador, agrupado por teléfono) lo hace
+    agent/confirmacion_sabado.py.
     """
-    familias = await _get_records(_FAMILIAS, max_records=2000)
+    ninos = await _get_records(_NINOS, max_records=2000)
     return [
-        f for f in familias
-        if "AL DÍA" in ((f.get("fields", {}) or {}).get("AL DÍA?") or "")
+        n for n in ninos
+        if "AL DÍA" in ((n.get("fields", {}) or {}).get("AL DÍA?") or "")
     ]
 
 

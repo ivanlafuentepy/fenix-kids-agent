@@ -58,50 +58,91 @@ async def _espejar(topic_id: int | None, texto: str, telefono: str, tg_group: in
 
 
 async def recolectar_envios() -> list[dict]:
-    """Arma la lista de envíos del jueves: una entrada por familia con pago al día,
-    dirigida al tutor que paga.
+    """Arma la lista de envíos del jueves (niño-eje): una entrada por tutor
+    pagador, con TODOS sus hijos al día agrupados.
+
+    Migración FAMILIAS→NIÑO: el "al día" se lee del NIÑO ({AL DÍA?} sobre sus
+    PAGOS) y el destinatario sale de los links PADRE/MADRE del niño — la tabla
+    FAMILIAS ya no participa (salvo el fallback de niños viejos sin tutores
+    linkeados, que resuelve por su FAMILIA).
 
     Returns:
-        [{telefono, nombre_padre, hijos_str, familia_id}] — solo familias con
-        teléfono del pagador e hijos cargados (las incompletas se saltan).
+        [{telefono, nombre_padre, hijos_str, tutor_id}] — solo tutores con
+        teléfono e hijos con nombre (los incompletos se saltan).
     """
     from agent.airtable_client import (
-        obtener_familias_para_confirmacion,
+        obtener_ninos_al_dia,
         obtener_tutores_de_familia,
-        obtener_ninos_de_familia,
+        _get_records,
+        _TUTORES,
     )
 
-    familias = await obtener_familias_para_confirmacion()
-    envios: list[dict] = []
-    for fam in familias:
-        familia_id = fam.get("id")
-        if not familia_id:
-            continue
-        tutores = await obtener_tutores_de_familia(familia_id)
-        if not tutores:
-            continue
-        # El que paga (o el primer tutor si ninguno está marcado).
-        pagador = next((t for t in tutores if t.get("es_quien_paga")), tutores[0])
-        tel = (pagador.get("cell_limpio") or "").strip()
-        if not tel:
-            continue
-        _nom = (pagador.get("nombre") or "").strip()
-        nombre_padre = _nom.split(" ")[0] if _nom else ""
+    ninos = await obtener_ninos_al_dia()
+    if not ninos:
+        return []
 
-        ninos = await obtener_ninos_de_familia(familia_id)
-        nombres_hijos = [(n.get("apodo") or n.get("nombre") or "").strip() for n in ninos]
-        nombres_hijos = [n for n in nombres_hijos if n]
-        if not nombres_hijos:
-            continue
-        hijos_str = " y ".join(nombres_hijos)
+    # Todos los tutores de una vez (110 hoy, paginado) — evita un GET por niño.
+    tutores_raw = await _get_records(_TUTORES, max_records=2000)
+    tutor_por_id = {t["id"]: (t.get("fields", {}) or {}) for t in tutores_raw}
 
-        envios.append({
-            "telefono": tel,
-            "nombre_padre": nombre_padre,
-            "hijos_str": hijos_str,
-            "familia_id": familia_id,
-        })
-    return envios
+    # Agrupar hijos al día por tutor pagador.
+    grupos: dict[str, dict] = {}   # tutor_id -> {telefono, nombre_padre, hijos}
+    for n in ninos:
+        f = n.get("fields", {}) or {}
+        nombre_hijo = ((f.get("APODO") or f.get("NOMBRE")) or "").strip()
+        if not nombre_hijo:
+            continue
+
+        # Candidatos a pagador: PADRE + MADRE del niño (niño-eje).
+        candidatos = [
+            (tid, tutor_por_id[tid])
+            for tid in (f.get("PADRE") or []) + (f.get("MADRE") or [])
+            if tid in tutor_por_id
+        ]
+        # Fallback (niño viejo sin PADRE/MADRE): tutores de su FAMILIA.
+        if not candidatos and f.get("FAMILIA"):
+            try:
+                _de_flia = await obtener_tutores_de_familia(f["FAMILIA"][0])
+                candidatos = [
+                    (t["id"], {
+                        "NOMBRE": t.get("nombre", ""),
+                        "CELL LIMPIO": t.get("cell_limpio", ""),
+                        "ES QUIEN PAGA": t.get("es_quien_paga", False),
+                    })
+                    for t in _de_flia if t.get("id")
+                ]
+            except Exception as e:
+                logger.warning(f"[CONF-SAB] Fallback tutores de familia falló para niño {n.get('id')}: {e}")
+        # Pagador: el marcado ES QUIEN PAGA; si no, el primero con teléfono.
+        con_tel = [(tid, tf) for tid, tf in candidatos if (tf.get("CELL LIMPIO") or "").strip()]
+        pagador = next(
+            ((tid, tf) for tid, tf in con_tel if tf.get("ES QUIEN PAGA")),
+            con_tel[0] if con_tel else None,
+        )
+        if not pagador:
+            continue
+        tid, tf = pagador
+
+        if tid not in grupos:
+            _nom = (tf.get("NOMBRE") or "").strip()
+            grupos[tid] = {
+                "telefono": (tf.get("CELL LIMPIO") or "").strip(),
+                "nombre_padre": _nom.split(" ")[0] if _nom else "",
+                "hijos": [],
+                "tutor_id": tid,
+            }
+        if nombre_hijo not in grupos[tid]["hijos"]:
+            grupos[tid]["hijos"].append(nombre_hijo)
+
+    return [
+        {
+            "telefono": g["telefono"],
+            "nombre_padre": g["nombre_padre"],
+            "hijos_str": " y ".join(g["hijos"]),
+            "tutor_id": g["tutor_id"],
+        }
+        for g in grupos.values()
+    ]
 
 
 async def enviar_confirmacion_sabado(telefono: str, proveedor, nombre_padre: str, hijos_str: str) -> bool:
