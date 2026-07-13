@@ -83,7 +83,7 @@ from agent.airtable_client import (
     marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
     obtener_ninos_de_familia, obtener_tutores_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
-    es_cliente_activo_por_telefono, obtener_grupo_familiar,
+    es_cliente_activo_por_telefono, obtener_grupo_familiar, buscar_tutor_por_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
@@ -3078,31 +3078,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Preparar nombre para Telegram (se usa después del router) ─────
         _topic_nombre = f"📱 {telefono}"
         try:
-            _fam_tg = await buscar_familia_por_telefono(telefono)
-            if _fam_tg:
-                _campos_tg = _fam_tg.get("fields", {})
-                # EJE B: el nombre del tutor sale de los rollups de TUTORES FENIX
-                # (ya vienen en el registro → 0 fetch extra). Los rollups NOMBRES
-                # TUTORES y CELLS LIMPIOS TUTORES están alineados por el mismo link.
-                _nombres_tg = _campos_tg.get("NOMBRES TUTORES", [])
-                _cells_tg = _campos_tg.get("CELLS LIMPIOS TUTORES", [])
-                if not isinstance(_nombres_tg, list):
-                    _nombres_tg = [_nombres_tg] if _nombres_tg else []
-                if not isinstance(_cells_tg, list):
-                    _cells_tg = [_cells_tg] if _cells_tg else []
-                _n = ""
-                # Tutor exacto que escribió: match por índice (solo si las listas
-                # alinean en largo; si no, no arriesgo desalineación).
-                if len(_nombres_tg) == len(_cells_tg):
-                    for _i, _c in enumerate(_cells_tg):
-                        if _c == telefono:
-                            _n = _nombres_tg[_i]
-                            break
-                # Fallback: primer tutor, luego nombre de familia.
-                if not _n and _nombres_tg:
-                    _n = _nombres_tg[0]
-                if not _n:
-                    _n = _campos_tg.get("FAMILIA", "")
+            # Niño-eje: el tutor que escribe se busca directo en TUTORES por su
+            # CELL LIMPIO — match exacto (antes: rollups de FAMILIAS alineados
+            # por índice, con riesgo de desalineación).
+            _tut_tg = await buscar_tutor_por_telefono(telefono)
+            if _tut_tg:
+                _tf_tg = _tut_tg.get("fields", {}) or {}
+                _n = (_tf_tg.get("NOMBRE COMPLETO") or _tf_tg.get("NOMBRE") or "").strip()
                 if _n:
                     _topic_nombre = f"📱 {_n}"
             else:
