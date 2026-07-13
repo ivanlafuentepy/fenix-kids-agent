@@ -478,10 +478,29 @@ async def _ejecutar_inscripcion(
     # corre "cargar familia" dos veces (timeout, reintento), los POST directos
     # duplicaban matrícula + cuota en PAGOS (auditoría 2026-07-12, A1).
     # Se saltea la creación si la familia ya tiene un PAGO con ese CONCEPTO hoy.
+    # Migración niño-eje: el guard mira la UNIÓN FAMILIAS.PAGOS ∪ NIÑOS.PAGOS
+    # (sobrevive al corte futuro de FAMILIA FENIX en los pagos).
     _conceptos_hoy: set[str] = set()
+    _nino_ids_pago: list[str] = []
     try:
         _fam_g = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-        _pago_ids_g = (_fam_g[0].get("fields", {}).get("PAGOS", []) or []) if _fam_g else []
+        _fam_g_fields = (_fam_g[0].get("fields", {}) or {}) if _fam_g else {}
+        # Los niños de la familia (previos + recién creados: el link inverso ya los ve)
+        _nino_ids_pago = _fam_g_fields.get("NIÑOS FENIX", []) or []
+        _pago_ids_g = list(_fam_g_fields.get("PAGOS", []) or [])
+        if _nino_ids_pago:
+            import httpx as _httpx_g
+            from agent.airtable_client import _BASE_URL as _BURL_g, _headers as _hdrs_g, _NINOS as _NINOS_g
+            async with _httpx_g.AsyncClient() as _cl_g:
+                for _nid_g in _nino_ids_pago:
+                    try:
+                        _r_g = await _cl_g.get(f"{_BURL_g}/{_NINOS_g}/{_nid_g}", headers=_hdrs_g(), timeout=10)
+                        if _r_g.status_code == 200:
+                            for _pid_g in _r_g.json().get("fields", {}).get("PAGOS", []) or []:
+                                if _pid_g not in _pago_ids_g:
+                                    _pago_ids_g.append(_pid_g)
+                    except Exception as _e_n:
+                        logger.warning(f"[INSCRIPCION] Guard: no pude leer PAGOS del niño {_nid_g}: {_e_n}")
         if _pago_ids_g:
             _or_g = ",".join(f"RECORD_ID()='{pid}'" for pid in _pago_ids_g)
             _formula_g = f"OR({_or_g})" if len(_pago_ids_g) > 1 else _or_g
@@ -495,6 +514,30 @@ async def _ejecutar_inscripcion(
                     _conceptos_hoy.add(_pf_g.get("CONCEPTO") or "")
     except Exception as _e_g:
         logger.warning(f"[INSCRIPCION] Guard anti-dup no pudo leer PAGOS: {_e_g}")
+
+    # Tutor pagador (PAGA, niño-eje): el marcado ES QUIEN PAGA; si no, el del
+    # teléfono de la prueba; si no, el único tutor. Best-effort: si falla, los
+    # PAGOS se crean igual (solo con FAMILIA FENIX + NIÑOS FENIX).
+    _tutor_paga_id = None
+    try:
+        from agent.airtable_client import obtener_tutores_de_familia
+        _tuts = [t for t in await obtener_tutores_de_familia(familia_id) if t.get("id")]
+        _marcado = next((t for t in _tuts if t.get("es_quien_paga")), None)
+        _por_cell = next(
+            (t for t in _tuts if tel and tel in (t.get("cell_limpio"), t.get("cell"))),
+            None,
+        ) if tel else None
+        _elegido = _marcado or _por_cell or (_tuts[0] if len(_tuts) == 1 else None)
+        _tutor_paga_id = _elegido["id"] if _elegido else None
+    except Exception as _e_t:
+        logger.warning(f"[INSCRIPCION] No pude resolver el tutor pagador: {_e_t}")
+
+    # Campos niño-eje comunes a matrícula y plan (dual-write: FAMILIA FENIX sigue)
+    _campos_nino_eje: dict = {}
+    if _nino_ids_pago:
+        _campos_nino_eje["NIÑOS FENIX"] = _nino_ids_pago
+    if _tutor_paga_id:
+        _campos_nino_eje["PAGA"] = [_tutor_paga_id]
 
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",
@@ -522,6 +565,7 @@ async def _ejecutar_inscripcion(
             "FUENTE": "FENIX KIDS ACADEMY",
             "FAMILIA FENIX": [familia_id],
             "EXCEL": True,
+            **_campos_nino_eje,
         })
         if pago_matri:
             pagos_creados.append(f"Matrícula {matricula // 1000}mil")
@@ -539,6 +583,7 @@ async def _ejecutar_inscripcion(
             "FUENTE": "FENIX KIDS ACADEMY",
             "FAMILIA FENIX": [familia_id],
             "EXCEL": True,
+            **_campos_nino_eje,
         })
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
