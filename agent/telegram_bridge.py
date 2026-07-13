@@ -301,6 +301,34 @@ async def _borrar_topic_db(telefono: str, topic_id_fallido: int):
             )
 
 
+async def _grupo_para_envio(topic_id: int, telefono: str | None, group_override: int) -> int:
+    """Resuelve a QUÉ grupo se envía un mensaje de topic.
+
+    Un topic_id solo existe dentro de UN grupo: mandarlo a otro da 400
+    'message thread not found' y el recovery lo recreaba en el grupo
+    equivocado pisando la DB — el bug del topic que rebota (11/07 y
+    auditoría 12/07, A13/A14). Por eso el grupo REGISTRADO del topic en la
+    DB gana incluso sobre el override del caller (si difieren, el registrado
+    es el correcto por construcción). Orden:
+      1. grupo registrado del topic en DB (0 = legacy → grupo leads)
+      2. group_override del caller
+      3. grupo_telegram_para(telefono) — por agente persistente
+      4. grupo leads (default legacy)
+    """
+    async with async_session() as session:
+        result = await session.execute(
+            select(TopicTelegram).where(TopicTelegram.topic_id == topic_id)
+        )
+        fila = result.scalars().first()
+    if fila is not None:
+        return fila.group_id or _group_id()
+    if group_override:
+        return group_override
+    if telefono:
+        return await grupo_telegram_para(telefono)
+    return _group_id()
+
+
 async def enviar_media_a_topic(
     topic_id: int,
     media_bytes: bytes,
@@ -313,7 +341,7 @@ async def enviar_media_a_topic(
     Reenvía una imagen o documento al topic de Telegram.
     tipo: "imagen" → sendPhoto, "documento" → sendDocument
     """
-    group = group_override or _group_id()
+    group = await _grupo_para_envio(topic_id, telefono, group_override)
     if not _token() or not group:
         return False
     metodo = "sendPhoto" if tipo == "imagen" else "sendDocument"
@@ -354,7 +382,7 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
     Si recibe HTTP 400 'message thread not found' y se pasa telefono,
     elimina el topic de la DB y lo recrea automáticamente antes de reintentar.
     """
-    group = group_override or _group_id()
+    group = await _grupo_para_envio(topic_id, telefono, group_override)
     if not _token() or not group:
         return False
     url = _api_url("sendMessage")
@@ -384,7 +412,11 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
             if r.status_code == 400 and "message thread not found" in data.get("description", "") and telefono:
                 print(f"[TELEGRAM] Topic {topic_id} no encontrado — recreando para {telefono}", flush=True)
                 await _borrar_topic_db(telefono, topic_id)
-                nuevo_topic_id = await _crear_topic_api(f"📱 {telefono}", group_override=group)
+                # Recrear en el grupo que corresponde al AGENTE del número
+                # (no en el que acaba de fallar): el bug del rebote era
+                # recrear en LEADS un topic que debía vivir en FLIAS.
+                grupo_recrear = await grupo_telegram_para(telefono)
+                nuevo_topic_id = await _crear_topic_api(f"📱 {telefono}", group_override=grupo_recrear)
                 if nuevo_topic_id:
                     async with async_session() as session:
                         # Upsert: puede que otra coroutine ya haya recreado el topic
@@ -394,14 +426,14 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
                         existente = result2.scalars().first()
                         if existente:
                             existente.topic_id = nuevo_topic_id
-                            existente.group_id = group
+                            existente.group_id = grupo_recrear
                             existente.nombre = f"📱 {telefono}"
                         else:
                             session.add(TopicTelegram(
                                 telefono=telefono,
                                 topic_id=nuevo_topic_id,
                                 nombre=f"📱 {telefono}",
-                                group_id=group,
+                                group_id=grupo_recrear,
                             ))
                         try:
                             await session.commit()
@@ -411,8 +443,10 @@ async def enviar_a_topic(topic_id: int, texto: str, telefono: str | None = None,
                             ganador = await obtener_topic(telefono)
                             if ganador:
                                 nuevo_topic_id = ganador.topic_id
-                    print(f"[TELEGRAM] Topic recreado: {nuevo_topic_id} — reintentando envío", flush=True)
+                                grupo_recrear = ganador.group_id or grupo_recrear
+                    print(f"[TELEGRAM] Topic recreado: {nuevo_topic_id} en grupo {grupo_recrear} — reintentando envío", flush=True)
                     payload["message_thread_id"] = nuevo_topic_id
+                    payload["chat_id"] = grupo_recrear
                     r2 = await client.post(url, json=payload)
                     data2 = r2.json()
                     if data2.get("ok"):
