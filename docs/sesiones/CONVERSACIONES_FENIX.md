@@ -326,3 +326,24 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Pendiente consciente:** A10 (keywords que fuerzan `tool_choice`) y C4 (limiter saliente + promo masiva) NO se tocaron: el primero cambia comportamiento conversacional con leads (necesita `/pre-cambio` con simulación), el segundo es un diseño. A8/A15 mueren solos con la migración FAMILIAS.
 
 **Commits (23):** `322f5e8` auth /api · `00a44e4` dedup · `dc9ec67` max_records · `6a1979c` montos /agenda · `0cf6db5` meta.py red+split · `0c56586` checkin token+POST · `968c336` /juego/dia · `2cf7836` guard inscripción · `a2b1f1a` dedup tarjeta · `406e4d0` 2º comprobante · `eaa9eb1` doc auditoría · `a3adffa` rescate post-pago · `eb58b43` firma teléfono (+ `4f5017f` en pagos-bancard) · `f038898` docs · `6e507ef` prompt cache · `f9f00ad` tests · `15e1f7b` telegram raíz · `5c87824` 3 bugs admin · `bba52d5` reagendar · `0ed7298` año dinámico · `51e38d5` CAPI event_id · `010a995` monitor · `1d352a0` docs.
+
+---
+
+## 2026-07-13 (madrugada) — cache en los 4 agentes + arranca la migración FAMILIAS→NIÑO
+
+**Ivan:** "quiero que veas si dorita, neo y genesis el cache esta bien implementado"
+**Fenix:** Los tres revisados **con llamadas reales a la API**, no leyendo código. **Dorita SANO** (escribe y lee ~7.084 tokens; prompt grande, bloque estable — no se tocó). **NEO tenía el cache MUERTO**: mismo bug doble que FENIX (la hora `%H:%M` dentro del bloque cacheado + prefijo de solo ~2.2k tokens, bajo el mínimo → la API ignora el `cache_control` **en silencio**). Arreglado igual que FENIX (system en 2 bloques + breakpoint en el mensaje); medido: **cachea a partir de ~30 mensajes de historial** y NEO manda hasta 50 → las conversaciones largas ahora cachean. **Genesis: diseño correcto** (2 bloques, fecha afuera) pero su system son ~540 tokens y no llega al mínimo: `r0/w0` es lo esperado, cachea solo si el prompt del cliente crece. A los **4** se les agregó el log `cache r/w`. Commits: NEO `42213b8` (**master**), Dorita `f6b26af`, Genesis `ea6f67f` — 3 deploys SUCCESS.
+
+**Ivan:** "las familias me eran muy útiles sobre todo para la familia que vienen con más de un hijo porque de esa manera el pago va bajo familia... ¿hay forma de simplificar eso?"
+**Fenix:** Miré los datos antes de opinar: **31% de las familias tienen 2-3 hijos** (24 de 77) y el precio **no es lineal** (240k/1 · 340k/2 · 440k/3 — el segundo hermano suma 100k, no 240k). O sea: el precio es **familiar por construcción**; partir un pago de 340k por niño obligaría a inventar un reparto artificial (170k+170k) que no existe. Propuesta: **el pago NO se parte** — se carga UNA vez y su campo de niños apunta a los 2-3 hermanos (los links de Airtable ya son multi-registro). El estado "al día" vive en el niño (rollup de sus pagos), y quién pagó va en un link a TUTORES (que es lo que la factura necesita). Casos que hoy son imposibles y se resuelven solos: 2 hijos pero solo uno entrena · hermanos con planes distintos · padres separados que pagan cada uno lo suyo.
+
+**Ivan:** "perfecto, entonces simplemente en un pago se cargan dos o tres niños" → "¿ya me creaste los campos?" → "y obvio! sino para que sirve la migracion??"
+**Fenix:** No los había creado (solo registrado la decisión). **M1+M2 ejecutados** (`16e2f46`), aditivos y sin tocar nada viejo:
+- **Campos creados** (Metadata API con el token de Dorita): `PAGOS.NIÑOS FENIX` (link múltiple), `PAGOS.PAGA` (→TUTORES), `NIÑOS.PADRE`, `NIÑOS.MADRE`, `NIÑOS.VENCE EL` (rollup MAX), `NIÑOS.AL DÍA?` (fórmula); inversos en TUTORES renombrados a HIJOS (COMO PADRE)/(COMO MADRE).
+- **Backfill** (`scripts/backfill_ninos_tutores_pagos.py`, dry-run primero): 102/105 niños con padre y/o madre · 62 pagos linkeados · **15 pagos cubren 2-3 hermanos con UN registro** (ej. un pago de 700k cubre a Mauro y Bruno Niz Paredes → los dos ✅ AL DÍA solos).
+- **Verificado**: el `AL DÍA?` del niño coincide con el de su familia en los **103 comparables, 0 discrepancias**. FAMILIA / FAMILIA FENIX intactos, el agente en prod sigue igual.
+- **Dato sucio**: hay pagos de familias de FENIX con `FUENTE='SALSA SOUL STUDIO'` (FAMILIA Molinas Silva) — el primer filtro los dejó afuera y esos 2 chicos quedaban sin VENCE EL. El criterio correcto es **tener FAMILIA FENIX**, NO la FUENTE.
+
+**Falta solo el paso 3** (migrar el CÓDIGO a los campos nuevos) — espera al 18/07 porque toca los mismos archivos que la migración PRUEBA.
+
+**Commits:** `16e2f46` M1+M2 migración · (otros repos: NEO `42213b8`, Dorita `f6b26af`, Genesis `ea6f67f`).

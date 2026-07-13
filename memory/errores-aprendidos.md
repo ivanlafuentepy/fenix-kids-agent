@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-07-13 — "Pago de FENIX" NO se filtra por FUENTE (hay pagos de Fenix con FUENTE='SALSA SOUL STUDIO')
+
+**Síntoma:** tras el backfill de la migración (linkear cada pago a sus niños), dos hermanos —
+**Tomas y Joaquín Molinas Silva** — quedaron con `AL DÍA?` **vacío**, mientras su familia decía
+`❌ VENCIDO`. Discrepancia entre el modelo nuevo (por niño) y el viejo (por familia).
+
+**Causa raíz:** el script filtraba los pagos con `{FUENTE}='FENIX KIDS ACADEMY'`. Pero PAGOS es
+una tabla **compartida con Salsa Soul**, y hay pagos de familias de **FENIX** cargados con
+`FUENTE='SALSA SOUL STUDIO'` (ese, concepto `F.SUSCRIPCION`, 150.000). El filtro los dejaba
+afuera → el pago nunca se linkeaba a los niños → sin `VENCE EL`.
+
+**Cómo se resolvió:** cambiar el criterio a `{FAMILIA FENIX}!=''`. Un pago es de FENIX si está
+**linkeado a una FAMILIA FENIX**, no por su etiqueta de FUENTE. Con eso: 0 discrepancias en los
+103 niños comparables.
+
+**Reglas para la próxima:**
+1. **La FUENTE de PAGOS no es confiable** para saber si un pago es de Fenix — el LINK sí lo es.
+   Aplicar en todo el código de la migración FAMILIAS (y en cualquier consulta de pagos).
+2. Después de un backfill, **contrastar el resultado contra el modelo viejo** (acá: `AL DÍA?` del
+   niño vs el de su familia). Si hay una sola discrepancia, investigarla — no promediar ni
+   ignorarla: fue exactamente la que destapó el dato sucio.
+
+---
+
+## 2026-07-13 — Crear campos por Metadata API: qué acepta y qué no (ensayo-error que no hay que repetir)
+
+**Síntoma:** 3 intentos fallidos con 422 al crear un campo `multipleRecordLinks`; los mensajes de
+error eran **contradictorios entre sí** ("isReversed is missing" → "prefersSingleRecordLink is
+missing" → "ninguno de los dos está en el schema").
+
+**Causa raíz:** al **crear** un link, la Metadata API solo acepta `options.linkedTableId`.
+`prefersSingleRecordLink` e `isReversed` se **rechazan al crear** (se configuran después, o desde
+la UI). Los mensajes de error de Airtable describen las variantes del schema, no lo que falta.
+
+**Lo que SÍ funciona (probado):**
+- Link: `{"type": "multipleRecordLinks", "options": {"linkedTableId": "tbl..."}}` — nada más.
+- **Rollup SÍ se puede crear por API** (contra lo que decía el skill): `{"type": "rollup",
+  "options": {"recordLinkFieldId": "fld...", "fieldIdInLinkedTable": "fld...",
+  "formula": "MAX(values)"}}` — SIN `result` ni `referencedFieldIds` (los rechaza).
+- Fórmula: `{"type": "formula", "options": {"formula": "..."}}` — dentro de la fórmula, los campos
+  se referencian por **field id** (`{fldXXXX}`), no por nombre.
+- El campo **inverso se crea solo** con un nombre feo ("NIÑOS FENIX 2") → renombrarlo con PATCH.
+- **Token:** el de FENIX es data-only → para schema, el de **Dorita** (`whatsapp-agentkit/.env`).
+
+---
+
 ## 2026-07-13 — El prompt cache no cacheaba NADA (y el `cache_control` mentía en silencio)
 
 **Síntoma:** creíamos tener prompt cache activo desde siempre (`cache_control: ephemeral` en el
