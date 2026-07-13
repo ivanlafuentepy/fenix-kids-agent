@@ -16,7 +16,6 @@ import logging
 
 from agent.memory import guardar_mensaje
 from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
-from agent.airtable_client import obtener_tutores_de_familia
 
 logger = logging.getLogger("agentkit")
 
@@ -40,13 +39,12 @@ _ID_A_OPCION = {
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-async def _primer_nombre(familia: dict) -> str:
+def _primer_nombre(tutores: list[dict]) -> str:
     """Saca el primer nombre de un tutor para personalizar el saludo.
 
-    Lee de TUTORES FENIX (con fallback a campos PADRE/MADRE viejos). Prefiere
-    al que paga; si no, el primer tutor.
+    Niño-eje: recibe los tutores del grupo ya resueltos (obtener_grupo_familiar).
+    Prefiere al que paga; si no, el primer tutor.
     """
-    tutores = await obtener_tutores_de_familia(familia["id"])
     if not tutores:
         return ""
     t = next((x for x in tutores if x.get("es_quien_paga")), tutores[0])
@@ -69,10 +67,10 @@ async def _espejar_telegram(telefono: str, texto: str, topic_id: int | None, tg_
 
 
 async def _enviar_saludo_y_botones(
-    telefono: str, proveedor, familia: dict, topic_id: int | None, tg_group: int
+    telefono: str, proveedor, tutores: list[dict], topic_id: int | None, tg_group: int
 ):
     """Primer contacto del inscripto: saludo personalizado + botones."""
-    nombre = await _primer_nombre(familia)
+    nombre = _primer_nombre(tutores)
     saludo = f"Hola {nombre}! 🌟 Soy Aurora, tu asistente de Fenix Kids." if nombre \
         else "Hola! 🌟 Soy Aurora, tu asistente de Fenix Kids."
     await proveedor.enviar_botones(telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO)
@@ -88,12 +86,11 @@ async def _enviar_botones(telefono: str, proveedor, texto: str, botones: list[di
 
 
 async def _handle_contenido(
-    telefono: str, proveedor, familia: dict, topic_id: int | None, tg_group: int
+    telefono: str, proveedor, nino_ids: list[str], topic_id: int | None, tg_group: int
 ):
-    """Envía el contenido reciente de los hijos de la familia + las redes de Fenix."""
+    """Envía el contenido reciente de los hijos del grupo + las redes de Fenix."""
     from agent.airtable_client import obtener_contenido_de_ninos, obtener_redes
 
-    nino_ids = familia.get("fields", {}).get("NIÑOS FENIX", []) or []
     contenido = await obtener_contenido_de_ninos(nino_ids, max_items=5)
     redes = await obtener_redes()
 
@@ -131,14 +128,16 @@ async def procesar_menu_inscripto(
     texto: str,
     proveedor,
     *,
-    familia: dict,
+    tutores: list[dict],
+    nino_ids: list[str],
     btn_id: str | None = None,
     es_boton: bool = False,
     es_primer_contacto: bool = False,
     topic_id: int | None = None,
     tg_group: int = 0,
 ) -> str | None:
-    """Maneja el menú de botones para una familia inscripta.
+    """Maneja el menú de botones para un grupo familiar inscripto (niño-eje:
+    recibe tutores e hijos ya resueltos por obtener_grupo_familiar).
 
     Returns:
         str  → el menú ya respondió este turno; main.py NO debe llamar al brain.
@@ -149,7 +148,7 @@ async def procesar_menu_inscripto(
         opcion = _ID_A_OPCION.get(btn_id)
 
         if opcion == "contenido":
-            await _handle_contenido(telefono, proveedor, familia, topic_id, tg_group)
+            await _handle_contenido(telefono, proveedor, nino_ids, topic_id, tg_group)
             return "[contenido fenix]"
 
         if opcion == "aurora":
@@ -165,7 +164,7 @@ async def procesar_menu_inscripto(
 
     # ── Primer contacto → saludo + botones ────────────────────────────────
     if es_primer_contacto:
-        await _enviar_saludo_y_botones(telefono, proveedor, familia, topic_id, tg_group)
+        await _enviar_saludo_y_botones(telefono, proveedor, tutores, topic_id, tg_group)
         logger.info(f"[ALUMNO] {telefono}: saludo + botones del menú inscripto")
         return "[saludo + menú inscripto]"
 

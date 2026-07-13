@@ -674,20 +674,7 @@ async def obtener_tutores_de_familia(familia_id: str) -> list[dict]:
                 try:
                     r = await client.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
                     if r.status_code == 200:
-                        f = r.json().get("fields", {})
-                        resultado.append({
-                            "id": tid,
-                            "nombre": f.get("NOMBRE", ""),
-                            "apellido": f.get("APELLIDO", ""),
-                            "apodo": f.get("APODO", ""),
-                            "ci": f.get("CI", ""),
-                            "cell": f.get("CELL", ""),
-                            "cell_limpio": f.get("CELL LIMPIO", ""),
-                            "email": f.get("EMAIL", ""),
-                            "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
-                            "parentesco": f.get("PARENTESCO", ""),
-                            "es_quien_paga": bool(f.get("ES QUIEN PAGA")),
-                        })
+                        resultado.append(_tutor_a_dict(tid, r.json().get("fields", {})))
                 except Exception as e:
                     logger.error(f"Error obteniendo tutor {tid}: {e}")
         if resultado:
@@ -906,6 +893,99 @@ async def actualizar_nino(nino_id: str, campos: dict) -> bool:
     return await _patch(_NINOS, nino_id, campos)
 
 
+def _nino_a_dict(nino_id: str, f: dict) -> dict:
+    """Mapea los fields crudos de un NIÑO al formato uniforme del código."""
+    return {
+        "id": nino_id,
+        "nombre_completo": f.get("NOMBRE COMPLETO", ""),
+        "nombre": f.get("NOMBRE", ""),
+        "apellido": f.get("APELLIDO", ""),
+        "apodo": f.get("APODO", ""),
+        "ci": f.get("CI", ""),
+        "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
+        "sexo": f.get("SEXO", ""),
+        "talla_remera": f.get("TALLA REMERA", ""),
+        # Niño-eje: links directos del niño (reservas por link,
+        # no por FIND del nombre de la familia — bug A8)
+        "reserva_ids": f.get("RESERVAS FENIX", []) or [],
+        "estado": f.get("ESTADO", ""),
+    }
+
+
+def _tutor_a_dict(tutor_id: str, f: dict) -> dict:
+    """Mapea los fields crudos de un TUTOR al formato uniforme del código."""
+    return {
+        "id": tutor_id,
+        "nombre": f.get("NOMBRE", ""),
+        "apellido": f.get("APELLIDO", ""),
+        "apodo": f.get("APODO", ""),
+        "ci": f.get("CI", ""),
+        "cell": f.get("CELL", ""),
+        "cell_limpio": f.get("CELL LIMPIO", ""),
+        "email": f.get("EMAIL", ""),
+        "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
+        "parentesco": f.get("PARENTESCO", ""),
+        "es_quien_paga": bool(f.get("ES QUIEN PAGA")),
+    }
+
+
+async def obtener_grupo_familiar(telefono: str, familia_id: str = "") -> dict | None:
+    """Grupo familiar por teléfono (niño-eje): tutor por CELL LIMPIO → sus hijos
+    (links HIJOS COMO PADRE/MADRE) → todos los tutores de esos hijos (papá y
+    mamá aunque escriba uno solo).
+
+    Retorna {"tutores": [...], "hijos": [...]} en los formatos uniformes de
+    obtener_tutores_de_familia / obtener_ninos_de_familia, o None si el
+    teléfono no es de nadie conocido.
+
+    FALLBACK legacy: si el tutor no existe o no tiene hijos linkeados (fichas
+    viejas incompletas) — o si se pasa familia_id (modo padre del admin) y el
+    teléfono no matchea ningún tutor — deriva de FAMILIAS como siempre.
+    """
+    tutor = await buscar_tutor_por_telefono(telefono)
+    if tutor:
+        tf = tutor.get("fields", {}) or {}
+        hijo_ids = (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or [])
+        if hijo_ids:
+            hijos: list[dict] = []
+            tutor_ids: list[str] = [tutor["id"]]
+            async with httpx.AsyncClient() as client:
+                for hid in hijo_ids:
+                    try:
+                        r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
+                        if r.status_code == 200:
+                            f = r.json().get("fields", {})
+                            hijos.append(_nino_a_dict(hid, f))
+                            for tid in (f.get("PADRE") or []) + (f.get("MADRE") or []):
+                                if tid not in tutor_ids:
+                                    tutor_ids.append(tid)
+                    except Exception as e:
+                        logger.error(f"[GRUPO] Error leyendo hijo {hid}: {e}")
+                tutores: list[dict] = []
+                for tid in tutor_ids:
+                    try:
+                        r = await client.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
+                        if r.status_code == 200:
+                            tutores.append(_tutor_a_dict(tid, r.json().get("fields", {})))
+                    except Exception as e:
+                        logger.error(f"[GRUPO] Error leyendo tutor {tid}: {e}")
+            if hijos:
+                return {"tutores": tutores, "hijos": hijos}
+
+    # Fallback legacy: derivar de FAMILIAS (ficha incompleta o familia_id guardado).
+    fid = familia_id
+    if not fid:
+        familia = await buscar_familia_por_telefono(telefono)
+        fid = familia["id"] if familia else ""
+    if not fid:
+        return None
+    tutores = await obtener_tutores_de_familia(fid)
+    hijos = await obtener_ninos_de_familia(fid)
+    if not tutores and not hijos:
+        return None
+    return {"tutores": tutores, "hijos": hijos}
+
+
 async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
     """
     Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
@@ -933,22 +1013,7 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
                 url_nino = f"{_BASE_URL}/{_NINOS}/{nino_id}"
                 r = await client.get(url_nino, headers=_headers(), timeout=10)
                 if r.status_code == 200:
-                    f = r.json().get("fields", {})
-                    resultado.append({
-                        "id": nino_id,
-                        "nombre_completo": f.get("NOMBRE COMPLETO", ""),
-                        "nombre": f.get("NOMBRE", ""),
-                        "apellido": f.get("APELLIDO", ""),
-                        "apodo": f.get("APODO", ""),
-                        "ci": f.get("CI", ""),
-                        "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
-                        "sexo": f.get("SEXO", ""),
-                        "talla_remera": f.get("TALLA REMERA", ""),
-                        # Niño-eje: links directos del niño (reservas por link,
-                        # no por FIND del nombre de la familia — bug A8)
-                        "reserva_ids": f.get("RESERVAS FENIX", []) or [],
-                        "estado": f.get("ESTADO", ""),
-                    })
+                    resultado.append(_nino_a_dict(nino_id, r.json().get("fields", {})))
             except Exception as e:
                 logger.error(f"Error obteniendo niño {nino_id}: {e}")
     return resultado

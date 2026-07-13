@@ -83,7 +83,7 @@ from agent.airtable_client import (
     marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
     obtener_ninos_de_familia, obtener_tutores_de_familia, crear_reserva,
     buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
-    es_cliente_activo_por_telefono,
+    es_cliente_activo_por_telefono, obtener_grupo_familiar,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario, crear_prueba_fenix,
     actualizar_datos_lead, actualizar_diagnostico_lead,
@@ -2188,19 +2188,16 @@ async def webhook_handler(request: Request):
         return {"status": "error"}
 
 
-async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
-    """Arma el contexto completo de una familia para inyectar en Aurora.
+async def _build_contexto_aurora(tutores: list[dict], hijos_raw: list[dict], telefono: str = "") -> str:
+    """Arma el contexto del grupo familiar para inyectar en Aurora.
 
-    Niño-eje: tutores salen de TUTORES, hijos de NIÑOS y reservas de los links
-    del niño — del registro FAMILIAS solo se usa el id (puntero).
+    Niño-eje: recibe tutores e hijos ya resueltos (obtener_grupo_familiar) —
+    las reservas salen de los links del niño. FAMILIAS no participa.
     """
 
     def _primer_nombre(nombre: str) -> str:
         """Retorna solo el primer nombre (sin apellido ni segundo nombre)."""
         return nombre.strip().split()[0] if nombre and nombre.strip() else ""
-
-    # Tutores desde TUTORES FENIX (con fallback a campos PADRE/MADRE viejos)
-    tutores = await obtener_tutores_de_familia(familia["id"])
 
     def _genero_de(parentesco: str) -> str:
         return {"Papá": "papá", "Mamá": "mamá"}.get(parentesco, "padre/madre")
@@ -2251,7 +2248,6 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         datos_padre.append(linea)
 
     # Datos de los hijos
-    hijos_raw = await obtener_ninos_de_familia(familia["id"])
     hijos_info = []
     nombres_hijos_display = []
     for i, h in enumerate(hijos_raw, 1):
@@ -3625,21 +3621,16 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         contexto_extra = None
         _reservas_airtable = None
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
-            # Primero buscar por familia_id guardada (modo padre admin)
-            familia_existente = None
+            # Grupo familiar niño-eje: tutor por teléfono → hijos → tutores.
+            # El familia_id guardado (modo padre admin) alimenta el fallback
+            # legacy por FAMILIAS dentro de obtener_grupo_familiar.
             fam_id = await obtener_familia_id(telefono)
-            if fam_id:
-                from agent.airtable_client import _get_records, _FAMILIAS
-                recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{fam_id}'", max_records=1)
-                familia_existente = recs[0] if recs else None
-            # Fallback: buscar por teléfono
-            if not familia_existente:
-                familia_existente = await buscar_familia_por_telefono(telefono)
+            grupo = await obtener_grupo_familiar(telefono, familia_id=fam_id or "")
 
             # ── Menú de botones para inscriptos (Aurora) ──────────────────
             # Si el menú maneja el turno (saludo+botones o una acción como QR),
             # cortamos acá. Si retorna None, sigue el flujo conversacional normal.
-            if familia_existente:
+            if grupo:
                 # ── Confirmación proactiva del sábado (respuesta a la plantilla del jueves) ──
                 # Se intercepta ANTES del menú: el "Sí"/"No" de la plantilla y el turno
                 # elegido no deben caer en el flujo conversacional ni en el menú genérico.
@@ -3658,7 +3649,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
 
                 _menu_alum = await procesar_menu_inscripto(
                     telefono, texto, proveedor,
-                    familia=familia_existente,
+                    tutores=grupo["tutores"],
+                    nino_ids=[h["id"] for h in grupo["hijos"] if h.get("id")],
                     btn_id=getattr(msg, "btn_id", None),
                     es_boton=getattr(msg, "es_boton", False),
                     es_primer_contacto=(len(historial) == 0),
@@ -3669,8 +3661,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.info(f"[ALUMNO] {telefono}: manejado por menú ({_menu_alum[:40]})")
                     return {"status": "ok"}
 
-            if familia_existente:
-                contexto_extra, _reservas_airtable = await _build_contexto_aurora(familia_existente, telefono)
+            if grupo:
+                contexto_extra, _reservas_airtable = await _build_contexto_aurora(
+                    grupo["tutores"], grupo["hijos"], telefono)
 
         # ── Sin delays artificiales — Claude responde directo ────────────
                 # El flujo continúa abajo con la llamada normal a generar_respuesta()
