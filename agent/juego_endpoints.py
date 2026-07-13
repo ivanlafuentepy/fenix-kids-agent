@@ -109,13 +109,22 @@ def _limpiar_codigo(codigo: str) -> str:
     return "".join(c for c in str(codigo).upper() if c.isalnum())[:12]
 
 
-async def _familia_por_codigo(codigo: str) -> dict | None:
-    from agent.airtable_client import _get_records, _FAMILIAS
+async def _tutor_por_codigo(codigo: str) -> dict | None:
+    """Migración F5 (2026-07-13): el código del link mágico vive en el TUTOR
+    (TUTORES.CODIGO), no en FAMILIAS. Al momento del corte no había ningún
+    código repartido (0 familias con CODIGO FENIX) — se generan por tutor."""
+    from agent.airtable_client import _get_records, _TUTORES
     codigo = _limpiar_codigo(codigo)
     if len(codigo) < 4:
         return None
-    recs = await _get_records(_FAMILIAS, formula=f"{{CODIGO FENIX}}='{codigo}'", max_records=1)
+    recs = await _get_records(_TUTORES, formula=f"{{CODIGO}}='{codigo}'", max_records=1)
     return recs[0] if recs else None
+
+
+def _hijo_ids_de_tutor(tutor: dict) -> list[str]:
+    """IDs de los hijos del tutor (links HIJOS COMO PADRE/MADRE, niño-eje)."""
+    tf = tutor.get("fields", {}) or {}
+    return (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or [])
 
 
 async def _guardian_de_nino(nino_id: str, nombre: str) -> dict | None:
@@ -155,69 +164,96 @@ def _guardian_publico(g: dict) -> dict:
 
 @router.post("/juego/familia-codigo")
 async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
-    """Genera (o devuelve) el link mágico de una familia. Body: {familia_id | telefono}."""
+    """Genera (o devuelve) el link mágico de un tutor (F5: código por tutor).
+    Body: {telefono | tutor_id | familia_id (legacy: resuelve al tutor pagador)}."""
     _auth(x_juego_key)
-    from agent.airtable_client import _get_records, _patch, _FAMILIAS, _BASE_URL, _headers, buscar_familia_por_telefono
+    from agent.airtable_client import (
+        _patch, _TUTORES, _BASE_URL, _headers,
+        buscar_tutor_por_telefono, obtener_tutores_de_familia,
+    )
     import httpx, secrets
 
-    familia = None
-    if payload.get("familia_id"):
+    tutor = None
+    if payload.get("tutor_id"):
         async with httpx.AsyncClient() as client:
-            r = await client.get(f"{_BASE_URL}/{_FAMILIAS}/{payload['familia_id']}", headers=_headers(), timeout=10)
+            r = await client.get(f"{_BASE_URL}/{_TUTORES}/{payload['tutor_id']}", headers=_headers(), timeout=10)
             if r.status_code == 200:
-                familia = r.json()
+                tutor = r.json()
     elif payload.get("telefono"):
-        familia = await buscar_familia_por_telefono(str(payload["telefono"]))
-    if not familia:
-        raise HTTPException(status_code=404, detail="familia no encontrada")
+        tutor = await buscar_tutor_por_telefono(str(payload["telefono"]))
+    elif payload.get("familia_id"):
+        # Compat legacy: familia_id → tutor pagador (o el primero con cel)
+        _tuts = [t for t in await obtener_tutores_de_familia(str(payload["familia_id"])) if t.get("id")]
+        _eleg = next((t for t in _tuts if t.get("es_quien_paga")), None) \
+            or next((t for t in _tuts if (t.get("cell_limpio") or "").strip()), None) \
+            or (_tuts[0] if _tuts else None)
+        if _eleg:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{_BASE_URL}/{_TUTORES}/{_eleg['id']}", headers=_headers(), timeout=10)
+                if r.status_code == 200:
+                    tutor = r.json()
+    if not tutor:
+        raise HTTPException(status_code=404, detail="tutor no encontrado")
 
-    codigo = (familia.get("fields", {}).get("CODIGO FENIX") or "").strip()
+    codigo = (tutor.get("fields", {}).get("CODIGO") or "").strip()
     if not codigo:
         for _ in range(5):  # colisión improbable (31^6) pero verificamos
             candidato = "".join(secrets.choice(_ALFA_CODIGO) for _ in range(6))
-            if not await _familia_por_codigo(candidato):
+            if not await _tutor_por_codigo(candidato):
                 codigo = candidato
                 break
         if not codigo:
             raise HTTPException(status_code=500, detail="no pude generar código único")
-        ok = await _patch(_FAMILIAS, familia["id"], {"CODIGO FENIX": codigo})
+        ok = await _patch(_TUTORES, tutor["id"], {"CODIGO": codigo})
         if not ok:
             raise HTTPException(status_code=502, detail="no pude guardar el código")
-        logger.info(f"[JUEGO] código {codigo} → familia {familia['id']}")
+        logger.info(f"[JUEGO] código {codigo} → tutor {tutor['id']}")
     return {"ok": True, "codigo": codigo, "url": f"{APP_URL}/?f={codigo}"}
 
 
 @router.get("/juego/familia/{codigo}")
 async def juego_familia(codigo: str):
-    """La app arranca acá: código → familia → hijos con su guardian (stub si es nuevo).
-    Público con CORS — el código ES la auth de la familia. Sin datos sensibles."""
-    familia = await _familia_por_codigo(codigo)
-    if not familia:
+    """La app arranca acá: código → tutor → sus hijos con su guardian (stub si
+    es nuevo). Público con CORS — el código ES la auth del tutor. Sin datos
+    sensibles. (F5: los hijos salen de los links del tutor, no de FAMILIAS.)"""
+    tutor = await _tutor_por_codigo(codigo)
+    if not tutor:
         return JSONResponse(content={"ok": False, "motivo": "codigo_invalido"}, status_code=404, headers=_CORS)
 
-    from agent.airtable_client import obtener_ninos_de_familia
+    from agent.airtable_client import _BASE_URL, _headers, _NINOS, _nino_a_dict
     from zoneinfo import ZoneInfo
+    import httpx
     hoy = datetime.now(ZoneInfo("America/Asuncion")).date()
     hijos = []
-    for nino in await obtener_ninos_de_familia(familia["id"]):
-        if not nino.get("nombre"):
-            continue
-        edad = None
-        if nino.get("fecha_nacimiento"):
+    async with httpx.AsyncClient() as client:
+        for hid in _hijo_ids_de_tutor(tutor):
             try:
-                nac = datetime.fromisoformat(nino["fecha_nacimiento"]).date()
-                edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
-            except (ValueError, TypeError):
-                pass
-        g = await _guardian_de_nino(nino["id"], nino["nombre"])
-        if not g:
-            continue
-        hijos.append({"nino_id": nino["id"], "nombre": nino["nombre"],
-                      "apodo": nino.get("apodo") or "", "edad": edad,
-                      "guardian": _guardian_publico(g)})
+                r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
+                if r.status_code != 200:
+                    continue
+                nino = _nino_a_dict(hid, r.json().get("fields", {}))
+            except Exception as e:
+                logger.error(f"[JUEGO] Error leyendo hijo {hid}: {e}")
+                continue
+            if not nino.get("nombre"):
+                continue
+            edad = None
+            if nino.get("fecha_nacimiento"):
+                try:
+                    nac = datetime.fromisoformat(nino["fecha_nacimiento"]).date()
+                    edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
+                except (ValueError, TypeError):
+                    pass
+            g = await _guardian_de_nino(nino["id"], nino["nombre"])
+            if not g:
+                continue
+            hijos.append({"nino_id": nino["id"], "nombre": nino["nombre"],
+                          "apodo": nino.get("apodo") or "", "edad": edad,
+                          "guardian": _guardian_publico(g)})
+    _apellido_t = (tutor.get("fields", {}).get("APELLIDO") or "").strip()
     return JSONResponse(content={
         "ok": True, "codigo": _limpiar_codigo(codigo),
-        "familia": familia.get("fields", {}).get("FAMILIA") or "Familia",
+        "familia": f"Familia {_apellido_t}".strip() if _apellido_t else "Familia",
         "hijos": hijos,
     }, headers=_CORS)
 
@@ -256,17 +292,18 @@ def _hoy0_utc() -> datetime:
 
 
 async def _validar_nino_de_familia(codigo: str, nino_id: str):
-    """codigo → familia; el niño DEBE pertenecerle. Devuelve (familia, guardian)."""
-    familia = await _familia_por_codigo(codigo)
-    if not familia:
+    """codigo → tutor; el niño DEBE ser hijo suyo (links PADRE/MADRE, F5).
+    Devuelve (tutor, guardian)."""
+    tutor = await _tutor_por_codigo(codigo)
+    if not tutor:
         raise HTTPException(status_code=404, detail="codigo_invalido")
-    if nino_id not in (familia.get("fields", {}).get("NIÑOS FENIX") or []):
+    if nino_id not in _hijo_ids_de_tutor(tutor):
         raise HTTPException(status_code=403, detail="nino_no_es_de_esta_familia")
     from agent.airtable_client import _get_records
     recs = await _get_records(_T_GUARDIANES, formula=f"{{NINO ID}}='{nino_id}'", max_records=1)
     if not recs:
         raise HTTPException(status_code=404, detail="guardian_no_existe")
-    return familia, recs[0]
+    return tutor, recs[0]
 
 
 async def _acreditar(guardian: dict, moneda: str, monto: int, motivo: str,
@@ -417,7 +454,7 @@ async def _juego_accion_inner(payload: dict):
     if not codigo or not nino_id or not accion:
         raise HTTPException(status_code=422, detail="codigo, nino_id y accion requeridos")
 
-    familia, guardian = await _validar_nino_de_familia(codigo, nino_id)
+    tutor, guardian = await _validar_nino_de_familia(codigo, nino_id)
     f = guardian.get("fields", {})
     estado = _estado_de(guardian)
     nombre = f.get("NOMBRE") or ""
@@ -537,14 +574,13 @@ async def _juego_reto_video_inner(payload: dict):
     if not video_key.startswith(f"videos/{codigo}/{nino_id}/"):
         raise HTTPException(status_code=403, detail="video_key_no_corresponde")
 
-    familia, guardian = await _validar_nino_de_familia(codigo, nino_id)
+    tutor, guardian = await _validar_nino_de_familia(codigo, nino_id)
     resultado = await _accion_reto_dia(guardian, video_key)   # 1/día + bonus + ledger adentro
     nombre = guardian.get("fields", {}).get("NOMBRE") or ""
 
     # muestreo: espejo a Telegram con el link del video (best-effort, jamás rompe la acreditación)
     try:
-        cells = familia.get("fields", {}).get("CELLS LIMPIOS TUTORES") or []
-        telefono = str(cells[0]) if isinstance(cells, list) and cells else ""
+        telefono = (tutor.get("fields", {}).get("CELL LIMPIO") or "").strip()
         if telefono:
             from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
             link = f"{APP_URL}/api/video/{video_key}?f={codigo}"
