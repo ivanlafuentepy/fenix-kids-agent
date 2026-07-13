@@ -123,7 +123,7 @@ async def _procesar_comprobante(
     # CONVERSION=PAGO ya se marcó arriba — follow-up loop lo excluye automáticamente
 
     # ── Registrar el PAGO por código (única fuente — reemplaza la automatización ──
-    #    de Airtable PRUEBA FENIX → PAGOS). Solo pruebas con monto; la inscripción
+    #    vieja de Airtable). Solo pruebas con monto; la inscripción
     #    crea sus PAGOS en inscripcion.py. Garantiza la FAMILIA antes de colgar el pago.
     _pago_rid_factura = None
     _fam_id_factura = None
@@ -325,7 +325,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
     /agenda gratis Carolina  → prueba gratis (referidos/promo)
 
     Ivan usa esto cuando cierra la agenda por llamada telefónica.
-    Crea PRUEBA FENIX, reactiva el agente, y le manda al padre
+    Crea la FAMILIA A PRUEBA + NIÑOS, reactiva el agente, y le manda al padre
     el formulario + datos bancarios para el comprobante (o solo formulario si gratis).
     """
     partes = comando.strip().split(maxsplit=2)

@@ -3,7 +3,7 @@
 
 """
 Eventos implementados:
-- LeadSubmitted     -> cuando el lead confirma turno y paga (se crea PRUEBA FENIX)
+- LeadSubmitted     -> cuando el lead confirma turno y paga
 - Purchase          -> cuando se confirma el pago / inscripción
 
 Usa action_source="business_messaging" + messaging_channel="whatsapp"

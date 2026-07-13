@@ -239,10 +239,10 @@ def _parsear_fecha(fecha_texto: str) -> str | None:
 async def _crear_reserva_real(telefono: str, fecha_iso: str, hora: str, reagendar: bool = False) -> None:
     """A1 (migración) — crea/reagenda la RESERVA FENIX real para la familia del lead en prueba.
 
-    Dual-write: corre ADEMÁS del _patch a PRUEBA FENIX. La familia ya existe (dual-write
-    al pagar + migración histórica). Aislado en try/except: nunca rompe la confirmación
-    al padre. Reusa la maquinaria de agenda.py (resuelve familia por teléfono y crea
-    una RESERVA por cada hijo, idempotente).
+    La familia ya existe (dual-write al pagar + migración histórica). Aislado en
+    try/except: nunca rompe la confirmación al padre. Reusa la maquinaria de
+    agenda.py (resuelve familia por teléfono y crea una RESERVA por cada hijo,
+    idempotente).
     """
     try:
         from agent.tools.agenda import gestionar_reserva

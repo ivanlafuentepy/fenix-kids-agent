@@ -148,7 +148,7 @@ from agent.loops import (
 )
 
 
-# Guard: PRUEBA FENIX ya creada → persistido en estado_json (DB)
+# Guard: formulario ya procesado (prueba_creada) → persistido en estado_json (DB)
 
 # Admin en modo padre (flujo normal): si no está acá, admin queda en modo secre (solo comandos)
 _admin_modo_padre: set[str] = set()
@@ -463,12 +463,12 @@ def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict],
 
 
 async def _buscar_ficha_checkin(record_id: str):
-    """Busca el registro del QR (RESERVAS o PRUEBA legacy) y arma la ficha.
+    """Busca la RESERVA del QR y arma la ficha (2.D: PRUEBA ya no se consulta).
 
     Retorna (tabla, fields, nombre, edad, hora, foto_url) o None si no existe.
     Compartido por el GET (mostrar) y el POST (confirmar) de /checkin/{record_id}.
     """
-    from agent.airtable_client import _get_records, _RESERVAS, _PRUEBAS, _NINOS
+    from agent.airtable_client import _get_records, _RESERVAS, _NINOS
 
     formula = f"RECORD_ID()='{record_id}'"
     nombre = "Alumno"
@@ -503,24 +503,6 @@ async def _buscar_ficha_checkin(record_id: str):
                         edad = f"{hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))} años"
             except Exception:
                 pass
-    else:
-        # Buscar en PRUEBA FENIX (leads)
-        records = await _get_records(_PRUEBAS, formula=formula, max_records=1)
-        tabla = _PRUEBAS
-        if records:
-            fields = records[0].get("fields", {})
-            nombre = fields.get("NOMBRE HIJO", "Alumno")
-            apellido = fields.get("APELLIDO HIJO", "")
-            if apellido:
-                nombre = f"{nombre} {apellido}"
-            hora = fields.get("HORA", "")
-            edad_raw = fields.get("EDAD HIJO", "")
-            if edad_raw:
-                edad = f"{edad_raw} años" if "año" not in str(edad_raw) else str(edad_raw)
-            fotos = fields.get("FOTO", [])
-            if fotos and isinstance(fotos, list):
-                foto_url = fotos[0].get("url", "")
-
     if not records:
         return None
     return tabla, fields, nombre, edad, hora, foto_url
@@ -654,93 +636,6 @@ async def checkin_familia_toggle(familia_id: str, nino_id: str):
             logger.info(f"[ASISTENCIA] Presente {nino_id} (familia {familia_id})")
 
     return RedirectResponse(url=f"/checkin/familia/{familia_id}", status_code=303)
-
-
-def _token_prueba_valido(telefono: str, t: str) -> bool:
-    """Valida el token firmado del QR de prueba (ver qr.token_checkin_prueba).
-
-    Sin token válido la página responde 404: la URL era enumerable probando
-    números paraguayos y listaba nombres de hijos (auditoría 2026-07-12, C1).
-    """
-    import hmac as _hmac
-    from agent.qr import token_checkin_prueba
-    return bool(t) and _hmac.compare_digest(t, token_checkin_prueba(telefono))
-
-
-@app.get("/checkin/prueba/{telefono}")
-async def checkin_prueba(telefono: str, t: str = ""):
-    """QR de prueba por teléfono: lista a los hermanos en PRUEBA FENIX para marcar asistencia."""
-    from agent.airtable_client import _get_records, _PRUEBAS, obtener_asistencias_pruebas_fecha
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    if not _token_prueba_valido(telefono, t):
-        return HTMLResponse(_render_checkin_lista_html("", "", [], "", "no_encontrado"), status_code=404)
-
-    ahora = datetime.now(ZoneInfo("America/Asuncion"))
-    fecha_iso = ahora.strftime("%Y-%m-%d")
-    fecha_label = ahora.strftime("%d/%m")
-
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-    if not pruebas:
-        return HTMLResponse(_render_checkin_lista_html("", "", [], "", "no_encontrado"), status_code=404)
-
-    prueba_ids = [p["id"] for p in pruebas]
-    presentes = await obtener_asistencias_pruebas_fecha(prueba_ids, fecha_iso)
-
-    def _nombre_prueba(f: dict) -> str:
-        nom = f.get("NOMBRE HIJO", "") or ""
-        ape = f.get("APELLIDO HIJO", "") or ""
-        return (f"{nom} {ape}".strip()) or "Niño"
-
-    items = [{
-        "id": p["id"],
-        "nombre": _nombre_prueba(p.get("fields", {})),
-        "presente": p["id"] in presentes,
-    } for p in pruebas]
-
-    return HTMLResponse(_render_checkin_lista_html("Clase de prueba", f"/checkin/prueba/{telefono}", items, fecha_label, "ok", toggle_qs=f"?t={t}"))
-
-
-@app.post("/checkin/prueba/{telefono}/toggle/{prueba_id}")
-async def checkin_prueba_toggle(telefono: str, prueba_id: str, t: str = ""):
-    """Marca (crea fila) o desmarca (borra fila) la asistencia de un hijo en prueba hoy."""
-    from agent.airtable_client import (
-        _get_records, _PRUEBAS, obtener_asistencias_pruebas_fecha,
-        crear_asistencia, borrar_asistencia,
-    )
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    from fastapi.responses import RedirectResponse
-
-    if not _token_prueba_valido(telefono, t):
-        raise HTTPException(status_code=404, detail="No encontrado")
-
-    ahora = datetime.now(ZoneInfo("America/Asuncion"))
-    fecha_iso = ahora.strftime("%Y-%m-%d")
-
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-    prueba = next((p for p in pruebas if p["id"] == prueba_id), None)
-    if prueba:
-        presentes = await obtener_asistencias_pruebas_fecha([prueba_id], fecha_iso)
-        if prueba_id in presentes:
-            await borrar_asistencia(presentes[prueba_id])
-            logger.info(f"[ASISTENCIA] Desmarcado prueba {prueba_id} (tel {telefono})")
-        else:
-            f = prueba.get("fields", {})
-            nom = f"{f.get('NOMBRE HIJO', '') or ''} {f.get('APELLIDO HIJO', '') or ''}".strip() or "Niño"
-            nombre_legible = f"{nom} — {ahora.strftime('%d/%m')}"
-            await crear_asistencia(
-                nombre=nombre_legible,
-                fecha_iso=fecha_iso,
-                hora_checkin_iso=ahora.isoformat(),
-                prueba_id=prueba_id,
-                telefono=telefono,
-                metodo="QR",
-            )
-            logger.info(f"[ASISTENCIA] Presente prueba {prueba_id} (tel {telefono})")
-
-    return RedirectResponse(url=f"/checkin/prueba/{telefono}?t={t}", status_code=303)
 
 
 @app.get("/fu/{nombre_archivo}")
@@ -933,7 +828,7 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
 @app.get("/api/alumno/{slug}")
 async def api_alumno_detalle(slug: str, _: bool = Depends(_require_admin_o_key)):
     """Devuelve detalle de un alumno por slug (nombre-apellido). Protegido: X-ADMIN-KEY o ?k=."""
-    from agent.airtable_client import _get_records, _NINOS, _PRUEBAS
+    from agent.airtable_client import _get_records, _NINOS
     from datetime import date
     import unicodedata
     import re
@@ -1300,49 +1195,43 @@ async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_r
     """
     Genera y envía QR de check-in — uno por RESERVA futura de la familia
     (migración 2.B: el QR apunta a /checkin/{reserva_id}). Fallback temporal a
-    PRUEBA FENIX si el teléfono no tiene familia/reservas (se corta en 2.D).
+    (2.D: sin fallback a PRUEBA — solo reservas futuras reales del grupo).
     Si se pasa ?destino=XXXX, envía al número destino en vez de al lead (preview).
     """
     from agent.qr import generar_qr
-    from agent.airtable_client import buscar_familia_por_telefono, buscar_reservas_familia, marcar_qr_enviado_reserva
+    from agent.airtable_client import marcar_qr_enviado_reserva
     from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic, group_id_para_agente
     enviar_a = destino or telefono
     es_preview = bool(destino)
     enviados = 0
 
-    _familia_qr = await buscar_familia_por_telefono(telefono)
+    # Reservas futuras por los links del niño (2.D: buscar_reservas_familia
+    # usaba FIND(record_id) sobre el link y NUNCA matcheaba; PRUEBA se retiró)
+    from agent.airtable_client import obtener_grupo_familiar, _get_records, _RESERVAS
+    from datetime import datetime as _dt_qr
+    from zoneinfo import ZoneInfo as _ZI_qr
+    _grupo_qr = await obtener_grupo_familiar(telefono)
     _reservas_qr = []
-    if _familia_qr:
-        from datetime import datetime as _dt_qr
-        from zoneinfo import ZoneInfo as _ZI_qr
+    _rids_qr = [rid for h in (_grupo_qr or {}).get("hijos", []) for rid in (h.get("reserva_ids") or [])][-20:]
+    if _rids_qr:
         _hoy_qr = _dt_qr.now(_ZI_qr("America/Asuncion")).date().isoformat()
-        _reservas_qr = [r for r in await buscar_reservas_familia(_familia_qr["id"])
-                        if str(r.get("fecha", "")) >= _hoy_qr]
-    if _reservas_qr:
-        for _rq in _reservas_qr:
-            qr_bytes = generar_qr(_rq["id"])
-            await proveedor.enviar_imagen_bytes(
-                enviar_a, qr_bytes, "image/png",
-                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
-            )
-            if not es_preview:
-                await marcar_qr_enviado_reserva(_rq["id"])
-            enviados += 1
-    else:
-        # Fallback legacy: registros PRUEBA FENIX (hasta 2.D)
-        from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
-        pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-        if not pruebas:
-            return {"error": "No tiene reservas futuras ni registros en PRUEBA FENIX"}
-        for pq in pruebas:
-            qr_bytes = generar_qr(pq["id"])
-            await proveedor.enviar_imagen_bytes(
-                enviar_a, qr_bytes, "image/png",
-                caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
-            )
-            if not es_preview:
-                await marcar_qr_enviado_prueba(pq["id"])
-            enviados += 1
+        _or_qr = ",".join(f"RECORD_ID()='{r}'" for r in _rids_qr)
+        for _r_qr in await _get_records(_RESERVAS, formula=(f"OR({_or_qr})" if len(_rids_qr) > 1 else _or_qr), max_records=len(_rids_qr)):
+            _fe_qr = _r_qr.get("fields", {}).get("FECHA", "")
+            _fe_qr = (_fe_qr[0] if _fe_qr else "") if isinstance(_fe_qr, list) else _fe_qr
+            if _fe_qr >= _hoy_qr:
+                _reservas_qr.append(_r_qr["id"])
+    if not _reservas_qr:
+        return {"error": "No tiene reservas futuras"}
+    for _rq_id in _reservas_qr:
+        qr_bytes = generar_qr(_rq_id)
+        await proveedor.enviar_imagen_bytes(
+            enviar_a, qr_bytes, "image/png",
+            caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
+        )
+        if not es_preview:
+            await marcar_qr_enviado_reserva(_rq_id)
+        enviados += 1
     # Espejar en Telegram — grupo según el agente REAL del número (agent_actual),
     # no forzar leads: una familia reserva por QR y quedaría en el grupo equivocado,
     # haciendo rebotar su topic (se crea uno nuevo en cada salto de grupo).
@@ -1376,25 +1265,6 @@ async def enviar_qr_familia_admin(telefono: str, destino: str = "", _: bool = De
     )
     return {"enviado": True, "familia_id": familia_id, "telefono": telefono}
 
-
-@app.get("/enviar-qr-prueba/{telefono}")
-async def enviar_qr_prueba_admin(telefono: str, destino: str = "", _: bool = Depends(_require_admin)):
-    """
-    Genera y envía el QR de prueba (check-in por teléfono, lista los hermanos en
-    PRUEBA FENIX). Si se pasa ?destino=XXXX, envía a ese número (preview).
-    """
-    from agent.qr import generar_qr_prueba
-    from agent.airtable_client import _get_records, _PRUEBAS
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-    if not pruebas:
-        return {"error": "No tiene registros en PRUEBA FENIX"}
-    qr_bytes = generar_qr_prueba(telefono)
-    enviar_a = destino or telefono
-    ok = await proveedor.enviar_imagen_bytes(
-        enviar_a, qr_bytes, "image/png",
-        caption="Este es tu QR para Fenix Kids 📱 Mostralo cuando llegues y cargamos la asistencia.",
-    )
-    return {"enviado": ok, "telefono": telefono, "hijos_en_prueba": len(pruebas)}
 
 
 @app.get("/debug/{telefono}")
@@ -3726,14 +3596,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     # QR — su check-in de asistencia es facial (Mundo Fenix). El resultado
                     # del lead puede traer reserva_ids por el dual-write a RESERVAS, por eso
                     # se filtra por agent_actual, no por el tipo de id.
-                    _reserva_ids_raw = _ta_result.get("reserva_ids", [])
-                    _prueba_ids_raw = _ta_result.get("prueba_ids", [])
-                    _reserva_ids = _reserva_ids_raw or _prueba_ids_raw
-                    _es_reserva_qr = bool(_reserva_ids_raw)
+                    _reserva_ids = _ta_result.get("reserva_ids", [])
                     if _reserva_ids and agent_actual != "aurora" and (_ta_result.get("agendada") or _ta_result.get("reagendada") or _ta_result.get("confirmada")):
                         try:
                             from agent.qr import generar_qr
-                            from agent.airtable_client import marcar_qr_enviado_reserva, marcar_qr_enviado_prueba
+                            from agent.airtable_client import marcar_qr_enviado_reserva
                             for _rid in _reserva_ids:
                                 _qr_bytes = generar_qr(_rid)
                                 _qr_ok = await proveedor.enviar_imagen_bytes(
@@ -3745,10 +3612,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                                 if not _qr_ok:
                                     logger.error(f"[QR] Envío falló para {_rid} — NO se marca enviado")
                                     continue
-                                if _es_reserva_qr:
-                                    await marcar_qr_enviado_reserva(_rid)
-                                else:
-                                    await marcar_qr_enviado_prueba(_rid)
+                                await marcar_qr_enviado_reserva(_rid)
                             logger.info(f"[QR] Enviado {len(_reserva_ids)} QR(s) a {telefono}")
                             if topic_id:
                                 await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({len(_reserva_ids)})", telefono=telefono, group_override=_tg_group)
@@ -3857,7 +3721,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.warning(f"[ANTI-REP] Respuesta quedó vacía tras limpieza para {telefono} — fallback")
 
         # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
-        #    no en clase de prueba. Para prueba, los datos van a PRUEBA FENIX. ──
+        #    no en clase de prueba (los leads tienen su propio flujo). ──
 
         # ── Actualizar datos del lead en Airtable (nombre, hijo, edad) ────
         if agent_actual == "ivan":
@@ -4510,7 +4374,7 @@ async def _procesar_confirmacion_reserva(
     """
     Cuando se confirma una reserva:
     - Aurora (inscriptos): crear RESERVA en RESERVAS FENIX
-    - Ivan (leads): crear registro en PRUEBA FENIX (NO en RESERVAS FENIX)
+    - Ivan (leads): la RESERVA real la crea el flujo post-formulario/reagendamiento
     """
     fecha_str = confirmacion.get("fecha", "")
     hora_str = confirmacion.get("hora", "")

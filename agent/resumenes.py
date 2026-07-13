@@ -8,7 +8,7 @@ import logging
 from agent.airtable_client import (
     obtener_ninos_por_horario, _get_records, _patch, crear_reserva,
     obtener_o_crear_horario,
-    _LEADS, _PRUEBAS, _RESERVAS, _HORARIOS, _NINOS, _FAMILIAS,
+    _LEADS, _RESERVAS, _HORARIOS, _NINOS, _FAMILIAS,
     _BASE_URL, _headers,
 )
 from agent.telegram_bridge import obtener_topic
@@ -213,7 +213,7 @@ async def _generar_resumen_reservas(telefono: str, fecha_override=None):
 async def _generar_resumen_flias(telefono: str, fecha_override=None):
     """Resumen tipo reservas pero con nombre hijo | nombre padre + link wa.me."""
     from datetime import date, timedelta, datetime, timezone
-    from agent.airtable_client import obtener_ninos_por_horario, _get_records, _PRUEBAS
+    from agent.airtable_client import obtener_ninos_por_horario
 
     _PY_TZ = timezone(timedelta(hours=-3))
     hoy = datetime.now(_PY_TZ).date()
@@ -914,24 +914,31 @@ def _fecha_py(iso_str: str) -> str:
 
 
 async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
-    """Genera y envía resumen de PRUEBA FENIX agrupado por fecha."""
+    """Resumen de conversión de anuncios: leads vs PAGOS de prueba por fecha.
+
+    2.D: la fuente pasó de PRUEBA FENIX (retirada) a PAGOS — el pago por código
+    que se crea al confirmar el comprobante. Un pago es de Fenix por su LINK
+    (NIÑOS FENIX / FAMILIA FENIX), NUNCA por FUENTE. "Agendados" ahora cuenta
+    pagos (un pago cubre a los hermanos), no registros por niño."""
     from datetime import date as _date_cls
     from collections import defaultdict
+    import urllib.parse as _up
     import httpx as _httpx_r
     from agent.airtable_client import _get_records
 
     label, fecha_desde, fecha_hasta = _parsear_filtro_fecha(texto_cmd)
 
-    # Paginar todos los registros de PRUEBA FENIX
+    # Paginar los PAGOS de Fenix (por link — la FUENTE no es confiable)
     all_records = []
     offset = None
     base_id = os.getenv("AIRTABLE_BASE_ID")
     api_key = os.getenv("AIRTABLE_API_KEY")
+    _filtro_pagos = _up.quote("OR({NIÑOS FENIX}!='',{FAMILIA FENIX}!='')")
     while True:
-        params = f"pageSize=100"
+        params = f"pageSize=100&filterByFormula={_filtro_pagos}"
         if offset:
             params += f"&offset={offset}"
-        _url = f"https://api.airtable.com/v0/{base_id}/PRUEBA%20FENIX?{params}"
+        _url = f"https://api.airtable.com/v0/{base_id}/PAGOS?{params}"
         async with _httpx_r.AsyncClient(timeout=15) as _cl:
             _r = await _cl.get(_url, headers={"Authorization": f"Bearer {api_key}"})
             _data = _r.json()
@@ -940,18 +947,27 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
         if not offset:
             break
 
-    # Filtrar por rango de fechas (convertir UTC → hora PY)
+    # Solo conceptos de prueba (la inscripción no es conversión de anuncio) +
+    # rango de fechas (FECHA de PAGOS = createdTime, UTC → hora PY). Se mapea
+    # al formato viejo (FECHA CREACION) para no tocar el resto del armado.
     registros_filtrados = []
     for rec in all_records:
         f = rec.get("fields", {})
-        fecha_raw = _fecha_py(f.get("FECHA CREACION", ""))
+        _conc = (f.get("CONCEPTO") or "").strip()
+        if not (_conc.startswith("PRUEBA") or _conc in ("CLASE", "UNA CLASE", "FENIXMAMA")):
+            continue
+        fecha_raw = _fecha_py(f.get("FECHA", ""))
         if not fecha_raw:
             continue
         if fecha_desde and fecha_raw < fecha_desde:
             continue
         if fecha_hasta and fecha_raw > fecha_hasta:
             continue
-        registros_filtrados.append(rec)
+        registros_filtrados.append({"fields": {
+            "FECHA CREACION": f.get("FECHA", ""),
+            "CONCEPTO": _conc,
+            "MONTO": f.get("MONTO", 0),
+        }})
 
     # Contar leads totales por día (LEADS FENIX por FECHA CREACION)
     leads_por_fecha = defaultdict(int)

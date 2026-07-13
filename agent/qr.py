@@ -38,25 +38,6 @@ def generar_qr_familia(familia_id: str) -> bytes:
     return _generar_qr_desde_url(url)
 
 
-def token_checkin_prueba(telefono: str) -> str:
-    """Token firmado (HMAC del teléfono con ADMIN_API_KEY) que viaja en el QR.
-
-    Sin él /checkin/prueba/{telefono} responde 404: la URL era enumerable
-    probando números y listaba nombres de hijos (auditoría 2026-07-12, C1)."""
-    secreto = os.getenv("ADMIN_API_KEY", "")
-    return hmac.new(secreto.encode(), f"checkin-prueba:{telefono}".encode(), hashlib.sha256).hexdigest()[:16]
-
-
-def generar_qr_prueba(telefono: str) -> bytes:
-    """
-    Genera el QR de check-in para un lead en clase de prueba. Apunta a
-    /checkin/prueba/{telefono}?t={token}, que agrupa a los hermanos en PRUEBA FENIX.
-    Retorna bytes PNG.
-    """
-    url = f"{_CHECKIN_BASE}/checkin/prueba/{telefono}?t={token_checkin_prueba(telefono)}"
-    return _generar_qr_desde_url(url)
-
-
 def _generar_qr_desde_url(url: str) -> bytes:
     """Genera el PNG del QR (con logo FENIX al centro) a partir de una URL."""
     # QR con correccion de errores alta (permite logo encima)

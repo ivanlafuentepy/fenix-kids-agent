@@ -422,7 +422,7 @@ async def _ejecutar_inscripcion(
 ):
     """Crea FAMILIA + NIÑOS + PAGOS + marca INSCRIPTO."""
     from agent.airtable_client import (
-        _get_records, _post, _patch, _PRUEBAS, _LEADS, _FAMILIAS,
+        _get_records, _post, _patch, _LEADS, _FAMILIAS,
         crear_familia, crear_nino,
         buscar_familia_por_telefono, obtener_ninos_de_familia,
     )
@@ -494,36 +494,6 @@ async def _ejecutar_inscripcion(
                 }, familia_id)
             if nino_id:
                 ninos_creados.append(f"{h_nombre} {h_apellido}")
-                # Vincular PRUEBA FENIX → NIÑO FENIX (solo registros PRUEBA reales, legacy)
-                if op.get("id"):
-                    try:
-                        await _patch(_PRUEBAS, op["id"], {"NINO FENIX": [nino_id]})
-                        logger.info(f"[INSCRIPCION] Vinculado PRUEBA {op['id']} → NIÑO {nino_id}")
-                    except Exception as e:
-                        logger.warning(f"[INSCRIPCION] Error vinculando PRUEBA→NIÑO: {e}")
-                # Migrar cara de PRUEBA FENIX → NIÑOS FENIX
-                prueba_face_id = of.get("FACE_ID", "")
-                prueba_foto = of.get("FOTO", [])
-                if prueba_face_id:
-                    try:
-                        import httpx
-                        from agent.face_recognition import actualizar_cara
-                        from agent.airtable_client import _patch, _NINOS
-                        # Re-indexar con el nuevo record_id del niño
-                        if prueba_foto:
-                            foto_bytes = None
-                            async with httpx.AsyncClient(timeout=30) as _hc:
-                                _r = await _hc.get(prueba_foto[0]["url"])
-                                if _r.status_code == 200:
-                                    foto_bytes = _r.content
-                            if foto_bytes:
-                                new_face_id = await actualizar_cara(nino_id, foto_bytes)
-                                if new_face_id:
-                                    await _patch(_NINOS, nino_id, {"FACE_ID": new_face_id})
-                                    logger.info(f"[FOTOS] Cara migrada de PRUEBA→NIÑO: {h_nombre} {h_apellido}")
-                    except Exception as e:
-                        logger.warning(f"[FOTOS] Error migrando cara: {e}")
-
     # ── 3. Crear PAGOS ───────────────────────────────────────────────
     _pagos_tabla = "PAGOS"
     pagos_creados = []
@@ -657,20 +627,6 @@ async def _ejecutar_inscripcion(
         })
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
-
-    # ── 4. Marcar INSCRIPTO ──────────────────────────────────────────
-    # 2.C-C5: los registros PRUEBA legacy del teléfono (si existen) se marcan
-    # best-effort — la tabla ya no es fuente de nada, pero queda consistente
-    # hasta el rename de 2.D.
-    try:
-        _pruebas_legacy = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
-        for op in _pruebas_legacy:
-            await _patch(_PRUEBAS, op["id"], {
-                "CONVERSION": "INSCRIPTO",
-                "FAMILIA": [familia_id],
-            })
-    except Exception as _e_leg:
-        logger.warning(f"[INSCRIPCION] No pude marcar PRUEBA legacy INSCRIPTO: {_e_leg}")
 
     leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
     for lead in leads:

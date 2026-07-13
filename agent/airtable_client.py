@@ -44,7 +44,6 @@ _FAMILIAS  = "FAMILIAS FENIX"
 _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
-_PRUEBAS   = "PRUEBA FENIX"
 _PAGOS     = "PAGOS"
 _TUTORES   = "TUTORES FENIX"
 _CONTENIDO = "CONTENIDO FENIX"
@@ -436,13 +435,6 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
         # Borrar familia
         if await _delete(_FAMILIAS, familia_id):
             contador["familia"] += 1
-
-    # Borrar registros de PRUEBA FENIX
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-    contador["pruebas"] = 0
-    for p in pruebas:
-        if await _delete(_PRUEBAS, p["id"]):
-            contador["pruebas"] += 1
 
     # Borrar lead
     lead_id = await obtener_lead_record_id(telefono)
@@ -1391,7 +1383,7 @@ async def crear_familia_a_prueba(
 
     El estado A PRUEBA hace que el router siga atendiendo al lead con Ivan
     (ver familia_es_activa); recién al inscribirse pasa a ACTIVO → Aurora.
-    Dual-write: PRUEBA FENIX se sigue creando aparte por ahora (Fase 2.A).
+    Registro primario del lead que pagó (2.C: PRUEBA FENIX retirada).
 
     ninos = [{"nombre", "apellido", "fecha_nacimiento", "sexo"}, ...]
     Retorna (familia_id, [nino_ids]). Si la familia ya existe, NO la duplica.
@@ -1454,8 +1446,7 @@ async def registrar_pago_fenix(
     el corte final. Si la derivación de niños/tutor falla, el pago se crea
     igual solo con FAMILIA FENIX — nunca se pierde un pago por esto.
 
-    El código es la ÚNICA fuente del pago (reemplaza la automatización de Airtable
-    PRUEBA FENIX → PAGOS). Idempotente: si la familia ya tiene un PAGO de prueba
+    El código es la ÚNICA fuente del pago. Idempotente: si la familia ya tiene un PAGO de prueba
     registrado HOY, no lo duplica.
 
     Retorna el record_id del PAGO (nuevo o el existente) o None si falla.
@@ -1539,145 +1530,7 @@ async def registrar_pago_fenix(
     return None
 
 
-# ── PRUEBA FENIX (leads que agendan/pagan clase de prueba) ────────────────────
-
-def _deducir_genero(nombre: str) -> str:
-    """Deduce HOMBRE o MUJER por el nombre. Default HOMBRE si no está claro."""
-    if not nombre:
-        return ""
-    n = nombre.lower().strip().split()[0]
-    # Nombres que terminan en 'a' suelen ser mujer (con excepciones)
-    excepciones_masc = {"joshua", "luca", "santana", "isa", "josua", "nikita"}
-    excepciones_fem = {"sol", "flor", "ines", "mercedes", "pilar", "mar", "luz", "paz", "noel"}
-    if n in excepciones_fem:
-        return "MUJER"
-    if n in excepciones_masc:
-        return "HOMBRE"
-    if n.endswith("a") or n.endswith("i"):
-        return "MUJER"
-    return "HOMBRE"
-
-
-async def crear_prueba_fenix(
-    telefono: str,
-    nombre_responsable: str,
-    apellido_responsable: str,
-    nombre_hijo: str,
-    apellido_hijo: str,
-    edad_hijo: str,
-    fecha_reserva: str,
-    hora: str,
-    fecha_nacimiento: str = "",
-    conversion: str = "PAGO",
-    monto: int = 0,
-    concepto: str = "PRUEBA",
-    diagnostico_ids: list[str] | None = None,
-    lead_record_id: str | None = None,
-    metodo_pago: str = "TRANSFER",
-) -> str | None:
-    """Crea un registro en PRUEBA FENIX con todos los campos. Retorna record_id o None."""
-    from datetime import datetime, timezone, timedelta
-    _PY_TZ = timezone(timedelta(hours=-3))
-
-    # Deducir género del nombre del hijo
-    genero = _deducir_genero(nombre_hijo)
-
-    # Normalizar fecha de nacimiento a ISO
-    _fn_norm = fecha_nacimiento
-    if _fn_norm:
-        for _fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
-            try:
-                _fn_norm = datetime.strptime(_fn_norm.strip(), _fmt).strftime("%Y-%m-%d")
-                break
-            except ValueError:
-                continue
-
-    campos = {
-        "TELEFONO": telefono,
-        "NOMBRE": nombre_responsable,
-        "APELLIDO": apellido_responsable,
-        "NOMBRE HIJO": nombre_hijo,
-        "APELLIDO HIJO": apellido_hijo,
-        "FECHA RESERVA": fecha_reserva,
-        "HORA": hora,
-        "FECHA NACIMIENTO": _fn_norm,
-        "CONVERSION": conversion,
-        "CONCEPTO": concepto,
-        "MONTO": monto,
-        "METODO DE PAGO": [metodo_pago] if metodo_pago else [],
-        "GENERO": genero,
-        "ORIGEN LEAD": "ANUNCIO",
-        "REGISTRAR": True,
-        "FECHA CREACION": datetime.now(_PY_TZ).isoformat(),
-    }
-    if diagnostico_ids:
-        campos["DIAGNOSTICO"] = diagnostico_ids
-    if lead_record_id:
-        campos["LEAD"] = [lead_record_id]
-    # Limpiar campos vacíos (excepto links)
-    campos = {k: v for k, v in campos.items() if v}
-    record = await _post(_PRUEBAS, campos)
-    if record:
-        rid = record.get("id")
-        logger.info(f"[PRUEBA FENIX] Creado: {nombre_hijo} {apellido_hijo} ({telefono}) → {rid}")
-        return rid
-    return None
-
-
-async def actualizar_prueba_fenix(
-    telefono: str,
-    nombre_responsable: str = "",
-    apellido_responsable: str = "",
-    nombre_hijo: str = "",
-    apellido_hijo: str = "",
-    fecha_nacimiento: str = "",
-) -> bool:
-    """Actualiza campos faltantes en PRUEBA FENIX existente (post-formulario)."""
-    from datetime import datetime as _dt
-
-    records = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-    if not records:
-        return False
-
-    campos: dict = {}
-    f = records[0].get("fields", {})
-
-    # Solo patchear campos que estén vacíos en el registro existente
-    if nombre_responsable and not f.get("NOMBRE", "").strip():
-        campos["NOMBRE"] = nombre_responsable
-    if apellido_responsable and not f.get("APELLIDO", "").strip():
-        campos["APELLIDO"] = apellido_responsable
-    if nombre_hijo and not f.get("NOMBRE HIJO", "").strip():
-        campos["NOMBRE HIJO"] = nombre_hijo
-    if apellido_hijo and not f.get("APELLIDO HIJO", "").strip():
-        campos["APELLIDO HIJO"] = apellido_hijo
-    if fecha_nacimiento and not f.get("FECHA NACIMIENTO", "").strip():
-        _fn = fecha_nacimiento.strip()
-        for _fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
-            try:
-                _fn = _dt.strptime(_fn, _fmt).strftime("%Y-%m-%d")
-                break
-            except ValueError:
-                continue
-        campos["FECHA NACIMIENTO"] = _fn
-
-    if not campos:
-        logger.info(f"[PRUEBA FENIX] {telefono} — sin campos nuevos que actualizar")
-        return True
-
-    ok = await _patch(_PRUEBAS, records[0]["id"], campos)
-    if ok:
-        logger.info(f"[PRUEBA FENIX] Actualizado {telefono}: {list(campos.keys())}")
-    return ok
-
-
 _CHECKIN_BASE = os.getenv("CHECKIN_BASE_URL", "https://fenix-kids-agent-production.up.railway.app")
-
-
-async def marcar_qr_enviado_prueba(record_id: str) -> bool:
-    """Marca QR ENVIADO=true y guarda la URL del QR en PRUEBA FENIX."""
-    url_qr = f"{_CHECKIN_BASE}/checkin/{record_id}"
-    return await _patch(_PRUEBAS, record_id, {"QR RESERVA": url_qr, "QR ENVIADO": True})
 
 
 async def marcar_qr_enviado_reserva(record_id: str) -> bool:
@@ -1746,24 +1599,6 @@ async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -
         for nid in r.get("fields", {}).get("NIÑO", []):
             if nid in nino_set:
                 mapa[nid] = r["id"]
-    return mapa
-
-
-async def obtener_asistencias_pruebas_fecha(prueba_ids: list[str], fecha_iso: str) -> dict[str, str]:
-    """
-    Retorna {prueba_id: asistencia_id} de las asistencias cargadas para esos
-    registros de PRUEBA FENIX en esa fecha (leads en clase de prueba).
-    """
-    if not prueba_ids:
-        return {}
-    formula = f"DATETIME_FORMAT({{FECHA}}, 'YYYY-MM-DD')='{fecha_iso}'"
-    registros = await _get_records(_ASISTENCIA, formula=formula, max_records=500)
-    prueba_set = set(prueba_ids)
-    mapa: dict[str, str] = {}
-    for r in registros:
-        for pid in r.get("fields", {}).get("PRUEBA", []):
-            if pid in prueba_set:
-                mapa[pid] = r["id"]
     return mapa
 
 
