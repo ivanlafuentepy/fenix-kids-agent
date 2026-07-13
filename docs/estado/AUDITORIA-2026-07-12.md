@@ -245,6 +245,29 @@ fórmula 'FAMILIA' a secas, fallbacks legacy de tutores.
 - Migrar bots de salsa/curso a firma-con-cliente y volver estricta la pasarela
   para todos los negocios.
 
+### ✅ Segunda ola — F4 + resto de ALTOS (madrugada del 13/07, pushes 14-21, todos SUCCESS)
+
+- `6e507ef` A11: prompt cache FUNCIONANDO — system en 2 bloques (fechas sin hora
+  cacheado / hora+contexto sin cache) + breakpoint en el mensaje actual (el prefijo
+  con historial cruza el mínimo real de Haiku, que medido es MAYOR a 4096: ~4350 no
+  escribe). Verificado con API real: llamada 1 = w6783, llamada 2 = r6783. El log
+  ahora muestra `cache r/w`.
+- `f9f00ad` A21: suite de tests REVIVIDA (imports Nixie muertos) — 30 tests pasan.
+- `15e1f7b` A13/A14: Telegram de raíz — el grupo del topic REGISTRADO en DB gana
+  sobre el override; recovery recrea en el grupo del agente y corrige chat_id.
+- `5c87824` MEDIOs: `_hoy_cls` NameError (fechas ISO crudas en Aurora), "resumen
+  asistencia" capturado por pasar-lista, bloque seguimiento duplicado.
+- `bba52d5` A9: reagendar crea ANTES de borrar (sin rollback perdía reservas).
+- `0ed7298` A17: año dinámico en fecha de reserva (2026 hardcodeado).
+- `51e38d5` A19: CAPI con event_id determinístico (Purchase duplicado en Ads).
+- `010a995` A20: conf. sábado vigilada + shutdown cancela todo + radar 6h.
+
+**Pendiente consciente (no tocado):** A10 keywords tool_choice (cambia comportamiento
+conversacional — necesita simulación con /pre-cambio dedicado), C4 rate limiter
+saliente central + promo masiva (diseño aparte), A8/A15 (mueren con la migración
+FAMILIAS), A12 retry re-fuerza tool, night_mode agente hardcodeado, escalación
+"Hola", gate del lead_menu, A2 guard amplio.
+
 ### Plan original
 
 Orden: primero lo que sangra HOY (seguridad + mensajes perdidos), después cerrar PRUEBA
