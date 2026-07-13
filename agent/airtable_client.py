@@ -1957,10 +1957,10 @@ async def obtener_nombre_nino(nino_id: str) -> dict | None:
 async def listar_facturas_fenix_para_enviar() -> list[dict]:
     """Facturas de FENIX emitidas por el robot facturador (FACTURADO=True +
     COMPROBANTE SET + PDF cargado) que todavía no se enviaron a la familia.
-    El filtro FAMILIA FENIX!='' separa las de Fenix: las de Salsa (link ALUMNO)
-    las reparte Dorita con su propio loop."""
-    formula = ("AND({FACTURADO}=TRUE(), {ENVIADO}=FALSE(), "
-               "{COMPROBANTE SET}!='', {FAMILIA FENIX}!='')")
+    Niño-eje (F6): la fila de Fenix se detecta por el link TUTOR (o el legacy
+    FAMILIA FENIX); las de Salsa (link ALUMNO) las reparte Dorita."""
+    formula = ("AND({FACTURADO}=TRUE(), {ENVIADO}=FALSE(), {COMPROBANTE SET}!='', "
+               "OR({TUTOR}!='', {FAMILIA FENIX}!=''))")
     records = await _get_records(_FACTURAS, formula=formula, max_records=20)
     out = []
     for r in records:
@@ -1968,6 +1968,7 @@ async def listar_facturas_fenix_para_enviar() -> list[dict]:
         adj = f.get("FACTURA PDF") or []
         out.append({
             "record_id": r["id"],
+            "tutor_ids": f.get("TUTOR") or [],
             "familia_ids": f.get("FAMILIA FENIX") or [],
             "pdf_url": adj[0].get("url", "") if adj else "",
             "pdf_filename": (adj[0].get("filename") or "factura.pdf") if adj else "factura.pdf",
@@ -1975,9 +1976,23 @@ async def listar_facturas_fenix_para_enviar() -> list[dict]:
     return out
 
 
+async def obtener_contacto_tutor(tutor_id: str) -> tuple[str, str]:
+    """(telefono, nombre) de un TUTOR — para mandarle la factura (niño-eje).
+    CELL LIMPIO (formato 595XXXXXXXXX) con fallback al CELL crudo."""
+    if not tutor_id:
+        return "", ""
+    recs = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
+    if not recs:
+        return "", ""
+    f = recs[0].get("fields", {})
+    tel = "".join(c for c in str(f.get("CELL LIMPIO") or f.get("CELL") or "") if c.isdigit())
+    nombre = (f.get("APODO") or f.get("NOMBRE") or "").strip()
+    return tel, nombre
+
+
 async def obtener_contacto_familia(familia_id: str) -> tuple[str, str]:
-    """(telefono, nombre) del responsable de la familia — para mandarle la factura.
-    Usa las fórmulas CELL LIMPIO (formato 595XXXXXXXXX) con fallback al crudo."""
+    """(telefono, nombre) del responsable de la familia — LEGACY (facturas viejas
+    sin link TUTOR). Usa las fórmulas CELL LIMPIO con fallback al crudo."""
     if not familia_id:
         return "", ""
     recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)

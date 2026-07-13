@@ -1040,14 +1040,21 @@ async def _envio_facturas_fenix_loop():
             pendientes = await listar_facturas_fenix_para_enviar()
             for fac in pendientes:
                 try:
-                    if not fac.get("familia_ids") or not fac.get("pdf_url"):
+                    if not (fac.get("tutor_ids") or fac.get("familia_ids")) or not fac.get("pdf_url"):
                         continue
                     if fac["record_id"] in _enviadas_sin_marcar:
                         # Ya se envió — solo reintentar el marcado, no el PDF
                         await marcar_factura_fenix_enviada(fac["record_id"])
                         _enviadas_sin_marcar.discard(fac["record_id"])
                         continue
-                    tel, nombre = await obtener_contacto_familia(fac["familia_ids"][0])
+                    # Niño-eje (F6): contacto por el TUTOR de la factura; las
+                    # filas viejas sin link TUTOR caen al camino legacy por familia.
+                    tel, nombre = "", ""
+                    if fac.get("tutor_ids"):
+                        from agent.airtable_client import obtener_contacto_tutor
+                        tel, nombre = await obtener_contacto_tutor(fac["tutor_ids"][0])
+                    if not tel and fac.get("familia_ids"):
+                        tel, nombre = await obtener_contacto_familia(fac["familia_ids"][0])
                     if not tel:
                         logger.info(f"[FACTURA-ENVIO] rec {fac['record_id']} sin teléfono, salteo")
                         continue
