@@ -37,9 +37,21 @@ async def _enviar_evento(event_name: str, telefono: str, ctwa_clid: str | None =
     if WHATSAPP_BUSINESS_ACCOUNT_ID:
         user_data["whatsapp_business_account_id"] = WHATSAPP_BUSINESS_ACCOUNT_ID
 
+    # event_id determinístico por evento+teléfono+día: es el mecanismo de
+    # dedup de Meta. Purchase se dispara desde DOS lugares (confirmación del
+    # comprobante y post-formulario) y sin event_id inflaba las conversiones
+    # de Ads (auditoría 2026-07-12, A19). Con el mismo event_id, Meta los
+    # colapsa en uno.
+    import hashlib
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    _dia = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+    event_id = hashlib.sha256(f"{event_name}:{telefono}:{_dia}".encode()).hexdigest()[:32]
+
     evento = {
         "event_name": event_name,
         "event_time": int(time.time()),
+        "event_id": event_id,
         "action_source": "business_messaging",
         "messaging_channel": "whatsapp",
         "user_data": user_data,
