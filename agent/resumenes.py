@@ -502,8 +502,7 @@ async def _agregar_presentes_por_nombres(telefono: str, texto: str):
             # Crear reserva + marcar presente
             horario_id = await obtener_o_crear_horario(fecha_iso, turno)
             if horario_id:
-                familia_id = nino_match["familia"][0] if nino_match["familia"] else ""
-                reserva_id = await crear_reserva(nino_match["id"], horario_id, familia_id)
+                reserva_id = await crear_reserva(nino_match["id"], horario_id)
                 if reserva_id:
                     await _patch(_RESERVAS, reserva_id, {"PRESENTE": True})
                     resultados.append(f"✅ {nino_match['nombre']}")
@@ -587,8 +586,7 @@ async def _marcar_presente_por_nombre(telefono: str, nombre_buscar: str):
             # Crear horario + reserva
             horario_id = await obtener_o_crear_horario(fecha_iso, turno_auto)
             if horario_id:
-                familia_id = nino_match["familia"][0] if nino_match["familia"] else ""
-                reserva_id = await crear_reserva(nino_match["id"], horario_id, familia_id)
+                reserva_id = await crear_reserva(nino_match["id"], horario_id)
                 if reserva_id:
                     await _patch(_RESERVAS, reserva_id, {"PRESENTE": True})
                     await proveedor.enviar_mensaje(telefono, f"✅ PRESENTE (reserva creada): {nino_match['nombre']} ({turno_auto}h)")

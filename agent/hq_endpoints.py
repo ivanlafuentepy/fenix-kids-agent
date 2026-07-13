@@ -160,7 +160,6 @@ async def hq_asistencia(payload: dict = Body(...), x_hq_key: str | None = Header
             fecha_iso=fecha_iso,
             hora_checkin_iso=ahora.isoformat(),
             nino_id=nino_id,
-            familia_id=str(payload.get("familia_id", "")).strip(),
             telefono=str(payload.get("telefono", "")).strip(),
             # metodo por defecto "QR" (opción válida del singleSelect; el campo no
             # tiene otras opciones y _post no usa typecast)

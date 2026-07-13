@@ -5,7 +5,6 @@ import logging
 
 from agent.airtable_client import (
     obtener_grupo_familiar,
-    buscar_familia_por_telefono,
     obtener_o_crear_horario,
     crear_reserva,
     _get_records,
@@ -53,17 +52,10 @@ async def gestionar_reserva(
             "message": "No encontré niños registrados para este número.",
         }
 
-    # Link transitorio RESERVAS→FAMILIAS: el lookup ESTADO PLAN de RESERVAS
-    # todavía sale de ahí (es_prueba). Se corta cuando el lookup pase a
-    # NIÑO.ESTADO (F7.b-i).
-    if not familia_id:
-        fam = await buscar_familia_por_telefono(telefono)
-        familia_id = fam["id"] if fam else ""
-
     if accion == "agendar":
-        return await _agendar(fecha, hora, ninos, familia_id or "")
+        return await _agendar(fecha, hora, ninos)
     elif accion == "reagendar":
-        return await _reagendar(fecha, hora, ninos, familia_id or "")
+        return await _reagendar(fecha, hora, ninos)
     elif accion == "cancelar":
         return await _cancelar(fecha, hora, ninos)
 
@@ -99,7 +91,7 @@ async def _reservas_futuras_de_ninos(ninos: list[dict]) -> list[dict]:
     return futuras
 
 
-async def _agendar(fecha: str, hora: str, ninos: list[dict], familia_id: str = "") -> dict:
+async def _agendar(fecha: str, hora: str, ninos: list[dict]) -> dict:
     """Crea RESERVA para TODOS los hijos del grupo."""
     if not fecha or not hora:
         return {
@@ -123,7 +115,7 @@ async def _agendar(fecha: str, hora: str, ninos: list[dict], familia_id: str = "
     for nino in ninos:
         nino_id = nino["id"]
         nombre = nino.get("nombre_completo") or nino.get("nombre") or "?"
-        rid = await crear_reserva(nino_id, horario_id, familia_id)
+        rid = await crear_reserva(nino_id, horario_id)
         if rid:
             reservados.append(nombre)
             reserva_ids.append(rid)
@@ -151,7 +143,7 @@ async def _agendar(fecha: str, hora: str, ninos: list[dict], familia_id: str = "
     }
 
 
-async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict], familia_id: str = "") -> dict:
+async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict]) -> dict:
     """Busca reservas futuras por los links del niño, crea la nueva, borra las viejas."""
     if not fecha_nueva or not hora_nueva:
         return {
@@ -177,7 +169,7 @@ async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict], famil
     # horario inválido), las reservas viejas quedan intactas. Antes se
     # borraba primero y un fallo dejaba a la familia SIN ninguna reserva
     # (auditoría 2026-07-12, A9).
-    result = await _agendar(fecha_nueva, hora_nueva, ninos, familia_id)
+    result = await _agendar(fecha_nueva, hora_nueva, ninos)
     if result.get("error"):
         return result
     _ids_nuevas = set(result.get("reserva_ids", []) or [])

@@ -90,7 +90,6 @@ from agent.airtable_client import (
     actualizar_reserva_lead, marcar_control_datos,
     obtener_ninos_por_horario, formatear_lista_ninos,
     obtener_horarios_disponibles, obtener_redes,
-    cancelar_reservas_familia_fecha,
 )
 from agent.memory import limpiar_estado_completo
 from agent.reminders import (
@@ -495,11 +494,10 @@ async def checkin_confirmar(record_id: str):
         try:
             from agent.airtable_client import crear_asistencia
             _nino_id_ci = (fields.get("NINO") or [""])[0]
-            _fam_id_ci = (fields.get("FAMILIAS") or [""])[0]
             await crear_asistencia(
                 nombre=nombre, fecha_iso=ahora.date().isoformat(),
                 hora_checkin_iso=ahora.isoformat(), nino_id=_nino_id_ci,
-                familia_id=_fam_id_ci, reserva_id=record_id, turno=hora, metodo="QR",
+                reserva_id=record_id, turno=hora, metodo="QR",
             )
         except Exception as _e_asis_ci:
             logger.warning(f"[CHECKIN] Asistencia no creada para {record_id}: {_e_asis_ci}")
@@ -3721,14 +3719,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         from datetime import date as _date_cls
                         _year = _date_cls.today().year
                         _fecha_iso = f"{_year}-{_mes:02d}-{_dia:02d}"
-                        fam_id_cancel = await obtener_familia_id(telefono)
-                        if not fam_id_cancel:
-                            _fam_c = await buscar_familia_por_telefono(telefono)
-                            if _fam_c:
-                                fam_id_cancel = _fam_c["id"]
-                        if fam_id_cancel:
-                            borradas = await cancelar_reservas_familia_fecha(fam_id_cancel, _fecha_iso, _hora_cancel)
-                            logger.info(f"[CANCELAR] {borradas} reservas canceladas para {telefono} el {_fecha_iso} {_hora_cancel}")
+                        # F7.b: cancela por el grupo familiar (links del niño) —
+                        # el camino viejo por FAMILIAS nunca matcheaba reservas.
+                        from agent.tools.agenda import gestionar_reserva as _gr_cancel
+                        _res_cancel = await _gr_cancel(telefono, "cancelar", fecha=_fecha_iso, hora=_hora_cancel or None)
+                        logger.info(f"[CANCELAR] {_res_cancel.get('cantidad_borradas', 0)} reservas canceladas para {telefono} el {_fecha_iso} {_hora_cancel}")
             except Exception as e:
                 logger.error(f"[CANCELAR] Error cancelando reserva: {e}")
 
@@ -4300,15 +4295,11 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"Error calculando fecha: {e}")
 
-    # ── Obtener niños de la familia (para nombre real + RESERVAS) ──────────────
-    familia_id = await obtener_familia_id(telefono)
-    if not familia_id:
-        # Fallback: buscar en Airtable por CELL LIMPIO (familia pre-existente)
-        _fam_at = await buscar_familia_por_telefono(telefono)
-        if _fam_at:
-            familia_id = _fam_at["id"]
-            logger.info(f"[RESERVA] Familia encontrada via Airtable CELL LIMPIO: {familia_id}")
-    ninos = await obtener_ninos_de_familia(familia_id) if familia_id else []
+    # ── Obtener niños del grupo familiar (para nombre real + RESERVAS) ────────
+    # F7.b: tutor → hijos (fallback legacy FAMILIAS adentro de obtener_grupo_familiar)
+    from agent.airtable_client import obtener_grupo_familiar as _ogf_res
+    _grupo_res = await _ogf_res(telefono, familia_id=(await obtener_familia_id(telefono)) or "")
+    ninos = (_grupo_res or {}).get("hijos", [])
 
     # Nombre display para el evento: "Mateo González" | "Mateo y Sofía González" | fallback
     if ninos:
@@ -4349,7 +4340,7 @@ async def _procesar_confirmacion_reserva(
                         )
                         logger.warning(f"[RESERVA DOBLE] {_nombre_nino} ya tiene reserva {fecha_iso} {_horas_existentes}, nueva {hora_str}")
 
-                    rid = await crear_reserva(nino["id"], horario_id, familia_id or "")
+                    rid = await crear_reserva(nino["id"], horario_id)
                     if rid:
                         logger.info(f"Reserva creada: {nino.get('nombre_completo', nino['id'])} → {rid}")
             else:

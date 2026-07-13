@@ -1319,27 +1319,34 @@ def formatear_lista_ninos(ninos: list[dict], fecha_label: str = "", hora: str = 
 
 # ── RESERVAS ──────────────────────────────────────────────────────────────────
 
-async def crear_reserva(nino_id: str, horario_id: str, familia_id: str = "") -> str | None:
+async def crear_reserva(nino_id: str, horario_id: str) -> str | None:
     """
-    Crea una RESERVA vinculando NINO + HORARIO + FAMILIAS.
+    Crea una RESERVA vinculando NINO + HORARIO (F7.b: FAMILIAS ya no se linkea;
+    el es_prueba sale del ESTADO del niño y las búsquedas van por los links
+    RESERVAS FENIX del niño).
     Siempre 1 reserva = 1 niño + 1 horario.
     Si ya existe una reserva para ese niño en ese horario, no crea duplicado.
     Retorna el record_id de la RESERVA (existente o nueva).
     """
-    # Guard: verificar si ya existe reserva de este niño en este horario
-    formula = f"AND(FIND('{nino_id}', ARRAYJOIN({{NINO}})), FIND('{horario_id}', ARRAYJOIN({{HORARIO}})))"
-    existentes = await _get_records(_RESERVAS, formula=formula, max_records=1)
-    if existentes:
-        rid = existentes[0]["id"]
-        logger.info(f"Reserva ya existe: {rid} nino={nino_id} horario={horario_id} — no se crea duplicado")
-        return rid
+    # Guard anti-duplicado por los links RESERVAS FENIX del niño. El guard
+    # viejo usaba FIND(record_id, ARRAYJOIN({NINO})) — ARRAYJOIN de un link
+    # devuelve NOMBRES, no ids → nunca matcheaba (reference_arrayjoin_link).
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                for rid in r.json().get("fields", {}).get("RESERVAS FENIX", []) or []:
+                    rr = await client.get(f"{_BASE_URL}/{_RESERVAS}/{rid}", headers=_headers(), timeout=10)
+                    if rr.status_code == 200 and horario_id in (rr.json().get("fields", {}).get("HORARIO") or []):
+                        logger.info(f"Reserva ya existe: {rid} nino={nino_id} horario={horario_id} — no se crea duplicado")
+                        return rid
+    except Exception as e:
+        logger.warning(f"[RESERVA] Guard anti-dup falló (creo igual): {e}")
 
     campos = {
         "NINO": [nino_id],
         "HORARIO": [horario_id],
     }
-    if familia_id:
-        campos["FAMILIAS"] = [familia_id]
 
     resultado = await _post(_RESERVAS, campos)
     if resultado:
@@ -1351,39 +1358,6 @@ async def crear_reserva(nino_id: str, horario_id: str, familia_id: str = "") -> 
 async def eliminar_reserva(reserva_id: str) -> bool:
     """Elimina una RESERVA."""
     return await _delete(_RESERVAS, reserva_id)
-
-
-async def buscar_reservas_familia(familia_id: str) -> list[dict]:
-    """Busca todas las RESERVAS de una familia. Retorna lista con id, nino, fecha, hora."""
-    formula = f"FIND('{familia_id}', ARRAYJOIN({{FAMILIAS}}))"
-    records = await _get_records(_RESERVAS, formula=formula, max_records=50)
-    reservas = []
-    for r in records:
-        f = r.get("fields", {})
-        reservas.append({
-            "id": r["id"],
-            "nombre_nino": f.get("NOMBRE COMPLETO", [""])[0] if isinstance(f.get("NOMBRE COMPLETO"), list) else f.get("NOMBRE COMPLETO", ""),
-            "fecha": f.get("FECHA", [""])[0] if isinstance(f.get("FECHA"), list) else f.get("FECHA", ""),
-            "hora": f.get("HORA", [""])[0] if isinstance(f.get("HORA"), list) else f.get("HORA", ""),
-        })
-    return reservas
-
-
-async def cancelar_reservas_familia_fecha(familia_id: str, fecha: str, hora: str = "") -> int:
-    """
-    Cancela (borra) todas las reservas de una familia para una fecha y hora.
-    Si hora está vacío, borra todas las de ese día.
-    Retorna cantidad de reservas borradas.
-    """
-    reservas = await buscar_reservas_familia(familia_id)
-    borradas = 0
-    for res in reservas:
-        if res["fecha"] == fecha:
-            if not hora or res["hora"] == hora:
-                if await eliminar_reserva(res["id"]):
-                    borradas += 1
-                    logger.info(f"Reserva cancelada: {res['id']} ({res['nombre_nino']} {res['fecha']} {res['hora']})")
-    return borradas
 
 
 # ── Flujo completo: crear familia + niños desde datos del formulario ──────────
@@ -1626,8 +1600,6 @@ async def crear_asistencia(
     fecha_iso: str,
     hora_checkin_iso: str,
     nino_id: str = "",
-    prueba_id: str = "",
-    familia_id: str = "",
     reserva_id: str = "",
     turno: str = "",
     telefono: str = "",
@@ -1635,7 +1607,8 @@ async def crear_asistencia(
 ) -> str | None:
     """
     Crea una fila de asistencia en ASISTENCIA FENIX (una fila = un niño presente
-    en un sábado). Retorna el record_id creado o None.
+    en un sábado). F7.b: los links FAMILIA y PRUEBA ya no se escriben (el niño
+    es el eje). Retorna el record_id creado o None.
     """
     campos: dict = {
         "REGISTRO": nombre,
@@ -1645,10 +1618,6 @@ async def crear_asistencia(
     }
     if nino_id:
         campos["NIÑO"] = [nino_id]
-    if prueba_id:
-        campos["PRUEBA"] = [prueba_id]
-    if familia_id:
-        campos["FAMILIA"] = [familia_id]
     if reserva_id:
         campos["RESERVA"] = [reserva_id]
     if turno:
