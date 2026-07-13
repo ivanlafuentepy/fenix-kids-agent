@@ -85,7 +85,7 @@ from agent.airtable_client import (
     buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
     es_cliente_activo_por_telefono, obtener_grupo_familiar, buscar_tutor_por_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
-    obtener_o_crear_horario, crear_prueba_fenix,
+    obtener_o_crear_horario,
     actualizar_datos_lead, actualizar_diagnostico_lead,
     actualizar_reserva_lead, marcar_control_datos,
     obtener_ninos_por_horario, formatear_lista_ninos,
@@ -1096,132 +1096,6 @@ async def debug_enviar_promo_masiva(
     asyncio.create_task(_enviar_promo_background(all_leads, plantilla))
     return {"mensaje": f"🚀 Envío masivo iniciado — {len(all_leads)} leads", "plantilla": plantilla,
             "total": len(all_leads), "progreso_en": "/debug/estado-promo-masiva"}
-
-
-@app.get("/debug/fix-prueba-promomadre")
-async def debug_fix_prueba_promomadre(
-    dry_run: str = "true",
-    _: bool = Depends(_require_admin),
-):
-    """
-    Para cada lead con PAGO PROMOMADRE=true:
-    - Si tiene PRUEBA FENIX → corrige CONCEPTO=FENIXMAMA + MONTO=350000
-    - Si NO tiene → crea registro con datos del historial
-    """
-    import httpx as _httpx_fix
-    from agent.airtable_client import (
-        _LEADS, _PRUEBAS, _BASE_URL, _headers, _patch, _get_records,
-        crear_prueba_fenix,
-    )
-    from agent.brain import extraer_datos_formulario
-
-    # 1. Obtener leads con PAGO PROMOMADRE
-    leads_pago: list[dict] = []
-    _offset_fix = None
-    async with _httpx_fix.AsyncClient(timeout=30) as _cl_fix:
-        while True:
-            _p_fix: dict = {"pageSize": "100", "filterByFormula": "{PAGO PROMOMADRE}=TRUE()"}
-            if _offset_fix:
-                _p_fix["offset"] = _offset_fix
-            _r_fix = await _cl_fix.get(f"{_BASE_URL}/{_LEADS}", headers=_headers(), params=_p_fix)
-            if _r_fix.status_code != 200:
-                return {"error": f"Airtable HTTP {_r_fix.status_code}"}
-            _d_fix = _r_fix.json()
-            for rec in _d_fix.get("records", []):
-                f = rec.get("fields", {})
-                leads_pago.append({
-                    "lead_id": rec["id"],
-                    "telefono": f.get("TELEFONO", ""),
-                    "nombre": f.get("NOMBRE RESPONSABLE", ""),
-                    "diagnostico": f.get("DIAGNOSTICO", []),
-                })
-            _offset_fix = _d_fix.get("offset")
-            if not _offset_fix:
-                break
-
-    resultados = []
-    for lead in leads_pago:
-        tel = lead["telefono"]
-        if not tel:
-            continue
-
-        # Buscar registros existentes en PRUEBA FENIX
-        pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{tel}'", max_records=10)
-
-        if pruebas:
-            # Ya tiene registros → corregir CONCEPTO y MONTO
-            for pr in pruebas:
-                pr_id = pr["id"]
-                pr_f = pr.get("fields", {})
-                concepto_actual = pr_f.get("CONCEPTO", "")
-                monto_actual = pr_f.get("MONTO", 0)
-                cambios = {}
-                if concepto_actual != "FENIXMAMA":
-                    cambios["CONCEPTO"] = "FENIXMAMA"
-                # MONTO=350000 solo en el primer registro (el que ya tiene monto o el primero)
-                if monto_actual != 350000 and pr == pruebas[0]:
-                    cambios["MONTO"] = 350000
-                elif pr != pruebas[0] and monto_actual != 0:
-                    # Registros secundarios (segundo hijo+) no llevan monto
-                    pass
-
-                if cambios:
-                    accion = f"PATCH {pr_id}: {cambios}"
-                    if dry_run.lower() not in ("true", "1", "si", "sí"):
-                        await _patch(_PRUEBAS, pr_id, cambios)
-                    resultados.append({"telefono": tel, "nombre_hijo": pr_f.get("NOMBRE HIJO", ""), "accion": accion})
-                else:
-                    resultados.append({"telefono": tel, "nombre_hijo": pr_f.get("NOMBRE HIJO", ""), "accion": "OK (ya correcto)"})
-        else:
-            # No tiene registro → crear con datos del historial
-            historial = await obtener_historial(tel, limite=50)
-            datos = await extraer_datos_formulario(historial)
-            padre = datos.get("padre") or {}
-            ninos = datos.get("ninos", [])
-            nom_r = padre.get("nombre", "")
-            ape_r = padre.get("apellido", "")
-
-            if ninos:
-                for i, n in enumerate(ninos):
-                    accion = f"CREAR: {n.get('nombre','')} {n.get('apellido','')} — FENIXMAMA, monto={'350000' if i==0 else '0'}"
-                    if dry_run.lower() not in ("true", "1", "si", "sí"):
-                        await crear_prueba_fenix(
-                            telefono=tel,
-                            nombre_responsable=nom_r,
-                            apellido_responsable=ape_r,
-                            nombre_hijo=n.get("nombre", ""),
-                            apellido_hijo=n.get("apellido", ""),
-                            edad_hijo="",
-                            fecha_reserva="(por definir)",
-                            hora="(por definir)",
-                            fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                            monto=350_000 if i == 0 else 0,
-                            concepto="FENIXMAMA",
-                            diagnostico_ids=lead.get("diagnostico", []),
-                            lead_record_id=lead["lead_id"],
-                        )
-                    resultados.append({"telefono": tel, "nombre_hijo": n.get("nombre", ""), "accion": accion})
-            else:
-                accion = "CREAR: sin datos de hijos en historial — FENIXMAMA, monto=350000"
-                if dry_run.lower() not in ("true", "1", "si", "sí"):
-                    await crear_prueba_fenix(
-                        telefono=tel,
-                        nombre_responsable=nom_r,
-                        apellido_responsable=ape_r,
-                        nombre_hijo="",
-                        apellido_hijo="",
-                        edad_hijo="",
-                        fecha_reserva="(por definir)",
-                        hora="(por definir)",
-                        monto=350_000,
-                        concepto="FENIXMAMA",
-                        diagnostico_ids=lead.get("diagnostico", []),
-                        lead_record_id=lead["lead_id"],
-                    )
-                resultados.append({"telefono": tel, "nombre_hijo": "(sin datos)", "accion": accion})
-
-    es_dry = dry_run.lower() in ("true", "1", "si", "sí")
-    return {"modo": "DRY RUN" if es_dry else "EJECUTADO", "total": len(resultados), "detalle": resultados}
 
 
 @app.get("/debug/revertir-pago-promomadre")
@@ -3187,54 +3061,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await guardar_mensaje(telefono, "assistant", _resp_pm)
             await proveedor.enviar_mensaje(telefono, _resp_pm)
 
-            # Guardar en Airtable (LEADS + PRUEBA FENIX)
+            # Guardar en Airtable (2.C-C4: LEADS + FAMILIA A PRUEBA — PRUEBA
+            # FENIX ya no se crea; el pago de la promo vive en PAGOS)
             try:
-                from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm, _get_records
+                from agent.airtable_client import obtener_lead_record_id as _olri_pm, _patch as _p_pm, _LEADS as _L_pm
                 _rec_pm = await _olri_pm(telefono)
                 if _rec_pm:
                     await _p_pm(_L_pm, _rec_pm, {"CONVERSION": ["PAGO"], "PROMOMADRE": True, "PAGO PROMOMADRE": True})
-                # Crear PRUEBA FENIX con concepto FENIXMAMA
-                _lr_pm = await _get_records(_L_pm, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                _lead_id_pm = _lr_pm[0]["id"] if _lr_pm else None
-                _diag_pm = _lr_pm[0].get("fields", {}).get("DIAGNOSTICO", []) if _lr_pm else []
                 datos_pm = await extraer_datos_formulario(await obtener_historial(telefono))
                 padre_pm = datos_pm.get("padre") or {}
                 ninos_pm = datos_pm.get("ninos", [])
                 _nom_pm = padre_pm.get("nombre", "")
                 _ape_pm = padre_pm.get("apellido", "")
-                if ninos_pm:
-                    for i_pm, n_pm in enumerate(ninos_pm):
-                        await crear_prueba_fenix(
-                            telefono=telefono,
-                            nombre_responsable=_nom_pm,
-                            apellido_responsable=_ape_pm,
-                            nombre_hijo=n_pm.get("nombre", ""),
-                            apellido_hijo=n_pm.get("apellido", ""),
-                            edad_hijo="",
-                            fecha_reserva="(por definir)",
-                            hora="(por definir)",
-                            fecha_nacimiento=n_pm.get("fecha_nacimiento", ""),
-                            monto=350_000 if i_pm == 0 else 0,
-                            concepto="FENIXMAMA",
-                            diagnostico_ids=_diag_pm,
-                            lead_record_id=_lead_id_pm,
-                        )
-                else:
-                    await crear_prueba_fenix(
-                        telefono=telefono,
-                        nombre_responsable=_nom_pm,
-                        apellido_responsable=_ape_pm,
-                        nombre_hijo="",
-                        apellido_hijo="",
-                        edad_hijo="",
-                        fecha_reserva="(por definir)",
-                        hora="(por definir)",
-                        monto=350_000,
-                        concepto="FENIXMAMA",
-                        diagnostico_ids=_diag_pm,
-                        lead_record_id=_lead_id_pm,
-                    )
-                # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 1) ──
+                # ── FAMILIA A PRUEBA + NIÑOS (registro primario) ──
                 try:
                     from agent.airtable_client import crear_familia_a_prueba as _cfap_pm
                     _ninos_pm_fam = [
@@ -3254,7 +3093,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     logger.info(f"[PROMO-MADRE] FAMILIA A PRUEBA: {_fam_id_pm}, niños={_fam_ninos_pm}")
                 except Exception as _e_fam_pm:
                     logger.error(f"[PROMO-MADRE] Error creando FAMILIA A PRUEBA: {_e_fam_pm}")
-                logger.info(f"[PROMO-MADRE] PRUEBA FENIX creada con concepto FENIXMAMA para {telefono}")
             except Exception as _e_pm:
                 logger.error(f"[PROMO-MADRE] Error Airtable: {_e_pm}")
 
