@@ -3792,90 +3792,64 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         _tool_names_used = {ta["tool"] for ta in _tool_acciones} if _tool_acciones else set()
 
         # ── Detectar registro de nombre del padre/madre por Aurora ─────
+        # F7.b: delega en la tool registrar_familia (tutor por CELL LIMPIO,
+        # FAMILIAS ya no se escribe).
         if agent_actual == "aurora" and "REGISTRO PADRE:" in respuesta and "registrar_familia" not in _tool_names_used:
             try:
                 reg_padre = re.search(r'REGISTRO PADRE:\s*(.+?)(?:\n|$)', respuesta)
                 if reg_padre:
                     nombre_completo = reg_padre.group(1).strip()
                     partes_nombre = nombre_completo.split(maxsplit=1)
-                    nombre_p = partes_nombre[0].title() if partes_nombre else ""
-                    apellido_p = partes_nombre[1].title() if len(partes_nombre) > 1 else ""
-
-                    # Deducir si es papá o mamá por el nombre
-                    from agent.airtable_client import deducir_genero
-                    genero = deducir_genero(nombre_p)
-                    es_madre = genero == "MUJER"
-
-                    # Actualizar FAMILIA en Airtable
-                    fam_id = await obtener_familia_id(telefono)
-                    if not fam_id:
-                        fam = await buscar_familia_por_telefono(telefono)
-                        if fam:
-                            fam_id = fam["id"]
-                            await guardar_familia_id(telefono, fam_id)
-                    if fam_id:
-                        from agent.airtable_client import _patch, _FAMILIAS
-                        if es_madre:
-                            campos_fam = {
-                                "NOMBRE MADRE": nombre_p, "CELL MADRE": telefono,
-                                "CELL PADRE": "",  # limpiar el temporal
-                            }
-                            if apellido_p:
-                                campos_fam["APELLIDO MADRE"] = apellido_p
-                            rol = "MADRE"
-                        else:
-                            campos_fam = {
-                                "NOMBRE PADRE": nombre_p, "CELL PADRE": telefono,
-                                "CELL MADRE": "",  # limpiar el temporal
-                            }
-                            if apellido_p:
-                                campos_fam["APELLIDO PADRE"] = apellido_p
-                            rol = "PADRE"
-                        await _patch(_FAMILIAS, fam_id, campos_fam)
-                        logger.info(f"[REGISTRO] {rol} actualizado: {nombre_p} {apellido_p} → familia {fam_id}")
-                        # Escritura dual (EJE B) — reflejar en TUTORES FENIX. Aislado, nunca rompe el registro.
-                        try:
-                            from agent.airtable_client import crear_o_actualizar_tutor
-                            persona = {"nombre": nombre_p, "apellido": apellido_p, "telefono": telefono}
-                            await crear_o_actualizar_tutor(persona, "Mamá" if es_madre else "Papá", familia_id=fam_id)
-                        except Exception as e:
-                            logger.error(f"[TUTORES] dual-write en registro inline falló: {e}")
+                    nombre_p = partes_nombre[0] if partes_nombre else ""
+                    apellido_p = partes_nombre[1] if len(partes_nombre) > 1 else ""
+                    if nombre_p:
+                        from agent.tools.registro import registrar_familia as _reg_fam_inline
+                        _res_reg = await _reg_fam_inline(telefono, nombre_p, apellido_p)
+                        logger.info(f"[REGISTRO] inline: {_res_reg.get('texto') or _res_reg.get('message')}")
             except Exception as e:
                 logger.error(f"[REGISTRO] Error actualizando nombre padre/madre: {e}")
 
         # ── Detectar registro de hijos por Aurora ─────────────────────────
+        # F7.b: delega en la tool registrar_hijo (niño linkeado al tutor).
         if agent_actual == "aurora" and "REGISTRO HIJO:" in respuesta and "registrar_hijo" not in _tool_names_used:
             try:
-                familia = await buscar_familia_por_telefono(telefono)
-                if familia:
-                    familia_id = familia["id"]
-                    registros = re.findall(
-                        r'REGISTRO HIJO:\s*(.+?)(?:\n|$)', respuesta
-                    )
-                    for reg in registros:
-                        # Parsear: "nombre apellido, nac: fecha, CI: ci, talla: talla"
-                        datos_nino = {}
-                        # Nombre y apellido (antes de la primera coma)
-                        partes = [p.strip() for p in reg.split(",")]
-                        if partes:
-                            nombre_parts = partes[0].split()
-                            if len(nombre_parts) >= 2:
-                                datos_nino["nombre"] = nombre_parts[0]
-                                datos_nino["apellido"] = " ".join(nombre_parts[1:])
-                            elif len(nombre_parts) == 1:
-                                datos_nino["nombre"] = nombre_parts[0]
-                        for parte in partes[1:]:
-                            parte_lower = parte.lower().strip()
-                            if parte_lower.startswith("nac:"):
-                                datos_nino["fecha_nacimiento"] = parte.split(":", 1)[1].strip()
-                            elif parte_lower.startswith("ci:"):
-                                datos_nino["ci"] = parte.split(":", 1)[1].strip()
-                            elif parte_lower.startswith("talla:"):
-                                datos_nino["talla_remera"] = parte.split(":", 1)[1].strip()
-                        if datos_nino.get("nombre"):
-                            nino_id = await crear_nino(datos_nino, familia_id)
-                            if nino_id:
-                                logger.info(f"[AURORA] Niño creado: {datos_nino.get('nombre')} para familia {familia_id}")
+                from agent.tools.registro import registrar_hijo as _reg_hijo_inline
+                registros = re.findall(
+                    r'REGISTRO HIJO:\s*(.+?)(?:\n|$)', respuesta
+                )
+                for reg in registros:
+                    # Parsear: "nombre apellido, nac: fecha, CI: ci, talla: talla"
+                    datos_nino = {}
+                    # Nombre y apellido (antes de la primera coma)
+                    partes = [p.strip() for p in reg.split(",")]
+                    if partes:
+                        nombre_parts = partes[0].split()
+                        if len(nombre_parts) >= 2:
+                            datos_nino["nombre"] = nombre_parts[0]
+                            datos_nino["apellido"] = " ".join(nombre_parts[1:])
+                        elif len(nombre_parts) == 1:
+                            datos_nino["nombre"] = nombre_parts[0]
+                    for parte in partes[1:]:
+                        parte_lower = parte.lower().strip()
+                        if parte_lower.startswith("nac:"):
+                            datos_nino["fecha_nacimiento"] = parte.split(":", 1)[1].strip()
+                        elif parte_lower.startswith("ci:"):
+                            datos_nino["ci"] = parte.split(":", 1)[1].strip()
+                        elif parte_lower.startswith("talla:"):
+                            datos_nino["talla_remera"] = parte.split(":", 1)[1].strip()
+                    if datos_nino.get("nombre"):
+                        _res_h = await _reg_hijo_inline(
+                            telefono,
+                            datos_nino["nombre"],
+                            apellido=datos_nino.get("apellido"),
+                            fecha_nacimiento=datos_nino.get("fecha_nacimiento"),
+                            ci=datos_nino.get("ci"),
+                            talla_remera=datos_nino.get("talla_remera"),
+                        )
+                        if _res_h.get("registrado"):
+                            logger.info(f"[AURORA] Niño creado: {datos_nino.get('nombre')} (tutor {_res_h.get('tutor_id')})")
+                        else:
+                            logger.warning(f"[AURORA] Niño NO creado ({datos_nino.get('nombre')}): {_res_h.get('message')}")
             except Exception as e:
                 logger.error(f"[AURORA] Error creando niño: {e}")
 
@@ -4741,22 +4715,23 @@ async def telegram_webhook(request: Request):
             return {"status": "ok"}
 
         # /registro — verificar datos o registrar familia desde Telegram
+        # F7.b: resuelve el grupo familiar (tutor → hijos, fallback legacy);
+        # si no hay nadie, Aurora pide el nombre y el tutor se crea recién con
+        # la respuesta (registrar_familia) — ya no se crea una FAMILIA vacía.
         if texto_tg.strip() == "/registro":
             logger.info(f"[/registro] telefono={telefono} thread_id={thread_id} chat_id={chat_id}")
-            familia = await buscar_familia_por_telefono(telefono)
-            logger.info(f"[/registro] familia={'ENCONTRADA: '+familia.get('fields',{}).get('FAMILIA','') if familia else 'NO ENCONTRADA'}")
+            from agent.airtable_client import obtener_grupo_familiar as _ogf_reg
+            grupo_reg = await _ogf_reg(telefono)
+            logger.info(f"[/registro] grupo={'ENCONTRADO' if grupo_reg else 'NO ENCONTRADO'}")
             # Preparar Aurora para manejar las respuestas
             await actualizar_estado_flags(telefono, registro_ya_iniciado=False)
             await asignar_variante(telefono)
             await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
             await reactivar_dorita(telefono)
 
-            if familia:
-                campos = familia.get("fields", {})
-                await guardar_familia_id(telefono, familia["id"])
-
+            if grupo_reg:
                 # Nombre para saludar (apodo o primer nombre) — desde TUTORES FENIX
-                _tutores_wa = await obtener_tutores_de_familia(familia["id"])
+                _tutores_wa = grupo_reg.get("tutores", [])
                 _t_wa = next(
                     (t for t in _tutores_wa if telefono in (t.get("cell"), t.get("cell_limpio"))),
                     None,
@@ -4769,7 +4744,7 @@ async def telegram_webhook(request: Request):
                     _nombre_wa = ""
 
                 # Armar resumen de datos para WhatsApp
-                hijos = await obtener_ninos_de_familia(familia["id"])
+                hijos = grupo_reg.get("hijos", [])
                 datos_hijos = ""
                 for h in hijos:
                     datos_hijos += f"\n👧 {h['nombre']} {h['apellido']}"
@@ -4812,10 +4787,8 @@ async def telegram_webhook(request: Request):
                 # Mostrar en Telegram el mensaje exacto que se envió
                 await enviar_a_topic(thread_id, f"🌟 AURORA: {msg_wa}", telefono=telefono, group_override=_tg_grp)
             else:
-                # No registrado → crear FAMILIA mínima + mandar formulario
-                fam_id_nuevo = await crear_familia({"padre": {"telefono": telefono}, "madre": {"telefono": telefono}})
-                if fam_id_nuevo:
-                    await guardar_familia_id(telefono, fam_id_nuevo)
+                # No registrado → Aurora pide el nombre; el tutor se crea con la
+                # respuesta (registrar_familia). Ya no se crea FAMILIA vacía (F7.b).
                 msg_registro = (
                     "Hola! 🤗 Soy Aurora 🌟, asistente de Fenix Kids.\n"
                     "Bienvenido/a a la familia Fenix! 🌳 Necesito registrar tus datos.\n"
