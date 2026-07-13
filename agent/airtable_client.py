@@ -396,6 +396,14 @@ async def vincular_familia_a_lead(telefono: str, familia_record_id: str) -> bool
     return await _patch(_LEADS, record_id, {"FAMILIA": [familia_record_id]})
 
 
+async def vincular_tutor_a_lead(telefono: str, tutor_id: str) -> bool:
+    """Vincula el LEAD con su TUTOR (niño-eje, F7.b — reemplaza el link FAMILIA)."""
+    record_id = await obtener_lead_record_id(telefono)
+    if not record_id:
+        return False
+    return await _patch(_LEADS, record_id, {"TUTOR FENIX": [tutor_id]})
+
+
 async def eliminar_lead(telefono: str) -> bool:
     """Elimina el registro de LEADS para este teléfono."""
     record_id = await obtener_lead_record_id(telefono)
@@ -1403,62 +1411,84 @@ async def crear_familia_completa(
     return familia_id, nino_ids
 
 
-async def crear_familia_a_prueba(
+async def crear_grupo_a_prueba(
     telefono: str,
-    nombre_padre: str,
-    apellido_padre: str,
+    nombre_tutor: str,
+    apellido_tutor: str = "",
     ninos: list[dict] | None = None,
 ) -> tuple[str | None, list[str]]:
     """
-    Crea (o reutiliza) una FAMILIA en estado A PRUEBA para un lead que pagó/agendó
-    la clase de prueba, con sus NIÑOS vinculados.
+    Alta niño-eje (F7.b) del lead que pagó/agendó la clase de prueba:
+    TUTOR (idempotente por CELL LIMPIO) + NIÑOS con ESTADO='A PRUEBA'
+    linkeados directo al tutor (PADRE/MADRE). NO crea registro en FAMILIAS.
 
-    El estado A PRUEBA hace que el router siga atendiendo al lead con Ivan
-    (ver familia_es_activa); recién al inscribirse pasa a ACTIVO → Aurora.
-    Registro primario del lead que pagó (2.C: PRUEBA FENIX retirada).
+    El router niño-eje (es_cliente_activo_por_telefono) mantiene al lead con
+    Ivan mientras todos sus hijos estén A PRUEBA; al inscribirse pasan a
+    ACTIVO → Aurora. Reemplaza a crear_familia_a_prueba.
+
+    Idempotente: si el tutor del teléfono ya tiene hijos linkeados (cliente o
+    prueba previa), no crea nada — misma semántica que la reutilización de
+    familia del flujo viejo. Ficha de tutor sin hijos → se completa.
 
     ninos = [{"nombre", "apellido", "fecha_nacimiento", "sexo"}, ...]
-    Retorna (familia_id, [nino_ids]). Si la familia ya existe, NO la duplica.
+    Retorna (tutor_id, [nino_ids nuevos]).
     """
-    from agent.ab_test import guardar_familia_id
+    from agent.ab_test import actualizar_estado_flags
 
-    # Reutilizar familia existente (no duplicar si ya se creó antes)
-    familia_existente = await buscar_familia_por_telefono(telefono)
-    if familia_existente:
-        familia_id = familia_existente["id"]
-        await guardar_familia_id(telefono, familia_id)
-        logger.info(f"[A PRUEBA] FAMILIA ya existe para {telefono}: {familia_id}")
-        return familia_id, []
+    nombre_tutor = (nombre_tutor or "").strip() or "Lead"
+    apellido_tutor = (apellido_tutor or "").strip()
 
-    familia_id = await crear_familia({
-        "padre": {
-            "nombre": nombre_padre,
-            "apellido": apellido_padre,
-            "telefono": telefono,
-        }
-    })
-    if not familia_id:
-        logger.error(f"[A PRUEBA] No se pudo crear FAMILIA para {telefono}")
+    tutor_existente = await buscar_tutor_por_telefono(telefono)
+    parentesco = ""
+    tutor_id = None
+    if tutor_existente:
+        tf = tutor_existente.get("fields", {}) or {}
+        tutor_id = tutor_existente["id"]
+        parentesco = (tf.get("PARENTESCO") or "").strip()
+        hijos_prev = (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or [])
+        if hijos_prev:
+            await actualizar_estado_flags(telefono, tutor_id=tutor_id)
+            logger.info(f"[A PRUEBA] Tutor ya existe con hijos para {telefono}: {tutor_id} — reutilizo")
+            return tutor_id, []
+        # Ficha sin hijos → completar el nombre si el existente está vacío o es 'Lead'
+        _nom_prev = (tf.get("NOMBRE") or "").strip()
+        if nombre_tutor != "Lead" and (not _nom_prev or _nom_prev.lower() == "lead"):
+            _campos_upd = {"NOMBRE": nombre_tutor}
+            if apellido_tutor:
+                _campos_upd["APELLIDO"] = apellido_tutor
+            await _patch(_TUTORES, tutor_id, _campos_upd)
+    else:
+        # Guard legacy: familia vieja con hijos y sin registro de tutor para este
+        # cel → no duplicar niños; el fallback de lecturas la sigue resolviendo.
+        familia_legacy = await buscar_familia_por_telefono(telefono)
+        if familia_legacy and (familia_legacy.get("fields", {}) or {}).get("NIÑOS FENIX"):
+            logger.info(f"[A PRUEBA] Familia legacy con hijos para {telefono}: {familia_legacy['id']} — no creo grupo nuevo")
+            return None, []
+        genero = deducir_genero(nombre_tutor)
+        parentesco = "Mamá" if genero == "MUJER" else "Papá"
+        tutor_id = await crear_o_actualizar_tutor(
+            {"nombre": nombre_tutor, "apellido": apellido_tutor, "telefono": telefono},
+            parentesco,
+        )
+    if not tutor_id:
+        logger.error(f"[A PRUEBA] No se pudo crear el TUTOR para {telefono}")
         return None, []
 
-    # Estado A PRUEBA → el router la mantiene con Ivan (no Aurora)
-    await _patch(_FAMILIAS, familia_id, {"ESTADO PLAN": "A PRUEBA"})
+    # Estado local + vínculo al LEAD (reemplaza el link FAMILIA)
+    await actualizar_estado_flags(telefono, tutor_id=tutor_id)
+    await vincular_tutor_a_lead(telefono, tutor_id)
 
-    # Estado local + vínculo al LEAD
-    await guardar_familia_id(telefono, familia_id)
-    await vincular_familia_a_lead(telefono, familia_id)
-
-    # NIÑOS vinculados
+    _link = {"madre_id": tutor_id} if parentesco == "Mamá" else {"padre_id": tutor_id}
     nino_ids = []
     for n in (ninos or []):
         if not n.get("nombre"):
             continue
-        nid = await crear_nino(n, familia_id)
+        nid = await crear_nino(n, estado="A PRUEBA", **_link)
         if nid:
             nino_ids.append(nid)
 
-    logger.info(f"[A PRUEBA] FAMILIA creada para {telefono}: familia={familia_id}, niños={nino_ids}")
-    return familia_id, nino_ids
+    logger.info(f"[A PRUEBA] Grupo niño-eje creado para {telefono}: tutor={tutor_id}, niños={nino_ids}")
+    return tutor_id, nino_ids
 
 
 async def registrar_pago_fenix(

@@ -23,7 +23,7 @@ from agent.pagos import (
     formatear_monto, monto_prueba_por_hijos_detallado,
 )
 from agent.airtable_client import (
-    actualizar_conversion_lead, crear_familia_a_prueba,
+    actualizar_conversion_lead, crear_grupo_a_prueba,
     buscar_familia_por_telefono, registrar_pago_fenix,
 )
 from agent.detectores_conv import (
@@ -129,35 +129,36 @@ async def _procesar_comprobante(
     _fam_id_factura = None
     if tipo == "prueba" and monto > 0:
         try:
+            # Ficha legacy (si existe) — solo como pista de resolución del pago
             _fam_id = await obtener_familia_id(telefono)
             if not _fam_id:
                 _fam = await buscar_familia_por_telefono(telefono)
                 _fam_id = _fam["id"] if _fam else None
             if not _fam_id:
-                # La familia todavía no existe (pago directo) → crearla A PRUEBA
-                # (idempotente) con los datos del historial para poder registrar el pago.
+                # El lead no tiene ficha → alta niño-eje (F7.b): TUTOR + NIÑOS
+                # A PRUEBA, sin FAMILIAS. Idempotente.
                 _pn = (nombre_padre or "").split()
                 _ninos_pago = []
                 if nombre_hijo and nombre_hijo != "no mencionó":
                     _ninos_pago = [{"nombre": nombre_hijo}]
-                _fam_id, _ = await crear_familia_a_prueba(
+                _tutor_id_pago, _ = await crear_grupo_a_prueba(
                     telefono=telefono,
-                    nombre_padre=_pn[0] if _pn else (nombre_padre or ""),
-                    apellido_padre=" ".join(_pn[1:]) if len(_pn) > 1 else "",
+                    nombre_tutor=_pn[0] if _pn else (nombre_padre or ""),
+                    apellido_tutor=" ".join(_pn[1:]) if len(_pn) > 1 else "",
                     ninos=_ninos_pago,
                 )
-            if _fam_id:
-                # Resolver el LEAD para vincular el PAGO también al lead (verlo desde LEADS FENIX)
-                from agent.airtable_client import _get_records, _LEADS
-                _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
-                _pago_rid_factura = await registrar_pago_fenix(
-                    _fam_id, monto, concepto=concepto_pago, metodo=metodo_pago,
-                    lead_id=_lead_id_pago, telefono=telefono,
-                )
-                _fam_id_factura = _fam_id
-            else:
-                logger.warning(f"[PAGOS] No se pudo registrar PAGO (sin familia) para {telefono}")
+                if not _tutor_id_pago:
+                    logger.warning(f"[PAGOS] Alta de grupo A PRUEBA falló para {telefono} — registro el pago igual")
+            # registrar_pago_fenix resuelve niños/pagador por el grupo
+            # familiar del teléfono (fallback legacy con _fam_id adentro)
+            from agent.airtable_client import _get_records, _LEADS
+            _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+            _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
+            _pago_rid_factura = await registrar_pago_fenix(
+                _fam_id or "", monto, concepto=concepto_pago, metodo=metodo_pago,
+                lead_id=_lead_id_pago, telefono=telefono,
+            )
+            _fam_id_factura = _fam_id
         except Exception as e:
             logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
 
@@ -355,8 +356,8 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         # Actualizar conversión
         await actualizar_conversion_lead(telefono, "GRATIS" if es_gratis else "PAGO")
 
-        # ── FAMILIA A PRUEBA + NIÑOS (2.C-C3: registro primario — PRUEBA FENIX
-        # ya no se crea). El lead sigue con Ivan (router) hasta inscribirse; el
+        # ── GRUPO A PRUEBA: TUTOR + NIÑOS (F7.b: alta niño-eje — FAMILIAS ya
+        # no se crea). El lead sigue con Ivan (router) hasta inscribirse; el
         # monto se registra en PAGOS recién cuando llega el comprobante.
         try:
             if ninos_form:
@@ -371,15 +372,15 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
             else:
                 _nh_fam = _extraer_nombre_hijo_historial(historial_completo)
                 _ninos_familia = [{"nombre": _nh_fam}] if _nh_fam and _nh_fam != "no mencionó" else []
-            _fam_id, _fam_ninos = await crear_familia_a_prueba(
+            _tutor_id_ag, _grupo_ninos = await crear_grupo_a_prueba(
                 telefono=telefono,
-                nombre_padre=nombre_resp,
-                apellido_padre=apellido_resp,
+                nombre_tutor=nombre_resp,
+                apellido_tutor=apellido_resp,
                 ninos=_ninos_familia,
             )
-            logger.info(f"[AGENDA] FAMILIA A PRUEBA: {_fam_id}, niños={_fam_ninos}")
+            logger.info(f"[AGENDA] Grupo A PRUEBA: tutor={_tutor_id_ag}, niños={_grupo_ninos}")
         except Exception as e:
-            logger.error(f"[AGENDA] Error creando FAMILIA A PRUEBA: {e}")
+            logger.error(f"[AGENDA] Error creando grupo A PRUEBA: {e}")
 
         # ── Determinar cantidad de hijos para el mensaje ──────────────────
         cant_hijos = len(ninos_form) if ninos_form else 1

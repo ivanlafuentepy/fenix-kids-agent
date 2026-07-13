@@ -2943,9 +2943,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 ninos_pm = datos_pm.get("ninos", [])
                 _nom_pm = padre_pm.get("nombre", "")
                 _ape_pm = padre_pm.get("apellido", "")
-                # ── FAMILIA A PRUEBA + NIÑOS (registro primario) ──
+                # ── GRUPO A PRUEBA: TUTOR + NIÑOS (F7.b, registro primario niño-eje) ──
                 try:
-                    from agent.airtable_client import crear_familia_a_prueba as _cfap_pm
+                    from agent.airtable_client import crear_grupo_a_prueba as _cgap_pm
                     _ninos_pm_fam = [
                         {
                             "nombre": n.get("nombre", ""),
@@ -2954,15 +2954,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         }
                         for n in ninos_pm if n.get("nombre")
                     ] if ninos_pm else []
-                    _fam_id_pm, _fam_ninos_pm = await _cfap_pm(
+                    _tutor_id_pm, _grupo_ninos_pm = await _cgap_pm(
                         telefono=telefono,
-                        nombre_padre=_nom_pm,
-                        apellido_padre=_ape_pm,
+                        nombre_tutor=_nom_pm,
+                        apellido_tutor=_ape_pm,
                         ninos=_ninos_pm_fam,
                     )
-                    logger.info(f"[PROMO-MADRE] FAMILIA A PRUEBA: {_fam_id_pm}, niños={_fam_ninos_pm}")
+                    logger.info(f"[PROMO-MADRE] Grupo A PRUEBA: tutor={_tutor_id_pm}, niños={_grupo_ninos_pm}")
                 except Exception as _e_fam_pm:
-                    logger.error(f"[PROMO-MADRE] Error creando FAMILIA A PRUEBA: {_e_fam_pm}")
+                    logger.error(f"[PROMO-MADRE] Error creando grupo A PRUEBA: {_e_fam_pm}")
             except Exception as _e_pm:
                 logger.error(f"[PROMO-MADRE] Error Airtable: {_e_pm}")
 
@@ -4104,9 +4104,9 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 _es_formulario_completo = False
                 await actualizar_estado_flags(telefono, prueba_creada=True)
                 try:
-                    # Asegurar FAMILIA A PRUEBA + NIÑOS con los datos frescos
-                    # del historial (idempotente)
-                    from agent.airtable_client import crear_familia_a_prueba
+                    # Asegurar GRUPO A PRUEBA (tutor + niños, F7.b) con los
+                    # datos frescos del historial (idempotente)
+                    from agent.airtable_client import crear_grupo_a_prueba
                     _hist_upd = await obtener_historial(telefono, limite=40)
                     _datos_upd = await extraer_datos_formulario(_hist_upd)
                     _padre_upd = _datos_upd.get("padre") or {}
@@ -4116,13 +4116,13 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                          "fecha_nacimiento": n.get("fecha_nacimiento", "")}
                         for n in _ninos_upd if n.get("nombre")
                     ]
-                    _fam_id_upd, _ = await crear_familia_a_prueba(
+                    _tutor_id_upd, _ = await crear_grupo_a_prueba(
                         telefono=telefono,
-                        nombre_padre=_padre_upd.get("nombre", ""),
-                        apellido_padre=_padre_upd.get("apellido", ""),
+                        nombre_tutor=_padre_upd.get("nombre", ""),
+                        apellido_tutor=_padre_upd.get("apellido", ""),
                         ninos=_ninos_fam_upd,
                     )
-                    logger.info(f"[FORMULARIO] FAMILIA A PRUEBA (guard): {_fam_id_upd}")
+                    logger.info(f"[FORMULARIO] Grupo A PRUEBA (guard): tutor={_tutor_id_upd}")
                     # Reenviar el QR de las reservas futuras (antes el guard lo cortaba)
                     try:
                         from agent.qr import generar_qr
@@ -4206,11 +4206,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     apellido_resp = padre_data.get("apellido", "") or (_np.split()[1] if _np and " " in _np else "")
                     ninos_form = datos_form.get("ninos", [])
 
-                    # FAMILIA A PRUEBA + NIÑOS (idempotente — el lead ya puede
-                    # tenerla desde el pago). Aurora lo sigue atendiendo en modo
-                    # leads hasta que se inscriba.
+                    # GRUPO A PRUEBA: TUTOR + NIÑOS (F7.b, idempotente — el lead
+                    # ya puede tenerlo desde el pago). Aurora lo sigue atendiendo
+                    # en modo leads hasta que se inscriba.
                     try:
-                        from agent.airtable_client import crear_familia_a_prueba
+                        from agent.airtable_client import crear_grupo_a_prueba
                         if ninos_form:
                             _ninos_familia = [
                                 {
@@ -4222,15 +4222,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                             ]
                         else:
                             _ninos_familia = [{"nombre": _hijo}] if _hijo else []
-                        _fam_id_pf, _fam_ninos_pf = await crear_familia_a_prueba(
+                        _tutor_id_pf, _grupo_ninos_pf = await crear_grupo_a_prueba(
                             telefono=telefono,
-                            nombre_padre=nombre_resp,
-                            apellido_padre=apellido_resp,
+                            nombre_tutor=nombre_resp,
+                            apellido_tutor=apellido_resp,
                             ninos=_ninos_familia,
                         )
-                        logger.info(f"[FORMULARIO] FAMILIA A PRUEBA: {_fam_id_pf}, niños={_fam_ninos_pf}")
+                        logger.info(f"[FORMULARIO] Grupo A PRUEBA: tutor={_tutor_id_pf}, niños={_grupo_ninos_pf}")
                     except Exception as _e_fam_pf:
-                        logger.error(f"[FORMULARIO] Error creando FAMILIA A PRUEBA: {_e_fam_pf}")
+                        logger.error(f"[FORMULARIO] Error creando grupo A PRUEBA: {_e_fam_pf}")
 
                     # RESERVA real + QR si la reserva ya se confirmó con fecha+hora
                     _reserva_ids_pf: list[str] = []

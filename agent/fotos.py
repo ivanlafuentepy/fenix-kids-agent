@@ -249,7 +249,7 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
             return list(variantes)
 
         # Buscar SOLO en NIÑOS FENIX (2.C-C6: PRUEBA FENIX retirada — los niños
-        # de prueba también viven en NIÑOS via crear_familia_a_prueba).
+        # de prueba también viven en NIÑOS via crear_grupo_a_prueba).
         # Cada palabra ("dara isabella oviedo rodriguez") debe aparecer en algún
         # campo → AND de palabras; cada palabra matchea por cualquiera de sus
         # variantes de acento → OR de variantes sobre NOMBRE/APODO/APELLIDO.
