@@ -347,3 +347,30 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Falta solo el paso 3** (migrar el CÓDIGO a los campos nuevos) — espera al 18/07 porque toca los mismos archivos que la migración PRUEBA.
 
 **Commits:** `16e2f46` M1+M2 migración · (otros repos: NEO `42213b8`, Dorita `f6b26af`, Genesis `ea6f67f`).
+
+---
+
+## 2026-07-13 (madrugada 3) — Migración FAMILIAS niño-eje entera + PRUEBA FENIX archivada
+
+**Iván:** Vamos con la codificación de la migración.
+**Fénix:** Leí las memorias, lancé 3 agentes exploradores (router/contexto, dinero, juego+docs) y armé el paso 3 en fases. Iván levantó la espera al 18/07: "quiero la migración completa ahora". Ejecuté el **núcleo (C0-C6)**: campo `NIÑOS.ESTADO` + backfill, pagos dual-write `NIÑOS FENIX`+`PAGA`, guards por unión, confirmación sábado por `NIÑOS.AL DÍA?`, reservas del contexto por links del niño (mató bug A8), router `es_cliente_activo_por_telefono`. 6 deploys verificados uno por uno.
+
+**Iván:** ¿Ya se puede eliminar Familia y Prueba? (no lo voy a hacer, pero ¿ya se podría?)
+**Fénix:** No todavía — le mostré exactamente qué las sigue enchufando: FAMILIAS aún se escribe (rompería el pago de leads), PRUEBA tiene histórico no copiado (40 PRESENTE, 11 caras). Le pedí decidir el orden.
+
+**Iván:** Decime el paso a paso para llegar a eso.
+**Fénix:** Le di el roadmap por tabla (PRUEBA: 2.C→2.D; FAMILIAS: F2→F7). Ejecuté **F2+F3**: `/api/*`, resúmenes, broadcasts, contexto Aurora y menú inscripto (`obtener_grupo_familiar`), nombre del topic — todo niño-eje. 5 deploys.
+
+**Iván:** ¿Qué queda pendiente? / Vamos con todo, simulá el sábado 18 y arrancá.
+**Fénix:** Simulé el sábado 18 en seco (4 flujos + /api de prod: todo cuadra), borré la reserva duplicada de Fiorella 11/07, y ejecuté **2.C completa** (C1→C6, cortar TODAS las escrituras a PRUEBA; "cargar familia" ahora matchea sobre FAMILIAS A PRUEBA+NIÑOS). Cacé un bug latente: `buscar_reservas_familia` con `FIND(record_id)` sobre link **nunca matcheaba** (verificado con 2 reservas). 6 deploys.
+
+**Iván:** ¿Diferencia entre código por niño o tutor? → **por tutor.**
+**Fénix:** Le expliqué las dos opciones (por tutor = UX intacta, links ya repartidos sobreviven). Eligió tutor. Ejecuté **F5**: juego con `TUTORES.CODIGO`, hijos por links del tutor. 0 códigos repartidos → sin backfill. Verificado con el tutor de Iván (código 43E8EW).
+
+**Iván:** Lo del robot de facturas: no es externo, lo hiciste vos también, arreglalo.
+**Fénix:** Cierto — es `Projects\facturador-set` (corre en la PC de Iván). Ejecuté **F6**: datos fiscales en `TUTORES.FACTURA`, factura linkea `TUTOR`, robot lee lookup `TUTOR RUC` (commit `ccb5089` en su repo, con fallback legacy). Backfill 3 datos + 1 factura. Loop de envío del PDF contacta por tutor.
+
+**Iván:** No entiendo qué falta en Prueba y Familia. ¿Simplemente que yo elimine? → Solucioná todo eso, PRUEBA copiá todo, FAMILIA terminá el trabajo.
+**Fénix:** Ejecuté **2.D**: backup JSON (75+8 → `backups/2026-07-13/`), rescaté el histórico (`scripts/migrar_historico_prueba.py`: 34 reservas con PRESENTE + 11 caras re-indexadas en Rekognition, idempotente), borré **−419 líneas** de código legacy, y **renombré la tabla a "PRUEBA FENIX LEGACY"** (canario ~30 días). "Resumen anuncios" migró a PAGOS. Después **F7.a**: PAGOS y FACTURAS ya no linkean FAMILIA FENIX. Le expliqué que F7.b (las altas todavía crean FAMILIAS) es un refactor de ~10 piezas que dejo mapeado para la próxima — tocarlo al final de 20 deploys es como se rompen producciones.
+
+**Commits (23 en fenix, C0→F7.a):** `f943b71` C0 · `1ead97a` C1 · `711e796` C2 · `1322e51` C3 · `c90fcec` C4 · `0b9a3e2` C5 · `758fb8c` C6 · `c655a4c` docs · `64839e5` F2.a · `426d7f8` F2.b · `ec1a2e0` F2.c · `258fab0` F3 · `87cd6f1` F3.b · `203d180` 2.C-C1 · `7541d69` C5 · `5eddd05` C2 · `9ac7e50` C3 · `1388b0c` C4 · `82bf6c3` C6 · `0d2f5e5` F5 · `4838cda` F6 · `69c3589` 2.D backfill · `4c061b0` 2.D limpieza · `7ab5097` F7.a. **Robot facturador:** `ccb5089` (master). **Airtable:** tabla renombrada a PRUEBA FENIX LEGACY.

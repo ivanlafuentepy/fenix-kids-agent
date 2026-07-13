@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-07-13 — `FIND(record_id, ARRAYJOIN({campo_link}))` SIEMPRE da 0 — funciones rotas en prod sin que nadie lo note
+
+**Síntoma:** durante la migración FAMILIAS descubrí que `buscar_reservas_familia` y
+`cancelar_reservas_familia_fecha` (airtable_client) devolvían **0 resultados aunque la familia
+tuviera reservas reales** — verificado en vivo: una familia con 2 reservas futuras → `[]`. La
+señal de reagendamiento B7 (main.py) dependía de `buscar_reservas_familia` y por eso **nunca
+funcionó**; el fallback de PRUEBA FENIX la tapaba, así que el bug pasó meses invisible.
+
+**Causa raíz:** `ARRAYJOIN({campo_link})` de un campo **link** devuelve los **NOMBRES** de los
+registros vinculados (el primary field), **NO** sus `record_id`. Entonces
+`FIND('recXXXXXXXX', ARRAYJOIN({FAMILIAS}))` busca un `recXXX...` dentro de un texto que solo
+tiene nombres → **siempre 0**. Ya estaba anotado a medias en
+`reference_get_records_no_pagina` ("no filtrar links con FIND(id)") pero igual había DOS
+funciones vivas haciéndolo.
+
+**Cómo se resolvió:** las lecturas de reservas de una familia pasan a los **links inversos del
+niño** (`NIÑOS.RESERVAS FENIX`) → traer esas reservas por `RECORD_ID()`. El contexto Aurora
+(C5), la señal de reagendamiento (2.C-C2), el QR (2.D) y las tools (2.C-C1) ya usan ese patrón.
+
+**Regla para la próxima:** para saber qué registros vincula un link, **leé el propio campo link
+del registro dueño (te da los record_ids) o el link inverso** — NUNCA `FIND(id, ARRAYJOIN(link))`.
+Para filtrar por record_id sobre un conjunto: `OR(RECORD_ID()='recA', RECORD_ID()='recB', ...)`.
+Y cuando una función "de búsqueda" devuelve vacío en un caso que debería matchear, sospechá
+de ARRAYJOIN antes de asumir que no hay datos. **Pendiente F7.b:** `agenda._cancelar` todavía
+usa `cancelar_reservas_familia_fecha` (rota) — arreglarla al cortar FAMILIAS.
+
+---
+
 ## 2026-07-13 — "Pago de FENIX" NO se filtra por FUENTE (hay pagos de Fenix con FUENTE='SALSA SOUL STUDIO')
 
 **Síntoma:** tras el backfill de la migración (linkear cada pago a sus niños), dos hermanos —
