@@ -23,7 +23,7 @@ from agent.pagos import (
     formatear_monto, monto_prueba_por_hijos_detallado,
 )
 from agent.airtable_client import (
-    actualizar_conversion_lead, crear_prueba_fenix, crear_familia_a_prueba,
+    actualizar_conversion_lead, crear_familia_a_prueba,
     buscar_familia_por_telefono, registrar_pago_fenix,
 )
 from agent.detectores_conv import (
@@ -352,66 +352,12 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         apellido_resp = padre_data.get("apellido", "") or ""
         ninos_form = datos_form.get("ninos", [])
 
-        # Obtener lead_id y diagnóstico
-        from agent.airtable_client import _get_records, _LEADS
-        lead_records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-        lead_record_id = lead_records[0]["id"] if lead_records else None
-        diagnostico_ids = lead_records[0].get("fields", {}).get("DIAGNOSTICO", []) if lead_records else []
-
         # Actualizar conversión
         await actualizar_conversion_lead(telefono, "GRATIS" if es_gratis else "PAGO")
 
-        # Crear PRUEBA FENIX por cada niño (monto solo en primero)
-        creados = 0
-        _conversion_prueba = "GRATIS" if es_gratis else "PAGO"
-        _n_hijos_pf = len(ninos_form) if ninos_form else 1
-        if monto in (750_000, 350_000):
-            _concepto_pf = "CLASE"
-        else:
-            _concepto_pf = "PRUEBA"
-        if ninos_form:
-            for i, n in enumerate(ninos_form):
-                await crear_prueba_fenix(
-                    telefono=telefono,
-                    nombre_responsable=nombre_resp,
-                    apellido_responsable=apellido_resp,
-                    nombre_hijo=n.get("nombre", ""),
-                    apellido_hijo=n.get("apellido", ""),
-                    edad_hijo="",
-                    fecha_reserva="(por definir)",
-                    hora="(por definir)",
-                    fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                    monto=monto if i == 0 else 0,
-                    concepto=_concepto_pf,
-                    conversion=_conversion_prueba,
-                    diagnostico_ids=diagnostico_ids,
-                    lead_record_id=lead_record_id,
-                )
-                creados += 1
-        else:
-            # Fallback sin datos de hijos
-            nh = _extraer_nombre_hijo_historial(historial_completo)
-            await crear_prueba_fenix(
-                telefono=telefono,
-                nombre_responsable=nombre_resp,
-                apellido_responsable=apellido_resp,
-                nombre_hijo=nh if nh != "no mencionó" else "",
-                apellido_hijo="",
-                edad_hijo="",
-                fecha_reserva="(por definir)",
-                hora="(por definir)",
-                monto=monto,
-                concepto=_concepto_pf,
-                conversion=_conversion_prueba,
-                diagnostico_ids=diagnostico_ids,
-                lead_record_id=lead_record_id,
-            )
-            creados = 1
-
-        # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 2.A) ──
-        # El lead que agendó/pagó la prueba se materializa como FAMILIA A PRUEBA
-        # + NIÑOS. Sigue con Ivan (router lo mantiene) hasta inscribirse.
-        # PRUEBA FENIX se mantiene en paralelo por ahora. Nunca rompe el pago.
+        # ── FAMILIA A PRUEBA + NIÑOS (2.C-C3: registro primario — PRUEBA FENIX
+        # ya no se crea). El lead sigue con Ivan (router) hasta inscribirse; el
+        # monto se registra en PAGOS recién cuando llega el comprobante.
         try:
             if ninos_form:
                 _ninos_familia = [
@@ -463,8 +409,9 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
                         monto, concepto="Sábado en el parque", telefono=telefono)
                     _linea_tarjeta = f"💳 Si preferís tarjeta, pagá acá:\n{_link_tarjeta}\n\n"
                     from agent.memory import crear_o_actualizar_pedido
+                    _concepto_pedido = "CLASE" if monto in (750_000, 350_000) else "PRUEBA"
                     await crear_o_actualizar_pedido(
-                        telefono, tipo="prueba", concepto=_concepto_pf, monto_total=monto)
+                        telefono, tipo="prueba", concepto=_concepto_pedido, monto_total=monto)
                 except Exception as e:
                     logger.error(f"[AGENDA] Error armando link de tarjeta: {e}")
                     _linea_tarjeta = ""
@@ -488,13 +435,13 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
         monto_label = "GRATIS (referidos)" if es_gratis else f"{monto:,} Gs".replace(",", ".")
         await enviar_a_topic(
             thread_id,
-            f"✅ Agenda cerrada — {creados} PRUEBA FENIX — {monto_label}\n"
+            f"✅ Agenda cerrada — FAMILIA A PRUEBA ({cant_hijos} niño{'s' if cant_hijos != 1 else ''}) — {monto_label}\n"
             f"📲 Mensaje enviado a {nombre_padre}{' con formulario + transferencia/tarjeta' if not es_gratis else ' (prueba gratis)'}\n"
             f"🔊 Agente reactivado (esperando comprobante)",
             telefono=telefono,
             group_override=group_override,
         )
-        logger.info(f"[AGENDA] {telefono}: {creados} registros, {monto_label}, msg enviado a {nombre_padre}")
+        logger.info(f"[AGENDA] {telefono}: familia A PRUEBA ({cant_hijos} niños), {monto_label}, msg enviado a {nombre_padre}")
 
     except Exception as e:
         logger.error(f"[CERRAR_AGENDA] Error: {e}")
