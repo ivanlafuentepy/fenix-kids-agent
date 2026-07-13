@@ -694,11 +694,16 @@ async def obtener_tutores_de_familia(familia_id: str) -> list[dict]:
     return fallback
 
 
-async def crear_o_actualizar_tutor(familia_id: str, persona: dict, parentesco: str) -> str | None:
+async def crear_o_actualizar_tutor(persona: dict, parentesco: str, familia_id: str = "") -> str | None:
     """
-    Escritura dual (EJE B) — crea/actualiza un registro en TUTORES FENIX para una persona
-    de la familia. Idempotente por (familia, parentesco): si ya existe ese tutor en la
-    familia, lo actualiza en vez de duplicar.
+    Crea/actualiza un registro en TUTORES FENIX (niño-eje, F7.b).
+    Idempotente por CELL LIMPIO + PARENTESCO: el tutor se identifica por su
+    teléfono, NO por la familia — una persona = un registro, aunque existan
+    fichas FAMILIAS duplicadas.
+
+    familia_id es opcional y solo mantiene el link legacy FAMILIA durante la
+    transición (si el tutor existe y no está linkeado, se agrega el link).
+    Las altas nuevas sin FAMILIAS lo omiten; el parámetro muere con la tabla.
 
     persona = {nombre, apellido, ci, telefono, email, fecha_nacimiento}
     parentesco = "Papá" | "Mamá" | "Tutor"
@@ -721,11 +726,9 @@ async def crear_o_actualizar_tutor(familia_id: str, persona: dict, parentesco: s
     if persona.get("fecha_nacimiento"):
         campos["FECHA NACIMIENTO"] = persona["fecha_nacimiento"]
 
-    # Idempotencia: buscar tutor existente de ESTA familia por CELL LIMPIO + PARENTESCO.
-    # OJO: NO se puede filtrar por el link FAMILIA con FIND(id, ARRAYJOIN(...)) — ARRAYJOIN
-    # de un link devuelve el nombre (primary), no el record_id. Se filtra por CELL LIMPIO
-    # (server-side, pocos resultados) y se confirma la familia leyendo el campo FAMILIA
-    # (que sí trae record_ids).
+    # Idempotencia: buscar tutor existente por CELL LIMPIO (fórmula texto,
+    # server-side) y confirmar el PARENTESCO en Python. OJO: el link FAMILIA no
+    # se puede filtrar con FIND(id, ARRAYJOIN(...)) — devuelve nombres, no ids.
     if tel:
         tel_norm = re.sub(r"[^0-9]", "", tel)
         if tel_norm.startswith("0"):
@@ -733,15 +736,20 @@ async def crear_o_actualizar_tutor(familia_id: str, persona: dict, parentesco: s
         candidatos = await _get_records(_TUTORES, formula=f"{{CELL LIMPIO}}='{tel_norm}'", max_records=10)
         for c in candidatos:
             cf = c.get("fields", {})
-            if familia_id in (cf.get("FAMILIA") or []) and cf.get("PARENTESCO") == parentesco:
+            if cf.get("PARENTESCO") == parentesco:
+                # Transición: si vino familia_id y el tutor no la tiene linkeada,
+                # sumar el link (merge, sin pisar familias previas).
+                if familia_id and familia_id not in (cf.get("FAMILIA") or []):
+                    campos["FAMILIA"] = (cf.get("FAMILIA") or []) + [familia_id]
                 await _patch(_TUTORES, c["id"], campos)
                 return c["id"]
 
-    campos["FAMILIA"] = [familia_id]
+    if familia_id:
+        campos["FAMILIA"] = [familia_id]
     campos["PARENTESCO"] = parentesco
     resultado = await _post(_TUTORES, campos)
     if resultado:
-        logger.info(f"Tutor creado: {resultado['id']} ({parentesco}) familia={familia_id}")
+        logger.info(f"Tutor creado: {resultado['id']} ({parentesco}) familia={familia_id or 'sin familia (niño-eje)'}")
         return resultado["id"]
     return None
 
@@ -798,9 +806,9 @@ async def crear_familia(datos: dict) -> str | None:
         # Aislado: nunca rompe la creación de la familia si TUTORES falla.
         try:
             if padre.get("nombre"):
-                await crear_o_actualizar_tutor(resultado["id"], padre, "Papá")
+                await crear_o_actualizar_tutor(padre, "Papá", familia_id=resultado["id"])
             if madre.get("nombre"):
-                await crear_o_actualizar_tutor(resultado["id"], madre, "Mamá")
+                await crear_o_actualizar_tutor(madre, "Mamá", familia_id=resultado["id"])
         except Exception as e:
             logger.error(f"[TUTORES] dual-write en crear_familia falló: {e}")
         return resultado["id"]

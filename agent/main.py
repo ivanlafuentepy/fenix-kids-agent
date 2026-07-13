@@ -3837,7 +3837,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         try:
                             from agent.airtable_client import crear_o_actualizar_tutor
                             persona = {"nombre": nombre_p, "apellido": apellido_p, "telefono": telefono}
-                            await crear_o_actualizar_tutor(fam_id, persona, "Mamá" if es_madre else "Papá")
+                            await crear_o_actualizar_tutor(persona, "Mamá" if es_madre else "Papá", familia_id=fam_id)
                         except Exception as e:
                             logger.error(f"[TUTORES] dual-write en registro inline falló: {e}")
             except Exception as e:

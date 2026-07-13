@@ -80,7 +80,7 @@ async def _guardar_tutor(familia_id: str, persona: dict, parentesco: str) -> str
             return existente["id"]
     except Exception as e:
         logger.error(f"[RESERVA-FORM] error buscando tutor {parentesco}: {e}")
-    return await crear_o_actualizar_tutor(familia_id, persona, parentesco)
+    return await crear_o_actualizar_tutor(persona, parentesco, familia_id=familia_id)
 
 
 async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:

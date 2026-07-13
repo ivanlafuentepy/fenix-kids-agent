@@ -63,7 +63,7 @@ async def registrar_familia(
             # Escritura dual (EJE B) — reflejar en TUTORES FENIX. Aislado, nunca rompe el registro.
             try:
                 persona = {"nombre": nombre, "apellido": apellido, "telefono": telefono}
-                await crear_o_actualizar_tutor(familia_id, persona, "Mamá" if es_madre else "Papá")
+                await crear_o_actualizar_tutor(persona, "Mamá" if es_madre else "Papá", familia_id=familia_id)
             except Exception as e:
                 logger.error(f"[TUTORES] dual-write en registrar_familia falló: {e}")
             return {
