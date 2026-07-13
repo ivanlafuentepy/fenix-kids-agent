@@ -19,9 +19,9 @@ _fotos_sesion: dict[str, dict] = {}
 
 # Estado de registro de cara pendiente: {telefono: "nombre del niño"}
 _cara_pendiente: dict[str, str] = {}
-# Candidatos múltiples para registrar cara: {telefono: [{"id":..., "nombre_completo":..., "es_prueba":...}, ...]}
+# Candidatos múltiples para registrar cara: {telefono: [{"id":..., "nombre_completo":...}, ...]}
 _cara_candidatos: dict[str, list[dict]] = {}
-# Record preseleccionado por número: {telefono: {"id":..., "nombre_completo":..., "es_prueba":...}}
+# Record preseleccionado por número: {telefono: {"id":..., "nombre_completo":...}}
 _cara_record_preseleccionado: dict[str, dict] = {}
 # Media ID pendiente cuando se envió foto+nombre pero hubo múltiples matches
 _cara_media_pendiente: dict[str, str] = {}
@@ -216,14 +216,13 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         await proveedor.enviar_mensaje(telefono, "❌ No pude descargar la foto")
         return
 
-    from agent.airtable_client import _get_records, _NINOS, _PRUEBAS, _patch
+    from agent.airtable_client import _get_records, _NINOS, _patch
 
     # Si hay record preseleccionado (eligió de la lista numerada), usarlo directo
+    # (2.C-C6: siempre NIÑOS FENIX — el camino PRUEBA se retiró)
     _presel = _cara_record_preseleccionado.pop(telefono, None)
     if _presel:
-        _es_prueba = _presel["es_prueba"]
-        _tabla = _PRUEBAS if _es_prueba else _NINOS
-        _rec = await _get_records(_tabla, formula=f"RECORD_ID()='{_presel['id']}'", max_records=1)
+        _rec = await _get_records(_NINOS, formula=f"RECORD_ID()='{_presel['id']}'", max_records=1)
         if _rec:
             records = _rec
         else:
@@ -249,11 +248,8 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
                     variantes.add(sin[:i] + _amap[c] + sin[i+1:])
             return list(variantes)
 
-        # Buscar SOLO en NIÑOS FENIX — PRUEBA FENIX está en retiro (migración
-        # 2026-06): los niños de prueba también se crean en NIÑOS via
-        # crear_familia_a_prueba, así que buscar en PRUEBA duplicaba candidatos
-        # del mismo niño. El camino _es_prueba queda solo por compat con
-        # preseleccionados viejos.
+        # Buscar SOLO en NIÑOS FENIX (2.C-C6: PRUEBA FENIX retirada — los niños
+        # de prueba también viven en NIÑOS via crear_familia_a_prueba).
         # Cada palabra ("dara isabella oviedo rodriguez") debe aparecer en algún
         # campo → AND de palabras; cada palabra matchea por cualquiera de sus
         # variantes de acento → OR de variantes sobre NOMBRE/APODO/APELLIDO.
@@ -268,13 +264,7 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
             _and_ninos.append(f"OR({','.join(_ors)})")
         _formula_ninos = _and_ninos[0] if len(_and_ninos) == 1 else f"AND({','.join(_and_ninos)})"
 
-        _records_ninos = await _get_records(_NINOS, formula=_formula_ninos, max_records=5)
-
-        records = []
-        _es_prueba = False
-        for _r in _records_ninos:
-            _r["_es_prueba"] = False
-            records.append(_r)
+        records = await _get_records(_NINOS, formula=_formula_ninos, max_records=5)
 
         if not records:
             await proveedor.enviar_mensaje(telefono, f"❌ No encontré a '{nombre_buscar}' en NIÑOS FENIX")
@@ -286,15 +276,10 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
         candidatos_lista = []
         for r in records:
             f = r.get("fields", {})
-            _r_es_prueba = r.get("_es_prueba", _es_prueba)
-            if _r_es_prueba:
-                nombre_c = f"{f.get('NOMBRE HIJO', '')} {f.get('APELLIDO HIJO', '')}".strip()
-                opciones.append(f"{nombre_c} 🔥")
-            else:
-                nombre_c = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
-                apodo = f.get('APODO', '')
-                opciones.append(f"{nombre_c} ({apodo})" if apodo else nombre_c)
-            candidatos_lista.append({"id": r["id"], "nombre_completo": nombre_c, "es_prueba": _r_es_prueba})
+            nombre_c = f"{f.get('NOMBRE', '')} {f.get('APELLIDO', '')}".strip()
+            apodo = f.get('APODO', '')
+            opciones.append(f"{nombre_c} ({apodo})" if apodo else nombre_c)
+            candidatos_lista.append({"id": r["id"], "nombre_completo": nombre_c})
         _cara_candidatos[telefono] = candidatos_lista
         await proveedor.enviar_mensaje(
             telefono,
@@ -307,14 +292,8 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
     nino_record = records[0]
     nino_id = nino_record["id"]
     fields = nino_record.get("fields", {})
-    _es_prueba = nino_record.get("_es_prueba", _es_prueba)
-
-    if _es_prueba:
-        nombre_display = fields.get("NOMBRE HIJO", "")
-        tabla_destino = _PRUEBAS
-    else:
-        nombre_display = fields.get("APODO") or fields.get("NOMBRE", "")
-        tabla_destino = _NINOS
+    nombre_display = fields.get("APODO") or fields.get("NOMBRE", "")
+    tabla_destino = _NINOS
 
     from agent.face_recognition import registrar_cara, actualizar_cara
 
@@ -338,9 +317,8 @@ async def _procesar_registro_cara(telefono: str, media_id: str):
             image_bytes=image_bytes,
             filename=f"{nombre_display.replace(' ', '_')}.jpg",
         )
-        _label = "🔥 PRUEBA" if _es_prueba else "NIÑOS"
         _foto_msg = " + foto subida" if _foto_ok else " (foto no subió)"
-        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} [{_label}]{_foto_msg}")
+        await proveedor.enviar_mensaje(telefono, f"✅ Cara {accion} para {nombre_display} [NIÑOS]{_foto_msg}")
     else:
         await proveedor.enviar_mensaje(telefono, f"❌ No se detectó una cara clara en la foto de {nombre_display}. Probá con otra foto.")
 
