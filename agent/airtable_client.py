@@ -1802,32 +1802,65 @@ async def obtener_redes() -> list[dict]:
 
 async def obtener_familias_inscriptas() -> list[dict]:
     """
-    Retorna todas las FAMILIAS con al menos un teléfono cargado.
-    Cada item: {"id", "telefono", "nombre_padre", "apodo_padre",
-                "nombre_madre", "apodo_madre", "nino_ids"}
+    Retorna los grupos familiares con al menos un hijo activo y teléfono, para
+    broadcasts (niño-eje: derivados de NIÑOS + TUTORES; FAMILIAS ya no se consulta).
+    Cada item: {"id", "telefono", "nombre_padre", "apellido_padre", "apodo_padre",
+                "nombre_madre", "apellido_madre", "apodo_madre", "nino_ids"}
 
-    Excluye las familias en estado A PRUEBA (leads que pagaron la prueba pero
-    aún no se inscribieron) — no son clientes, no reciben broadcasts.
+    Excluye niños con ESTADO A PRUEBA (leads que pagaron la prueba pero aún no
+    se inscribieron — no reciben broadcasts). Los hermanos se agrupan por el
+    teléfono de contacto (papá primero, como el criterio viejo CELL PADRE), así
+    un mismo número nunca recibe el broadcast dos veces. El teléfono es CELL
+    LIMPIO (595..., lo que Meta espera) con fallback al CELL crudo.
+    De paso arregla A15: las familias sin los campos CELL PADRE/MADRE legacy
+    eran invisibles para los broadcasts.
     """
-    formula = "AND(OR(LEN({CELL PADRE})>0, LEN({CELL MADRE})>0), {ESTADO PLAN}!='A PRUEBA')"
-    records = await _get_records(_FAMILIAS, formula=formula, max_records=1000)
-    resultado = []
-    for r in records:
-        f = r.get("fields", {})
-        # Preferir CELL PADRE, fallback a CELL MADRE
-        telefono = f.get("CELL PADRE", "") or f.get("CELL MADRE", "")
+    ninos = await _get_records(_NINOS, max_records=2000)
+    tutores = await _get_records(_TUTORES, max_records=2000)
+    tut = {t["id"]: (t.get("fields", {}) or {}) for t in tutores}
+
+    def _tel_de(tid: str) -> str:
+        tf = tut.get(tid, {})
+        return (tf.get("CELL LIMPIO") or tf.get("CELL") or "").strip()
+
+    # Agrupar niños activos por teléfono de contacto (papá primero, después mamá/tutor)
+    grupos: dict[str, dict] = {}
+    for n in ninos:
+        f = n.get("fields", {}) or {}
+        if (f.get("ESTADO") or "").strip().upper() == "A PRUEBA":
+            continue
+        tutor_ids = (f.get("PADRE") or []) + (f.get("MADRE") or [])
+        telefono = next((t for t in (_tel_de(tid) for tid in tutor_ids) if t), "")
         if not telefono:
             continue
+        g = grupos.setdefault(telefono, {"tutor_ids": [], "nino_ids": []})
+        for tid in tutor_ids:
+            if tid not in g["tutor_ids"]:
+                g["tutor_ids"].append(tid)
+        g["nino_ids"].append(n["id"])
+
+    resultado = []
+    for telefono, g in grupos.items():
+        def _por(parentesco: str) -> dict:
+            return next(
+                (tut[tid] for tid in g["tutor_ids"]
+                 if tid in tut and (tut[tid].get("PARENTESCO") or "") == parentesco),
+                {},
+            )
+        padre, madre = _por("Papá"), _por("Mamá")
+        if not padre and not madre and g["tutor_ids"]:
+            # Tutor sin parentesco Papá/Mamá: usarlo como contacto principal
+            padre = tut.get(g["tutor_ids"][0], {})
         resultado.append({
-            "id": r["id"],
+            "id": g["tutor_ids"][0] if g["tutor_ids"] else "",
             "telefono": telefono,
-            "nombre_padre": f.get("NOMBRE PADRE", ""),
-            "apellido_padre": f.get("APELLIDO PADRE", ""),
-            "apodo_padre": f.get("APODO PADRE", ""),
-            "nombre_madre": f.get("NOMBRE MADRE", ""),
-            "apellido_madre": f.get("APELLIDO MADRE", ""),
-            "apodo_madre": f.get("APODO MADRE", ""),
-            "nino_ids": f.get("NIÑOS FENIX", []),
+            "nombre_padre": padre.get("NOMBRE", ""),
+            "apellido_padre": padre.get("APELLIDO", ""),
+            "apodo_padre": padre.get("APODO", ""),
+            "nombre_madre": madre.get("NOMBRE", ""),
+            "apellido_madre": madre.get("APELLIDO", ""),
+            "apodo_madre": madre.get("APODO", ""),
+            "nino_ids": g["nino_ids"],
         })
     return resultado
 
