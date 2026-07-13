@@ -75,7 +75,7 @@ from agent.pagos import (
     es_posible_comprobante, detectar_tipo_pago,
     registrar_pago_pendiente, tiene_pago_pendiente,
     obtener_pago_pendiente, confirmar_pago, rechazar_pago,
-    formatear_monto, PRECIOS, CI_BANCARIO, monto_prueba_por_hijos,
+    formatear_monto, PRECIOS, CI_BANCARIO,
 )
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
@@ -4372,92 +4372,78 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         if topic_id:
             await enviar_a_topic(topic_id, f"{agente_label}: {respuesta}", telefono=telefono, group_override=_tg_group)
 
-        # ── Crear PRUEBA FENIX si el padre completó el formulario ─────────
+        # ── Materializar al lead si completó el formulario (2.C: sin PRUEBA) ──
         if _es_formulario_completo:
-            # Guard: no crear si ya existe en PRUEBA FENIX (reagendamiento, re-deploy, etc.)
-            # OJO (migración 2.C): este guard se voltea a señal por familia/reservas
-            # RECIÉN cuando se corte crear_prueba_fenix (C2) — voltearlo antes haría
-            # que ningún lead nuevo cree PRUEBA (la familia ya existe desde el pago)
-            # y "cargar familia" (C5) todavía la necesita.
-            from agent.airtable_client import _get_records as _get_r_form, _PRUEBAS as _PR_FORM
-            _ya_existe_prueba = await _get_r_form(_PR_FORM, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-            if _ya_existe_prueba:
-                logger.info(f"[FORMULARIO] {telefono} ya tiene PRUEBA FENIX — actualizar datos faltantes")
+            # Guard (2.C-C2, volteado): el formulario ya se procesó si quedó el
+            # flag prueba_creada o si el lead ya tiene una RESERVA futura (señal
+            # por familia/reservas, B7). PRUEBA FENIX ya no se consulta.
+            _flags_form_g = await obtener_estado_flags(telefono)
+            _reservas_fut_g: list[str] = []
+            try:
+                from agent.airtable_client import obtener_grupo_familiar as _ogf_g, _get_records as _gr_g, _RESERVAS as _RES_G
+                from datetime import datetime as _dt_fg
+                from zoneinfo import ZoneInfo as _zi_fg
+                _grupo_g = await _ogf_g(telefono)
+                _rids_g = [rid for h in (_grupo_g or {}).get("hijos", []) for rid in (h.get("reserva_ids") or [])][-20:]
+                if _rids_g:
+                    _hoy_fg = _dt_fg.now(_zi_fg("America/Asuncion")).date().isoformat()
+                    _or_fg = ",".join(f"RECORD_ID()='{r}'" for r in _rids_g)
+                    _f_fg = f"OR({_or_fg})" if len(_rids_g) > 1 else _or_fg
+                    for _r_fg in await _gr_g(_RES_G, formula=_f_fg, max_records=len(_rids_g)):
+                        _fe = _r_fg.get("fields", {}).get("FECHA", "")
+                        _fe = (_fe[0] if _fe else "") if isinstance(_fe, list) else _fe
+                        if _fe >= _hoy_fg:
+                            _reservas_fut_g.append(_r_fg["id"])
+            except Exception as _e_fg:
+                logger.error(f"[FORMULARIO] Guard reservas: {_e_fg}")
+
+            if _flags_form_g.get("prueba_creada") or _reservas_fut_g:
+                logger.info(f"[FORMULARIO] {telefono} ya procesado (flag/reserva futura) — asegurar familia + QR")
                 _es_formulario_completo = False
                 await actualizar_estado_flags(telefono, prueba_creada=True)
-                # Actualizar campos faltantes (nombre padre, apellido hijo, fecha nac)
                 try:
-                    from agent.airtable_client import actualizar_prueba_fenix
+                    # Asegurar FAMILIA A PRUEBA + NIÑOS con los datos frescos
+                    # del historial (idempotente)
+                    from agent.airtable_client import crear_familia_a_prueba
                     _hist_upd = await obtener_historial(telefono, limite=40)
                     _datos_upd = await extraer_datos_formulario(_hist_upd)
                     _padre_upd = _datos_upd.get("padre") or {}
                     _ninos_upd = _datos_upd.get("ninos", [])
-                    _n0 = _ninos_upd[0] if _ninos_upd else {}
-                    await actualizar_prueba_fenix(
+                    _ninos_fam_upd = [
+                        {"nombre": n.get("nombre", ""), "apellido": n.get("apellido", ""),
+                         "fecha_nacimiento": n.get("fecha_nacimiento", "")}
+                        for n in _ninos_upd if n.get("nombre")
+                    ]
+                    _fam_id_upd, _ = await crear_familia_a_prueba(
                         telefono=telefono,
-                        nombre_responsable=_padre_upd.get("nombre", ""),
-                        apellido_responsable=_padre_upd.get("apellido", ""),
-                        nombre_hijo=_n0.get("nombre", ""),
-                        apellido_hijo=_n0.get("apellido", ""),
-                        fecha_nacimiento=_n0.get("fecha_nacimiento", ""),
+                        nombre_padre=_padre_upd.get("nombre", ""),
+                        apellido_padre=_padre_upd.get("apellido", ""),
+                        ninos=_ninos_fam_upd,
                     )
-                    # ── Gap 2b (migración fase 1): esta rama solo tocaba PRUEBA —
-                    # asegurar también FAMILIA A PRUEBA + RESERVA real (espejo de la
-                    # rama principal). crear_familia_a_prueba es idempotente.
-                    try:
-                        from agent.airtable_client import crear_familia_a_prueba
-                        _ninos_fam_upd = [
-                            {"nombre": n.get("nombre", ""), "apellido": n.get("apellido", ""),
-                             "fecha_nacimiento": n.get("fecha_nacimiento", "")}
-                            for n in _ninos_upd if n.get("nombre")
-                        ]
-                        _fam_id_upd, _ = await crear_familia_a_prueba(
-                            telefono=telefono,
-                            nombre_padre=_padre_upd.get("nombre", ""),
-                            apellido_padre=_padre_upd.get("apellido", ""),
-                            ninos=_ninos_fam_upd,
-                        )
-                        logger.info(f"[FORMULARIO] FAMILIA A PRUEBA (guard): {_fam_id_upd}")
-                    except Exception as _e_fam_upd:
-                        logger.error(f"[FORMULARIO] Error FAMILIA A PRUEBA (guard): {_e_fam_upd}")
-                    # A1: reserva real con la fecha/hora que ya tiene la PRUEBA existente
-                    try:
-                        from agent.tools.reservas import _crear_reserva_real, _parsear_fecha
-                        _pr_f = _ya_existe_prueba[0].get("fields", {})
-                        _f_prev = str(_pr_f.get("FECHA RESERVA", "") or "")
-                        _h_prev = str(_pr_f.get("HORA", "") or "")
-                        if _f_prev and "definir" not in _f_prev.lower() and _h_prev and "definir" not in _h_prev.lower():
-                            _f_iso_upd = _parsear_fecha(_f_prev)
-                            if _f_iso_upd:
-                                await _crear_reserva_real(telefono, _f_iso_upd, _h_prev, reagendar=False)
-                    except Exception as _e_res_upd:
-                        logger.error(f"[FORMULARIO] Error RESERVA real (guard): {_e_res_upd}")
-                    # Enviar QR (no se envió antes porque el guard abortaba).
-                    # Re-consultar con max_records=10: _ya_existe_prueba se trajo
-                    # con max_records=1 (guard) → hermanos recibían UN solo QR (M10).
+                    logger.info(f"[FORMULARIO] FAMILIA A PRUEBA (guard): {_fam_id_upd}")
+                    # Reenviar el QR de las reservas futuras (antes el guard lo cortaba)
                     try:
                         from agent.qr import generar_qr
-                        from agent.airtable_client import marcar_qr_enviado_prueba
-                        _pruebas_qr_upd = await _get_r_form(_PR_FORM, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+                        from agent.airtable_client import marcar_qr_enviado_reserva
                         _qr_enviados_upd = 0
-                        for _pq in _pruebas_qr_upd:
-                            _qr_bytes = generar_qr(_pq["id"])
+                        for _rid_qr in _reservas_fut_g:
+                            _qr_bytes = generar_qr(_rid_qr)
                             _qr_ok = await proveedor.enviar_imagen_bytes(
                                 telefono, _qr_bytes, "image/png",
                                 caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
                             )
                             if not _qr_ok:
-                                logger.error(f"[QR] Envío falló para {_pq['id']} — NO se marca enviado")
+                                logger.error(f"[QR] Envío falló para {_rid_qr} — NO se marca enviado")
                                 continue
-                            await marcar_qr_enviado_prueba(_pq["id"])
+                            await marcar_qr_enviado_reserva(_rid_qr)
                             _qr_enviados_upd += 1
                         logger.info(f"[QR] Enviado {_qr_enviados_upd} QR(s) post-actualización a {telefono}")
-                        if topic_id:
+                        if topic_id and _qr_enviados_upd:
                             await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({_qr_enviados_upd})", telefono=telefono, group_override=_tg_group)
                     except Exception as _qr_err:
                         logger.error(f"[QR] Error enviando QR post-actualización: {_qr_err}")
                 except Exception as e:
-                    logger.error(f"[FORMULARIO] Error actualizando PRUEBA FENIX: {e}")
+                    logger.error(f"[FORMULARIO] Error en rama guard del formulario: {e}")
         if _es_formulario_completo:
             await actualizar_estado_flags(telefono, prueba_creada=True)
             try:
@@ -4507,64 +4493,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         # Si tiene "reserva confirmada" pero no matchea fecha, seguir buscando
                 fecha_hora = f"el sábado {_fecha_res} a las {_hora_res}" if _fecha_res else "el sábado"
 
-                # ── Crear PRUEBA FENIX con datos completos (Opción A) ─────────
+                # ── Materializar el lead (2.C-C2): FAMILIA A PRUEBA + NIÑOS +
+                # RESERVA real + QR. PRUEBA FENIX ya no se crea — el dinero ya
+                # quedó en PAGOS (registrar_pago_fenix al confirmar el comprobante).
                 try:
-                    from agent.airtable_client import _get_records, _LEADS
-                    # Obtener lead_id y diagnóstico
-                    _lr_pf = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-                    _lead_id = _lr_pf[0]["id"] if _lr_pf else None
-                    _diag_ids = _lr_pf[0].get("fields", {}).get("DIAGNOSTICO", []) if _lr_pf else []
-
                     # Usar Haiku para extraer datos completos del historial
                     datos_form = await extraer_datos_formulario(historial_completo)
                     padre_data = datos_form.get("padre") or {}
                     nombre_resp = padre_data.get("nombre", "") or (_np.split()[0] if _np else "")
                     apellido_resp = padre_data.get("apellido", "") or (_np.split()[1] if _np and " " in _np else "")
                     ninos_form = datos_form.get("ninos", [])
-                    _monto = monto_prueba_por_hijos(historial_completo)
-                    _n_hijos = len(ninos_form) if ninos_form else 1
-                    if _monto in (750_000, 350_000):
-                        _concepto_prueba = "CLASE"
-                    else:
-                        _concepto_prueba = "PRUEBA"
 
-                    if ninos_form:
-                        for i, n in enumerate(ninos_form):
-                            await crear_prueba_fenix(
-                                telefono=telefono,
-                                nombre_responsable=nombre_resp,
-                                apellido_responsable=apellido_resp,
-                                nombre_hijo=n.get("nombre", ""),
-                                apellido_hijo=n.get("apellido", ""),
-                                edad_hijo="",
-                                fecha_reserva=_fecha_res,
-                                hora=_hora_res,
-                                fecha_nacimiento=n.get("fecha_nacimiento", ""),
-                                monto=_monto if i == 0 else 0,
-                                concepto=_concepto_prueba,
-                                diagnostico_ids=_diag_ids,
-                                lead_record_id=_lead_id,
-                            )
-                    else:
-                        # Fallback con datos del historial
-                        await crear_prueba_fenix(
-                            telefono=telefono,
-                            nombre_responsable=primer_nombre,
-                            apellido_responsable="",
-                            nombre_hijo=_hijo,
-                            apellido_hijo="",
-                            edad_hijo="",
-                            fecha_reserva=_fecha_res,
-                            hora=_hora_res,
-                            monto=_monto,
-                            concepto=_concepto_prueba,
-                            diagnostico_ids=_diag_ids,
-                            lead_record_id=_lead_id,
-                        )
-                    # ── Dual-write: crear/reusar FAMILIA en estado A PRUEBA (Fase 1) ──
-                    # El lead que pagó la prueba se materializa como FAMILIA A PRUEBA
-                    # + NIÑOS. Aurora lo sigue atendiendo en modo leads hasta que se
-                    # inscriba. PRUEBA FENIX se mantiene en paralelo. Nunca rompe el pago.
+                    # FAMILIA A PRUEBA + NIÑOS (idempotente — el lead ya puede
+                    # tenerla desde el pago). Aurora lo sigue atendiendo en modo
+                    # leads hasta que se inscriba.
                     try:
                         from agent.airtable_client import crear_familia_a_prueba
                         if ninos_form:
@@ -4587,49 +4529,58 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         logger.info(f"[FORMULARIO] FAMILIA A PRUEBA: {_fam_id_pf}, niños={_fam_ninos_pf}")
                     except Exception as _e_fam_pf:
                         logger.error(f"[FORMULARIO] Error creando FAMILIA A PRUEBA: {_e_fam_pf}")
-                    # A1: crear la RESERVA FENIX real si la prueba ya nace con fecha+hora
+
+                    # RESERVA real + QR si la reserva ya se confirmó con fecha+hora
+                    _reserva_ids_pf: list[str] = []
                     if _fecha_res and _hora_res:
                         try:
-                            from agent.tools.reservas import _crear_reserva_real, _parsear_fecha
+                            from agent.tools.agenda import gestionar_reserva
+                            from agent.tools.reservas import _parsear_fecha, _vincular_reservas_lead
                             _f_iso = _parsear_fecha(_fecha_res)
                             if _f_iso:
-                                await _crear_reserva_real(telefono, _f_iso, _hora_res, reagendar=False)
+                                _res_pf = await gestionar_reserva(telefono, "agendar", fecha=_f_iso, hora=_hora_res)
+                                if _res_pf.get("error"):
+                                    logger.warning(f"[A1] Reserva real NO creada para {telefono}: {_res_pf.get('message')}")
+                                else:
+                                    _reserva_ids_pf = _res_pf.get("reserva_ids", [])
+                                    await _vincular_reservas_lead(telefono, _reserva_ids_pf)
+                                    logger.info(f"[A1] Reserva real OK para {telefono}: {_f_iso} {_hora_res}")
                         except Exception as _e_res_pf:
                             logger.error(f"[FORMULARIO] Error creando RESERVA real: {_e_res_pf}")
+
                     # Actualizar LEADS a PAGO
                     await actualizar_conversion_lead(telefono, "PAGO")
                     # CAPI: evento LeadSubmitted + Purchase
                     await enviar_evento_agenda(telefono)
                     await enviar_evento_pago(telefono)
-                    logger.info(f"[PRUEBA FENIX] Creado post-formulario para {telefono}")
-                    # QR Check-in: buscar todos los registros PRUEBA del teléfono y enviar QR
+                    logger.info(f"[FORMULARIO] Lead materializado post-formulario (2.C, sin PRUEBA) {telefono}")
+                    # QR Check-in por cada RESERVA creada
                     try:
                         from agent.qr import generar_qr
-                        from agent.airtable_client import _get_records, _PRUEBAS, marcar_qr_enviado_prueba
-                        _pruebas_qr = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+                        from agent.airtable_client import marcar_qr_enviado_reserva
                         _qr_enviados_pf = 0
-                        for _pq in _pruebas_qr:
-                            _qr_bytes = generar_qr(_pq["id"])
+                        for _rid_pf in _reserva_ids_pf:
+                            _qr_bytes = generar_qr(_rid_pf)
                             _qr_ok = await proveedor.enviar_imagen_bytes(
                                 telefono, _qr_bytes, "image/png",
                                 caption="Mostrá este QR cuando llegues a Fenix Kids Academy 📱"
                             )
                             if not _qr_ok:
-                                logger.error(f"[QR] Envío falló para {_pq['id']} — NO se marca enviado")
+                                logger.error(f"[QR] Envío falló para {_rid_pf} — NO se marca enviado")
                                 continue
-                            await marcar_qr_enviado_prueba(_pq["id"])
+                            await marcar_qr_enviado_reserva(_rid_pf)
                             _qr_enviados_pf += 1
                         logger.info(f"[QR] Enviado {_qr_enviados_pf} QR(s) post-formulario a {telefono}")
-                        if topic_id:
+                        if topic_id and _qr_enviados_pf:
                             await enviar_a_topic(topic_id, f"🎟️ QR Reserva enviado ({_qr_enviados_pf})", telefono=telefono, group_override=_tg_group)
                     except Exception as _qr_err:
                         logger.error(f"[QR] Error enviando QR post-formulario: {_qr_err}")
                 except Exception as e:
-                    logger.error(f"[PRUEBA FENIX] Error creando post-formulario: {e}")
+                    logger.error(f"[FORMULARIO] Error materializando post-formulario: {e}")
                     # Alertar a Ivan en Telegram para que no se pierda
                     try:
                         if topic_id:
-                            await enviar_a_topic(topic_id, f"⚠️ ERROR: No se pudo crear PRUEBA FENIX — {e}", telefono=telefono, group_override=_tg_group)
+                            await enviar_a_topic(topic_id, f"⚠️ ERROR: No se pudo materializar el formulario — {e}", telefono=telefono, group_override=_tg_group)
                     except Exception:
                         pass
 
@@ -4742,24 +4693,41 @@ async def _procesar_confirmacion_reserva(
     # 2.C) o familia A PRUEBA con reservas futuras (modelo nuevo). Un lead nuevo
     # en su primera confirmación tiene familia (creada al pagar) pero NO reservas
     # → False, correcto.
+    # Señal (2.C-C2): reagendamiento = el lead ya tiene una RESERVA futura.
+    # PRUEBA FENIX ya no se consulta. OJO: buscar_reservas_familia (FIND del
+    # record_id sobre el link) NUNCA matcheaba — la señal real son los links
+    # RESERVAS FENIX de los hijos (niño-eje).
     _es_reagendamiento = False
+    _reservas_previas_conf: list[dict] = []
+    _tutor_conf_nombre = ""
     if agent_actual == "ivan":
-        from agent.airtable_client import _get_records as _get_recs_conf, _PRUEBAS as _PR_CONF
-        _pruebas_prev = await _get_recs_conf(_PR_CONF, formula=f"{{TELEFONO}}='{telefono}'", max_records=5)
-        _es_reagendamiento = len(_pruebas_prev) > 0
-        if not _es_reagendamiento:
-            try:
-                from agent.airtable_client import buscar_familia_por_telefono, buscar_reservas_familia
-                _fam_conf = await buscar_familia_por_telefono(telefono)
-                if _fam_conf and _fam_conf.get("fields", {}).get("ESTADO PLAN") == "A PRUEBA":
-                    from datetime import datetime as _dt_conf
-                    from zoneinfo import ZoneInfo as _ZI_conf
-                    _hoy_conf = _dt_conf.now(_ZI_conf("America/Asuncion")).date().isoformat()
-                    _res_conf = [r for r in await buscar_reservas_familia(_fam_conf["id"])
-                                 if str(r.get("fecha", "")) >= _hoy_conf]
-                    _es_reagendamiento = len(_res_conf) > 0
-            except Exception as _e_reag:
-                logger.warning(f"[REAGENDAR] Señal familia falló para {telefono}: {_e_reag}")
+        try:
+            from agent.airtable_client import obtener_grupo_familiar as _ogf_c, _get_records as _gr_c, _RESERVAS as _RES_C
+            from datetime import datetime as _dt_conf
+            from zoneinfo import ZoneInfo as _ZI_conf
+            _grupo_c = await _ogf_c(telefono)
+            _tuts_c = (_grupo_c or {}).get("tutores") or []
+            if _tuts_c:
+                _tutor_conf_nombre = f"{_tuts_c[0].get('nombre', '')} {_tuts_c[0].get('apellido', '')}".strip()
+            _rids_c = [rid for h in (_grupo_c or {}).get("hijos", []) for rid in (h.get("reserva_ids") or [])][-20:]
+            if _rids_c:
+                _hoy_conf = _dt_conf.now(_ZI_conf("America/Asuncion")).date().isoformat()
+                _or_c = ",".join(f"RECORD_ID()='{r}'" for r in _rids_c)
+                _f_c = f"OR({_or_c})" if len(_rids_c) > 1 else _or_c
+                for _r_c in await _gr_c(_RES_C, formula=_f_c, max_records=len(_rids_c)):
+                    _fc = _r_c.get("fields", {})
+                    _fe_c = _fc.get("FECHA", "")
+                    _fe_c = (_fe_c[0] if _fe_c else "") if isinstance(_fe_c, list) else _fe_c
+                    if _fe_c < _hoy_conf:
+                        continue
+                    _ho_c = _fc.get("HORA", "")
+                    _ho_c = (_ho_c[0] if _ho_c else "") if isinstance(_ho_c, list) else _ho_c
+                    _no_c = _fc.get("NOMBRE COMPLETO", "")
+                    _no_c = (_no_c[0] if _no_c else "") if isinstance(_no_c, list) else _no_c
+                    _reservas_previas_conf.append({"fecha": _fe_c, "hora": _ho_c, "nombre": _no_c})
+            _es_reagendamiento = len(_reservas_previas_conf) > 0
+        except Exception as _e_reag:
+            logger.warning(f"[REAGENDAR] Señal reservas falló para {telefono}: {_e_reag}")
 
     # Solo Ivan toca LEADS FENIX — Aurora NUNCA toca LEADS ni PRUEBA
     if agent_actual == "ivan" and not _es_reagendamiento:
@@ -4866,57 +4834,37 @@ async def _procesar_confirmacion_reserva(
         except Exception as e:
             logger.error(f"Error creando RESERVA para {telefono}: {e}")
 
-    # ── Reagendamiento PRUEBA FENIX (Ivan): actualizar fecha si ya existe ─────
-    if agent_actual == "ivan" and fecha_str and hora_str:
+    # ── Reagendamiento (Ivan): ya tenía RESERVA futura → mover la RESERVA real ──
+    # 2.C-C2: PRUEBA FENIX ya no se patchea; _crear_reserva_real(reagendar=True)
+    # es incondicional (crea la nueva antes de borrar la vieja, fail-safe).
+    if agent_actual == "ivan" and fecha_str and hora_str and _es_reagendamiento:
         try:
-            from agent.airtable_client import _get_records, _patch, _PRUEBAS
-            _pruebas_existentes = await _get_records(
-                _PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=5
+            _hora_norm = hora_str.replace("h", "").replace(".", ":")
+            if ":" not in _hora_norm:
+                _hora_norm = f"{_hora_norm}:00"
+            _fecha_anterior = _reservas_previas_conf[0]["fecha"] if _reservas_previas_conf else "?"
+            _hora_anterior = _reservas_previas_conf[0]["hora"] if _reservas_previas_conf else "?"
+            _hijos_txt = ", ".join(sorted({r["nombre"] for r in _reservas_previas_conf if r.get("nombre")})) or nombre_display
+            logger.info(f"[REAGENDAR] {_hijos_txt} ({telefono}): {_fecha_anterior} {_hora_anterior} → {fecha_str} {_hora_norm}")
+
+            # Notificar admin por WhatsApp
+            _admin_phone_re = os.getenv("ADMIN_PHONE", "")
+            _msg_re = (
+                f"🔄 REAGENDAMIENTO\n"
+                f"👤 {_tutor_conf_nombre or '?'}\n"
+                f"👧 {_hijos_txt}\n"
+                f"❌ De: {_fecha_anterior} {_hora_anterior}\n"
+                f"✅ A: {fecha_str} {_hora_norm}\n"
+                f"📱 https://wa.me/{telefono}"
             )
-            if _pruebas_existentes:
-                # Ya tiene PRUEBA FENIX → reagendamiento, actualizar fecha/hora
-                _hora_norm = hora_str.replace("h", "").replace(".", ":")
-                if ":" not in _hora_norm:
-                    _hora_norm = f"{_hora_norm}:00"
-                # Obtener fecha anterior para la notificación
-                _fecha_anterior = _pruebas_existentes[0].get("fields", {}).get("FECHA RESERVA", "?")
-                _hora_anterior = _pruebas_existentes[0].get("fields", {}).get("HORA", "?")
-                _nombre_resp_re = _pruebas_existentes[0].get("fields", {}).get("NOMBRE", "?")
-                _hijos_re = []
-                for _pr in _pruebas_existentes:
-                    await _patch(_PRUEBAS, _pr["id"], {
-                        "FECHA RESERVA": fecha_str,
-                        "HORA": _hora_norm,
-                    })
-                    _nh_pr = _pr.get("fields", {}).get("NOMBRE HIJO", "?")
-                    _hijos_re.append(_nh_pr)
-                    logger.info(f"[REAGENDAR] {_nh_pr} ({telefono}): {fecha_str} {_hora_norm}")
-
-                # Notificar admin por WhatsApp
-                _admin_phone_re = os.getenv("ADMIN_PHONE", "")
-                _hijos_txt = ", ".join(_hijos_re)
-                _msg_re = (
-                    f"🔄 REAGENDAMIENTO\n"
-                    f"👤 {_nombre_resp_re}\n"
-                    f"👧 {_hijos_txt}\n"
-                    f"❌ De: {_fecha_anterior} {_hora_anterior}\n"
-                    f"✅ A: {fecha_str} {_hora_norm}\n"
-                    f"📱 https://wa.me/{telefono}"
-                )
-                if telefono != _admin_phone_re:
-                    await proveedor.enviar_mensaje(_admin_phone_re, _msg_re)
-                # A1 (migración 2.B): reagendar también la RESERVA FENIX real —
-                # antes este camino solo tocaba PRUEBA y la reserva quedaba vieja.
-                # _crear_reserva_real es fail-safe (try/except interno).
-                if fecha_iso:
-                    from agent.tools.reservas import _crear_reserva_real
-                    await _crear_reserva_real(telefono, fecha_iso, _hora_norm, reagendar=True)
-                return  # No seguir procesando (no crear RESERVAS duplicadas, no actualizar LEADS)
+            if telefono != _admin_phone_re:
+                await proveedor.enviar_mensaje(_admin_phone_re, _msg_re)
+            if fecha_iso:
+                from agent.tools.reservas import _crear_reserva_real
+                await _crear_reserva_real(telefono, fecha_iso, _hora_norm, reagendar=True)
+            return  # No seguir procesando (no crear RESERVAS duplicadas, no actualizar LEADS)
         except Exception as e:
-            logger.error(f"[REAGENDAR] Error actualizando PRUEBA FENIX: {e}")
-
-    # PRUEBA FENIX se crea post-formulario (cuando Ivan dice "los esperamos")
-    # Ver bloque _es_cierre_formulario en el flujo principal
+            logger.error(f"[REAGENDAR] Error reagendando RESERVA real: {e}")
 
     # ── Enviar lista de niños agendados para ese horario ─────────────────────
     if fecha_iso:
