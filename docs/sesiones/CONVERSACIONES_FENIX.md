@@ -303,3 +303,26 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Fenix:** Listé pendientes (formulario reserva end-to-end, confirmación sábado apagada, migración PRUEBA esperando el 18/07, implementar Sábado v2). Cierre.
 
 **Sin commits de código** (solo datos Airtable + docs). Cambios versionados: `PLAN-MAESTRO.md` §11, `FENIX_RESUMEN.md`, este archivo.
+
+---
+
+## 2026-07-12/13 — Auditoría completa del proyecto + 21 fixes en producción
+
+**Ivan:** "yo creo que esta tabla de familias al final fue al pedo y complicó todo... el niño fénix es el que paga la cuota... ¿vos qué pensás?"
+**Fenix:** Coincidí con evidencia: FAMILIAS es una entidad artificial (el apellido no identifica — dos familias con el mismo apellido; las monoparentales rompen PADRE/MADRE) y el código ya camina hacia ahí (el "EJE B" de `airtable_client.py` ya busca por CELL de TUTORES y lee nombres del rollup). Pero el `familia_id` está en 285 lugares de 17 archivos: es una migración por fases, no un cambio de esquema de un día.
+
+**Ivan:** "Estoy completando ahora en otra sesión la migración para eliminar la tabla prueba fénix... primero termino esa migración y después te hago hacer un análisis."
+**Fenix:** Correcto — dos migraciones en paralelo sobre el mismo Airtable es justo lo que quema. Decisión registrada en memoria (`project_migracion_familias.md`), nada iniciado.
+
+**Ivan:** "hacemos una auditoría completa de todo el proyecto, todos los bugs que encontrás... teniendo en mente que queremos hacer esa migración a solo niños Fénix"
+**Fenix:** 6 agentes en paralelo (núcleo / datos / dinero / IA-conversación / background / Mundo Fenix) + verificación local (tests, import) + logs de Railway. **~70 hallazgos con archivo:línea**, consolidados en `docs/estado/AUDITORIA-2026-07-12.md`. Reconcilié contradicciones entre agentes (`registro.py` es código muerto; `_get_records` SÍ pagina — el bug es el tope `max_records`). Cinco críticos: PII de menores en endpoints públicos, dedup que descarta mensajes, `meta.py` ciego a errores de red, sin rate limit saliente, `max_records=100` truncando YA (105 niños).
+
+**Ivan:** "si vamos con ctodo" → "si vamos con todo" → "seguimos"
+**Fenix:** Ejecuté el plan F0→F4 con deploy incremental (un push por cambio, deploy verificado antes del siguiente). **21 pushes en fenix + 1 en pagos-bancard**, todos SUCCESS.
+- **F0 seguridad:** auth en `/api/*` (verificado 401/200 en prod), token HMAC en el QR de `/checkin/prueba`, `/checkin/{id}` deja de mutar en GET, `/juego/dia` solo inicial del apellido, fix dedup (`IntegrityError`), `meta.py` con manejo de red + split >4096 (test de envío real OK), `max_records` 100→1000 (`/api/alumnos` pasó de 100 a **105 alumnos**).
+- **F2 dinero:** guard anti-dup en inscripción, dedup de tarjeta fuera de la purga 24h, **firma del link cubre el teléfono** (cross-repo: `pagos-bancard` usa rama `master`; 5 combinaciones verificadas contra la pasarela real), montos viejos de `/agenda` retirados, **rescate del lead pagado que no completa el formulario** (aprobado por Iván: +2h re-Flow, +24h agenda por texto, recordatorios en Postgres con clamp nocturno), aviso de segundo comprobante.
+- **F4 calidad:** **el prompt cache no funcionaba** — además de la hora invalidando el bloque, medí que el prefijo (~4350 tokens) queda **bajo el mínimo real de Haiku**: no escribía cache. Fix: system en 2 bloques + breakpoint en el mensaje del usuario. Verificado con la API (w6783 → r6783). **Tests revividos** (importaban Nixie eliminado; pytest ni recolectaba) → 30 pasan. **Telegram de raíz**: el grupo registrado del topic gana sobre el override → muere el rebote en ~8 call sites. Reagendar crea-antes-de-borrar. Año dinámico. CAPI `event_id`. Monitor (conf. sábado vigilada, radar 6h). 3 bugs medianos (`_hoy_cls`, "resumen asistencia", bloque duplicado).
+
+**Pendiente consciente:** A10 (keywords que fuerzan `tool_choice`) y C4 (limiter saliente + promo masiva) NO se tocaron: el primero cambia comportamiento conversacional con leads (necesita `/pre-cambio` con simulación), el segundo es un diseño. A8/A15 mueren solos con la migración FAMILIAS.
+
+**Commits (23):** `322f5e8` auth /api · `00a44e4` dedup · `dc9ec67` max_records · `6a1979c` montos /agenda · `0cf6db5` meta.py red+split · `0c56586` checkin token+POST · `968c336` /juego/dia · `2cf7836` guard inscripción · `a2b1f1a` dedup tarjeta · `406e4d0` 2º comprobante · `eaa9eb1` doc auditoría · `a3adffa` rescate post-pago · `eb58b43` firma teléfono (+ `4f5017f` en pagos-bancard) · `f038898` docs · `6e507ef` prompt cache · `f9f00ad` tests · `15e1f7b` telegram raíz · `5c87824` 3 bugs admin · `bba52d5` reagendar · `0ed7298` año dinámico · `51e38d5` CAPI event_id · `010a995` monitor · `1d352a0` docs.

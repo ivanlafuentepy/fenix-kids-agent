@@ -5,6 +5,66 @@
 
 ---
 
+## 2026-07-13 — El prompt cache no cacheaba NADA (y el `cache_control` mentía en silencio)
+
+**Síntoma:** creíamos tener prompt cache activo desde siempre (`cache_control: ephemeral` en el
+system). En realidad el cache **nunca se leía**: se pagaba el premium de escritura sin ahorro.
+
+**Causa raíz — DOS problemas, no uno:**
+1. La hora `%H:%M` se inyectaba al **inicio** del bloque cacheado (`_contexto_fechas()` →
+   `cargar_prompt_agente()`). El cache es un **prefix match**: el bloque cambiaba cada minuto,
+   así que el prefijo nunca coincidía.
+2. Al arreglar (1), el cache **seguía en `r0 w0`**. Medido contra la API con `count_tokens` +
+   llamadas reales: el prefijo `tools + system` de ivan es **~4350 tokens** y **no alcanza el
+   mínimo cacheable real de Haiku 4.5**. Cuando un prefijo no llega al mínimo, la API
+   **ignora el `cache_control` en silencio** — sin error, sin warning, `cache_creation = 0`.
+
+**Cómo se resolvió:**
+- System en **dos bloques**: bloque 1 = fechas del día **sin hora** + prompt del YAML (cacheado,
+  estable todo el día, compartido entre todas las conversaciones); bloque 2 = hora + contexto
+  del lead (sin cache, cambia por mensaje sin invalidar el bloque 1).
+- **Segundo breakpoint en el mensaje actual del usuario**: el prefijo `tools+system+historial`
+  crece con la conversación y **sí** cruza el mínimo. Los hits se acumulan turno a turno — y el
+  grueso del gasto está justo en las conversaciones largas.
+- Verificado con llamadas reales: llamada 1 → `cache_creation=6783`, llamada 2 → `cache_read=6783`
+  con solo 3 tokens sin cachear. El log de `brain.py` ahora imprime `cache r{N} w{N}` por llamada.
+
+**Reglas para la próxima:**
+1. **Un `cache_control` puesto NO significa que el cache funcione.** Verificar SIEMPRE con
+   `usage.cache_read_input_tokens` / `cache_creation_input_tokens`. Si son 0 en llamadas
+   repetidas, hay un invalidador silencioso o el prefijo no llega al mínimo.
+2. **Nada volátil (hora, UUID, contador) dentro o antes del bloque cacheado.** Lo dinámico va
+   DESPUÉS del último breakpoint.
+3. El **mínimo cacheable de Haiku 4.5 es alto** (nuestro system solo no llega). Si el system no
+   alcanza, poner el breakpoint más adelante (mensaje del usuario) para que el prefijo con
+   historial lo cruce.
+
+---
+
+## 2026-07-13 — `tests/test_local.py` roto: la suite entera llevaba semanas sin correr
+
+**Síntoma:** `py -3 -m pytest tests/ -q` → `ERROR collecting tests/test_local.py` →
+`Interrupted: 1 error during collection`. **Cero tests corriendo** (ni los que sí funcionaban),
+y el paso 2 del Definition of Done (`pytest tests/ -q`) era literalmente imposible de cumplir.
+
+**Causa raíz:** el simulador importaba `_detectar_activacion_nixie` y `_detectar_handoff_ivan_nixie`
+de `main.py` — funciones del flujo **Nixie, eliminado hace tiempo** — y `_detectar_confirmacion_aurora`
+desde `main` cuando se había movido a `detectores_conv.py`. Un `ImportError` a nivel de módulo
+**tumba la recolección de TODO pytest**, no solo de ese archivo.
+
+**Cómo se resolvió:** actualizar los imports al flujo actual (router por familia en DB, sin
+handoff por texto), sacar el bloque Nixie del simulador y corregir el desempaque de
+`_build_contexto_aurora` (ahora retorna tupla). Resultado: **30 tests pasan**.
+
+**Reglas para la próxima:**
+1. Al **eliminar una función**, greppear los tests igual que el código de producción — un test
+   roto no avisa: silencia la suite completa.
+2. Si `pytest` dice "error during collection", **NO es un test que falla**: es un import roto que
+   apaga todo. Arreglarlo antes de confiar en cualquier "los tests pasan".
+3. Correr `pytest tests/ -q` de verdad antes de decir "listo" (es el DoD, no un adorno).
+
+---
+
 ## 2026-07-11 — Un número abría VARIOS temas en Telegram (rebote de grupo por dos fuentes de verdad)
 
 **Síntoma:** un mismo número de WhatsApp abría 2-5 temas (topics) en Telegram, sobre todo
