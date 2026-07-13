@@ -2194,8 +2194,11 @@ async def webhook_handler(request: Request):
 
 
 async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
-    """Arma el contexto completo de una familia para inyectar en Aurora."""
-    campos = familia.get("fields", {})
+    """Arma el contexto completo de una familia para inyectar en Aurora.
+
+    Niño-eje: tutores salen de TUTORES, hijos de NIÑOS y reservas de los links
+    del niño — del registro FAMILIAS solo se usa el id (puntero).
+    """
 
     def _primer_nombre(nombre: str) -> str:
         """Retorna solo el primer nombre (sin apellido ni segundo nombre)."""
@@ -2286,7 +2289,9 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         contexto += "  (sin hijos registrados)\n"
 
     # Reservas activas de esta familia (solo futuras) — se retorna por separado
-    # FAMILIA es un lookup (texto), no record link — FIND funciona con ARRAYJOIN({FAMILIA})
+    # Niño-eje: se buscan por el link RESERVAS FENIX de cada hijo (RECORD_ID),
+    # no por FIND del nombre de la familia (bug A8: familia sin nombre matcheaba
+    # cualquier reserva con 'FAMILIA' en el lookup).
     _reservas_texto = ""
     try:
         from agent.airtable_client import _get_records, _RESERVAS
@@ -2294,14 +2299,16 @@ async def _build_contexto_aurora(familia: dict, telefono: str = "") -> str:
         from zoneinfo import ZoneInfo
         _hoy_py = _dt_cls.now(ZoneInfo("America/Asuncion")).date()
         _hoy_str = _hoy_py.isoformat()
-        _nombre_familia = campos.get("FAMILIA", "")
-        if not _nombre_familia:
-            _apellidos = " ".join(
-                (t.get("apellido") or "").strip() for t in tutores if (t.get("apellido") or "").strip()
-            )
-            _nombre_familia = f"FAMILIA {_apellidos}".strip()
-        _formula = f"FIND('{_nombre_familia}', ARRAYJOIN({{FAMILIA}}))"
-        _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=50)
+        _reserva_ids = [rid for h in hijos_raw for rid in (h.get("reserva_ids") or [])]
+        # Tope defensivo: los links guardan orden de alta → las últimas son las
+        # más nuevas (acá solo interesan las futuras). Evita fórmulas kilométricas.
+        if len(_reserva_ids) > 60:
+            _reserva_ids = _reserva_ids[-60:]
+        _reservas_raw = []
+        if _reserva_ids:
+            _or_res = ",".join(f"RECORD_ID()='{rid}'" for rid in _reserva_ids)
+            _formula = f"OR({_or_res})" if len(_reserva_ids) > 1 else _or_res
+            _reservas_raw = await _get_records(_RESERVAS, formula=_formula, max_records=len(_reserva_ids))
         reservas_futuras = []
         for _rr in _reservas_raw:
             _rf = _rr.get("fields", {})

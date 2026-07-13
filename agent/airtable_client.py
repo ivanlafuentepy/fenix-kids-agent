@@ -896,6 +896,10 @@ async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
                         "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
                         "sexo": f.get("SEXO", ""),
                         "talla_remera": f.get("TALLA REMERA", ""),
+                        # Niño-eje: links directos del niño (reservas por link,
+                        # no por FIND del nombre de la familia — bug A8)
+                        "reserva_ids": f.get("RESERVAS FENIX", []) or [],
+                        "estado": f.get("ESTADO", ""),
                     })
             except Exception as e:
                 logger.error(f"Error obteniendo niño {nino_id}: {e}")
