@@ -1,16 +1,13 @@
 # agent/tools/agenda.py — Gestión de reservas para familias inscriptas
 # Solo Aurora. Una sola tool unificada: gestionar_reserva.
 
-import os
 import logging
 
 from agent.airtable_client import (
+    obtener_grupo_familiar,
     buscar_familia_por_telefono,
-    obtener_ninos_de_familia,
-    obtener_tutores_de_familia,
     obtener_o_crear_horario,
     crear_reserva,
-    cancelar_reservas_familia_fecha,
     _get_records,
     _delete,
     _RESERVAS,
@@ -27,10 +24,14 @@ async def gestionar_reserva(
     familia_id: str | None = None,
 ) -> dict:
     """
-    Tool unificada para agendar, reagendar y cancelar reservas.
+    Tool unificada para agendar, reagendar y cancelar reservas (niño-eje, F7.b).
     - agendar: crea reserva nueva para todos los hijos
-    - reagendar: busca reserva actual en Airtable, cancela, crea nueva
+    - reagendar: busca reservas futuras por los links del niño, cancela, crea nueva
     - cancelar: cancela reservas de la fecha/hora indicada
+
+    El grupo se resuelve por teléfono (tutor → hijos; fallback legacy FAMILIAS
+    adentro de obtener_grupo_familiar). familia_id solo se usa como pista para
+    el fallback y para el link transitorio RESERVAS→FAMILIAS.
     """
     accion = accion.lower().strip()
 
@@ -42,44 +43,70 @@ async def gestionar_reserva(
             "message": f"Acción '{accion}' no válida. Usar: agendar, reagendar, cancelar.",
         }
 
-    # Resolver familia
-    if not familia_id:
-        fam = await buscar_familia_por_telefono(telefono)
-        if fam:
-            familia_id = fam["id"]
-    if not familia_id:
+    grupo = await obtener_grupo_familiar(telefono, familia_id=familia_id or "")
+    ninos = (grupo or {}).get("hijos", [])
+    if not ninos:
         return {
             "error": True,
             "error_category": "business",
             "is_retryable": False,
-            "message": "No encontré una familia registrada para este número.",
+            "message": "No encontré niños registrados para este número.",
         }
 
+    # Link transitorio RESERVAS→FAMILIAS: el lookup ESTADO PLAN de RESERVAS
+    # todavía sale de ahí (es_prueba). Se corta cuando el lookup pase a
+    # NIÑO.ESTADO (F7.b-i).
+    if not familia_id:
+        fam = await buscar_familia_por_telefono(telefono)
+        familia_id = fam["id"] if fam else ""
+
     if accion == "agendar":
-        return await _agendar(telefono, fecha, hora, familia_id)
+        return await _agendar(fecha, hora, ninos, familia_id or "")
     elif accion == "reagendar":
-        return await _reagendar(telefono, fecha, hora, familia_id)
+        return await _reagendar(fecha, hora, ninos, familia_id or "")
     elif accion == "cancelar":
-        return await _cancelar(telefono, fecha, hora, familia_id)
+        return await _cancelar(fecha, hora, ninos)
 
 
-async def _agendar(telefono: str, fecha: str, hora: str, familia_id: str) -> dict:
-    """Crea RESERVA para TODOS los hijos de la familia."""
+async def _reservas_futuras_de_ninos(ninos: list[dict]) -> list[dict]:
+    """Reservas de hoy en adelante por los links RESERVAS FENIX de los hijos.
+
+    Reemplaza el viejo FIND(record_id, ARRAYJOIN({FAMILIAS})) que NUNCA
+    matcheaba (ARRAYJOIN de un link devuelve nombres, no ids — bug A8).
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    rids = [rid for n in ninos for rid in (n.get("reserva_ids") or [])][-50:]
+    if not rids:
+        return []
+    hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+    _or = ",".join(f"RECORD_ID()='{r}'" for r in rids)
+    formula = f"OR({_or})" if len(rids) > 1 else _or
+    records = await _get_records(_RESERVAS, formula=formula, max_records=len(rids))
+    futuras = []
+    for r in records:
+        f = r.get("fields", {})
+        _fecha = f.get("FECHA", "")
+        _fecha = (_fecha[0] if _fecha else "") if isinstance(_fecha, list) else _fecha
+        if _fecha < hoy:
+            continue
+        _hora = f.get("HORA", "")
+        _hora = (_hora[0] if _hora else "") if isinstance(_hora, list) else _hora
+        _nom = f.get("NOMBRE COMPLETO", "")
+        _nom = (_nom[0] if _nom else "") if isinstance(_nom, list) else _nom
+        futuras.append({"id": r["id"], "fecha": _fecha, "hora": _hora, "nombre_nino": _nom})
+    return futuras
+
+
+async def _agendar(fecha: str, hora: str, ninos: list[dict], familia_id: str = "") -> dict:
+    """Crea RESERVA para TODOS los hijos del grupo."""
     if not fecha or not hora:
         return {
             "error": True,
             "error_category": "validation",
             "is_retryable": True,
             "message": "Necesito fecha y hora para agendar.",
-        }
-
-    ninos = await obtener_ninos_de_familia(familia_id)
-    if not ninos:
-        return {
-            "error": True,
-            "error_category": "business",
-            "is_retryable": False,
-            "message": "La familia no tiene hijos registrados.",
         }
 
     horario_id = await obtener_o_crear_horario(fecha, hora)
@@ -124,8 +151,8 @@ async def _agendar(telefono: str, fecha: str, hora: str, familia_id: str) -> dic
     }
 
 
-async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_id: str) -> dict:
-    """Busca reserva actual en Airtable, cancela, crea nueva."""
+async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict], familia_id: str = "") -> dict:
+    """Busca reservas futuras por los links del niño, crea la nueva, borra las viejas."""
     if not fecha_nueva or not hora_nueva:
         return {
             "error": True,
@@ -134,42 +161,7 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
             "message": "Necesito la nueva fecha y hora para reagendar.",
         }
 
-    # Buscar reserva actual en Airtable (por familia)
-    from agent.airtable_client import _get_records, _RESERVAS
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    _hoy = datetime.now(ZoneInfo("America/Asuncion")).date()
-
-    # Buscar familia por nombre (lookup texto, no record link)
-    fam_record = await _get_records("FAMILIAS FENIX", formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-    if not fam_record:
-        return {"error": True, "error_category": "business", "is_retryable": False, "message": "Familia no encontrada."}
-
-    nombre_familia = fam_record[0].get("fields", {}).get("FAMILIA", "")
-    if not nombre_familia:
-        # Fallback: derivar el nombre de los apellidos de los tutores (TUTORES FENIX)
-        _tutores = await obtener_tutores_de_familia(familia_id)
-        _apellidos = " ".join(
-            (t.get("apellido") or "").strip() for t in _tutores if (t.get("apellido") or "").strip()
-        )
-        nombre_familia = f"FAMILIA {_apellidos}".strip()
-
-    reservas = await _get_records(_RESERVAS, formula=f"FIND('{nombre_familia}', ARRAYJOIN({{FAMILIA}}))", max_records=50)
-
-    # Filtrar solo futuras
-    reservas_futuras = []
-    for r in reservas:
-        f = r.get("fields", {})
-        _fecha = f.get("FECHA", "")
-        if isinstance(_fecha, list):
-            _fecha = _fecha[0] if _fecha else ""
-        if _fecha >= _hoy.isoformat():
-            _hora = f.get("HORA", "")
-            if isinstance(_hora, list):
-                _hora = _hora[0] if _hora else ""
-            reservas_futuras.append({"id": r["id"], "fecha": _fecha, "hora": _hora})
-
+    reservas_futuras = await _reservas_futuras_de_ninos(ninos)
     if not reservas_futuras:
         return {
             "error": True,
@@ -185,7 +177,7 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
     # horario inválido), las reservas viejas quedan intactas. Antes se
     # borraba primero y un fallo dejaba a la familia SIN ninguna reserva
     # (auditoría 2026-07-12, A9).
-    result = await _agendar(telefono, fecha_nueva, hora_nueva, familia_id)
+    result = await _agendar(fecha_nueva, hora_nueva, ninos, familia_id)
     if result.get("error"):
         return result
     _ids_nuevas = set(result.get("reserva_ids", []) or [])
@@ -212,8 +204,8 @@ async def _reagendar(telefono: str, fecha_nueva: str, hora_nueva: str, familia_i
     }
 
 
-async def _cancelar(telefono: str, fecha: str, hora: str | None, familia_id: str) -> dict:
-    """Cancela reservas de la familia para una fecha/hora."""
+async def _cancelar(fecha: str, hora: str | None, ninos: list[dict]) -> dict:
+    """Cancela las reservas del grupo para una fecha (y hora, si viene)."""
     if not fecha:
         return {
             "error": True,
@@ -223,7 +215,12 @@ async def _cancelar(telefono: str, fecha: str, hora: str | None, familia_id: str
         }
 
     try:
-        borradas = await cancelar_reservas_familia_fecha(familia_id, fecha, hora or "")
+        borradas = 0
+        for r in await _reservas_futuras_de_ninos(ninos):
+            if r["fecha"] == fecha and (not hora or r["hora"] == hora):
+                if await _delete(_RESERVAS, r["id"]):
+                    borradas += 1
+                    logger.info(f"Reserva cancelada: {r['id']} ({r['nombre_nino']} {r['fecha']} {r['hora']})")
         if borradas == 0:
             hora_txt = f" a las {hora}h" if hora else ""
             return {

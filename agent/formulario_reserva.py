@@ -59,60 +59,79 @@ def _campos_tutor(persona: dict) -> dict:
     return campos
 
 
-async def _guardar_tutor(familia_id: str, persona: dict, parentesco: str) -> str | None:
-    """Actualiza el tutor de ese parentesco que ya tiene la familia (sin duplicar); si no
-    existe, lo crea. Necesario porque el tutor padre parcial se creó en el pago con el CELL
-    del WhatsApp, y el formulario puede traer OTRO teléfono → crear_o_actualizar_tutor (que
-    matchea por CELL+parentesco) crearía un duplicado. Acá matcheamos por parentesco."""
-    from agent.airtable_client import (
-        obtener_tutores_de_familia, crear_o_actualizar_tutor, _patch, _TUTORES,
-    )
+async def _guardar_tutor(
+    tutores_grupo: list[dict],
+    hijos: list[dict],
+    persona: dict,
+    parentesco: str,
+    familia_id: str = "",
+) -> str | None:
+    """Actualiza el tutor de ese parentesco del grupo familiar (sin duplicar); si no
+    existe, lo crea y lo linkea a los hijos (PADRE/MADRE del niño, niño-eje).
+    Se matchea por parentesco (no por CELL) porque el tutor parcial se creó en el
+    pago con el CELL del WhatsApp y el formulario puede traer OTRO teléfono."""
+    from agent.airtable_client import crear_o_actualizar_tutor, _patch, _TUTORES, _NINOS
     if not persona.get("nombre"):
         return None
-    try:
-        tutores = await obtener_tutores_de_familia(familia_id)
-        existente = next(
-            (t for t in tutores if (t.get("parentesco") or "") == parentesco and t.get("id")),
-            None,
-        )
-        if existente:
+    existente = next(
+        (t for t in tutores_grupo if (t.get("parentesco") or "") == parentesco and t.get("id")),
+        None,
+    )
+    if existente:
+        try:
             await _patch(_TUTORES, existente["id"], _campos_tutor(persona))
             return existente["id"]
-    except Exception as e:
-        logger.error(f"[RESERVA-FORM] error buscando tutor {parentesco}: {e}")
-    return await crear_o_actualizar_tutor(persona, parentesco, familia_id=familia_id)
+        except Exception as e:
+            logger.error(f"[RESERVA-FORM] error actualizando tutor {parentesco}: {e}")
+            return None
+
+    tid = await crear_o_actualizar_tutor(persona, parentesco, familia_id=familia_id)
+    # Niño-eje: linkear el tutor nuevo a los hijos para que el grupo lo vea.
+    if tid:
+        campo = "MADRE" if parentesco == "Mamá" else "PADRE"
+        for h in hijos:
+            if h.get("id"):
+                try:
+                    await _patch(_NINOS, h["id"], {campo: [tid]})
+                except Exception as e:
+                    logger.error(f"[RESERVA-FORM] error linkeando {campo} del niño {h['id']}: {e}")
+    return tid
 
 
 async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     """Completa FAMILIA/NIÑO/TUTORES a prueba con los datos del formulario y dispara la
     agenda (sábados). NO crea inscripto ACTIVO — la familia ya existe (creada en el pago)."""
     from agent.airtable_client import (
-        buscar_familia_por_telefono, obtener_ninos_de_familia, actualizar_nino,
+        obtener_grupo_familiar, buscar_familia_por_telefono, actualizar_nino,
     )
     from agent.ab_test import actualizar_estado_flags
     from agent.afiches import _armar_mensaje_agenda_post_pago
     from agent.memory import guardar_mensaje
 
-    familia = await buscar_familia_por_telefono(telefono)
-    if not familia:
-        logger.warning(f"[RESERVA-FORM] {telefono}: no encontré familia a prueba — no completo datos")
+    grupo = await obtener_grupo_familiar(telefono)
+    if not grupo:
+        logger.warning(f"[RESERVA-FORM] {telefono}: no encontré grupo a prueba — no completo datos")
     else:
-        familia_id = familia["id"]
+        hijos = grupo.get("hijos", [])
+        tutores = grupo.get("tutores", [])
+        # familia legacy solo para el link transitorio del tutor nuevo
+        _fam = await buscar_familia_por_telefono(telefono)
+        _fam_id = _fam["id"] if _fam else ""
+
         # NIÑO — completar el hijo parcial (apellido, fecha nac, CI)
         nino_nombre = (flow_data.get("nino_nombre") or "").strip()
         nino_apellido = (flow_data.get("nino_apellido") or "").strip()
         nino_ci = (flow_data.get("nino_ci") or "").strip()
         nino_fecha = _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", ""))
         try:
-            ninos = await obtener_ninos_de_familia(familia_id)
             objetivo = None
             if nino_nombre:
                 objetivo = next(
-                    (n for n in ninos if (n.get("nombre") or "").strip().lower() == nino_nombre.lower()),
+                    (n for n in hijos if (n.get("nombre") or "").strip().lower() == nino_nombre.lower()),
                     None,
                 )
-            if not objetivo and ninos:
-                objetivo = ninos[0]
+            if not objetivo and hijos:
+                objetivo = hijos[0]
             if objetivo:
                 campos: dict = {}
                 if nino_apellido:
@@ -131,13 +150,13 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
             padre = _tutor_desde_flow(flow_data, "padre")
             madre = _tutor_desde_flow(flow_data, "madre")
             if padre:
-                await _guardar_tutor(familia_id, padre, "Papá")
+                await _guardar_tutor(tutores, hijos, padre, "Papá", familia_id=_fam_id)
             if madre:
-                await _guardar_tutor(familia_id, madre, "Mamá")
+                await _guardar_tutor(tutores, hijos, madre, "Mamá", familia_id=_fam_id)
         except Exception as e:
             logger.error(f"[RESERVA-FORM] error actualizando tutores: {e}")
 
-        logger.info(f"[RESERVA-FORM] datos completados: familia={familia_id} ({telefono})")
+        logger.info(f"[RESERVA-FORM] datos completados: grupo de {telefono} ({len(hijos)} hijos)")
 
     # Ahora sí: cerrar el paso del formulario y ofrecer las fechas (activar modo agenda)
     await actualizar_estado_flags(telefono, esperando_formulario_reserva=False, modo_agenda=True)
