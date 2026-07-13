@@ -404,64 +404,6 @@ def _render_checkin_html(nombre: str, edad: str, hora: str, foto_url: str, estad
 </html>"""
 
 
-def _render_checkin_lista_html(titulo: str, toggle_base: str, items: list[dict], fecha_label: str, estado: str = "ok", toggle_qs: str = "") -> str:
-    """
-    Página de check-in con lista de hijos para marcar/desmarcar asistencia.
-    Sirve tanto para familias inscriptas como para leads en prueba.
-    `toggle_base`: prefijo de la acción del form (ej. "/checkin/familia/recX").
-    `toggle_qs`: query string a arrastrar en cada acción (ej. "?t=abc" del token de prueba).
-    `items`: lista de {"id", "nombre", "presente": bool}.
-    """
-    if estado == "no_encontrado":
-        return """<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fenix Kids</title></head>
-<body style="margin:0;padding:20px;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#e8f5e9 0%,#fff8e1 100%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-<div style="background:white;border-radius:20px;padding:32px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.12)">
-  <img src="/static/logo-fenix.png" alt="Fenix Kids" style="width:80px;height:auto;margin:0 auto 12px;display:block" />
-  <div style="margin:20px 0;padding:12px 20px;background:#e74c3c;color:white;border-radius:12px;font-size:18px;font-weight:600">❌ No encontrado</div>
-</div></body></html>"""
-
-    filas = ""
-    for n in items:
-        iniciales = "".join(p[0] for p in str(n["nombre"]).split()[:2] if p).upper() or "?"
-        if n["presente"]:
-            btn = '<button type="submit" style="border:none;background:#27ae60;color:white;padding:12px 20px;border-radius:12px;font-size:16px;font-weight:700;min-width:120px;cursor:pointer">✅ Vino</button>'
-            avatar_bg = "#27ae60"
-        else:
-            btn = '<button type="submit" style="border:2px solid #ccc;background:white;color:#666;padding:12px 20px;border-radius:12px;font-size:16px;font-weight:700;min-width:120px;cursor:pointer">⬜ Marcar</button>'
-            avatar_bg = "#bbb"
-        avatar = f'<div style="width:48px;height:48px;border-radius:50%;background:{avatar_bg};display:flex;align-items:center;justify-content:center;font-size:20px;color:white;font-weight:bold;flex-shrink:0">{iniciales}</div>'
-        filas += f"""
-  <form method="post" action="{toggle_base}/toggle/{n['id']}{toggle_qs}" style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:14px;background:#fafafa;margin-bottom:10px">
-    {avatar}
-    <div style="flex:1;text-align:left;font-size:18px;font-weight:600;color:#333">{n['nombre']}</div>
-    {btn}
-  </form>"""
-
-    if not items:
-        filas = '<p style="color:#999;font-size:15px;padding:20px;text-align:center">No hay hijos cargados todavía.</p>'
-
-    return f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fenix Kids — {titulo}</title>
-</head>
-<body style="margin:0;padding:20px;min-height:100vh;background:linear-gradient(135deg,#e8f5e9 0%,#fff8e1 100%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-<div style="background:white;border-radius:20px;padding:28px 20px;max-width:420px;width:100%;margin:0 auto;box-shadow:0 8px 32px rgba(0,0,0,0.12)">
-  <div style="text-align:center;margin-bottom:20px">
-    <img src="/static/logo-fenix.png" alt="Fenix Kids Academy" style="width:96px;height:auto;margin:0 auto 8px;display:block" />
-    <h1 style="margin:4px 0;font-size:22px;color:#333">{titulo}</h1>
-    <div style="color:#27ae60;font-weight:600;font-size:15px">🗓️ Sábado {fecha_label}</div>
-  </div>
-  {filas}
-  <p style="color:#aaa;font-size:12px;margin:18px 0 0;text-align:center">Tocá para cargar o corregir la asistencia de cada hijo</p>
-</div>
-</body>
-</html>"""
-
-
 async def _buscar_ficha_checkin(record_id: str):
     """Busca la RESERVA del QR y arma la ficha (2.D: PRUEBA ya no se consulta).
 
@@ -563,79 +505,6 @@ async def checkin_confirmar(record_id: str):
             logger.warning(f"[CHECKIN] Asistencia no creada para {record_id}: {_e_asis_ci}")
 
     return HTMLResponse(_render_checkin_html(nombre, edad, hora, foto_url, "ok", ahora.strftime("%H:%M")))
-
-
-@app.get("/checkin/familia/{familia_id}")
-async def checkin_familia(familia_id: str):
-    """QR fijo por familia: lista a los hijos para marcar asistencia individual."""
-    from agent.airtable_client import (
-        obtener_ninos_de_familia, obtener_asistencias_ninos_fecha, _get_records, _FAMILIAS,
-    )
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    ahora = datetime.now(ZoneInfo("America/Asuncion"))
-    fecha_iso = ahora.strftime("%Y-%m-%d")
-    fecha_label = ahora.strftime("%d/%m")
-
-    fam_recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-    if not fam_recs:
-        return HTMLResponse(_render_checkin_lista_html("", "", [], "", "no_encontrado"), status_code=404)
-    familia_nombre = fam_recs[0].get("fields", {}).get("FAMILIA", "Familia")
-
-    ninos = await obtener_ninos_de_familia(familia_id)
-    nino_ids = [n["id"] for n in ninos]
-    presentes = await obtener_asistencias_ninos_fecha(nino_ids, fecha_iso)
-
-    items = [{
-        "id": n["id"],
-        "nombre": n.get("apodo") or n.get("nombre") or n.get("nombre_completo") or "Niño",
-        "presente": n["id"] in presentes,
-    } for n in ninos]
-
-    return HTMLResponse(_render_checkin_lista_html(familia_nombre, f"/checkin/familia/{familia_id}", items, fecha_label, "ok"))
-
-
-@app.post("/checkin/familia/{familia_id}/toggle/{nino_id}")
-async def checkin_familia_toggle(familia_id: str, nino_id: str):
-    """Marca (crea fila) o desmarca (borra fila) la asistencia de un niño hoy."""
-    from agent.airtable_client import (
-        obtener_ninos_de_familia, obtener_asistencias_ninos_fecha,
-        crear_asistencia, borrar_asistencia, _get_records, _FAMILIAS,
-    )
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    from fastapi.responses import RedirectResponse
-
-    ahora = datetime.now(ZoneInfo("America/Asuncion"))
-    fecha_iso = ahora.strftime("%Y-%m-%d")
-
-    ninos = await obtener_ninos_de_familia(familia_id)
-    nino = next((n for n in ninos if n["id"] == nino_id), None)
-    if nino:
-        presentes = await obtener_asistencias_ninos_fecha([nino_id], fecha_iso)
-        if nino_id in presentes:
-            await borrar_asistencia(presentes[nino_id])
-            logger.info(f"[ASISTENCIA] Desmarcado {nino_id} (familia {familia_id})")
-        else:
-            tel = ""
-            fam_recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-            if fam_recs:
-                ff = fam_recs[0].get("fields", {})
-                tel = ff.get("CELL PADRE") or ff.get("CELL MADRE") or ""
-            nombre_legible = f"{nino.get('nombre_completo') or nino.get('nombre') or 'Niño'} — {ahora.strftime('%d/%m')}"
-            await crear_asistencia(
-                nombre=nombre_legible,
-                fecha_iso=fecha_iso,
-                hora_checkin_iso=ahora.isoformat(),
-                nino_id=nino_id,
-                familia_id=familia_id,
-                telefono=tel,
-                metodo="QR",
-            )
-            logger.info(f"[ASISTENCIA] Presente {nino_id} (familia {familia_id})")
-
-    return RedirectResponse(url=f"/checkin/familia/{familia_id}", status_code=303)
 
 
 @app.get("/fu/{nombre_archivo}")
@@ -1243,28 +1112,6 @@ async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_r
     except Exception:
         pass
     return {"enviado": True, "telefono": telefono, "qrs": enviados}
-
-
-@app.get("/enviar-qr-familia/{telefono}")
-async def enviar_qr_familia_admin(telefono: str, destino: str = "", _: bool = Depends(_require_admin)):
-    """
-    Genera y envía el QR FIJO de la familia (check-in por familia con lista de hijos).
-    Busca la familia por teléfono. Si se pasa ?destino=XXXX, envía a ese número (preview).
-    """
-    from agent.qr import generar_qr_familia
-    from agent.airtable_client import buscar_familia_por_telefono
-    familia = await buscar_familia_por_telefono(telefono)
-    if not familia:
-        return {"error": "No se encontró familia inscripta para ese teléfono"}
-    familia_id = familia["id"]
-    qr_bytes = generar_qr_familia(familia_id)
-    enviar_a = destino or telefono
-    await proveedor.enviar_imagen_bytes(
-        enviar_a, qr_bytes, "image/png",
-        caption="Este es el QR de tu familia para Fenix Kids 📱 Mostralo cuando llegues y cargamos la asistencia de tus hijos.",
-    )
-    return {"enviado": True, "familia_id": familia_id, "telefono": telefono}
-
 
 
 @app.get("/debug/{telefono}")
