@@ -4504,12 +4504,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         if _match_fecha:
                             _fecha_txt = _match_fecha.group(1)  # "16 de mayo"
                             _hora_res = _match_fecha.group(2).replace("h", ":").rstrip(":")
-                            # Convertir "16 de mayo" → "2026-05-16"
+                            # Convertir "16 de mayo" → ISO. Año calculado (el
+                            # 2026 hardcodeado era bomba de tiempo para enero
+                            # 2027 — auditoría 2026-07-12, A17). Rollover: si
+                            # el día/mes ya pasó hace más de una semana, es
+                            # del año que viene (reserva siempre futura).
                             _mf = re.match(r"(\d{1,2})\s+de\s+(\w+)", _fecha_txt)
                             if _mf and _mf.group(2) in _MESES_A_NUM:
                                 _dia = _mf.group(1).zfill(2)
                                 _mes = _MESES_A_NUM[_mf.group(2)]
-                                _fecha_res = f"2026-{_mes}-{_dia}"
+                                from datetime import date as _date_fr, datetime as _dt_fr, timedelta as _td_fr
+                                from zoneinfo import ZoneInfo as _zi_fr
+                                _hoy_fr = _dt_fr.now(_zi_fr("America/Asuncion")).date()
+                                _anio_fr = _hoy_fr.year
+                                try:
+                                    if _date_fr(_anio_fr, int(_mes), int(_dia)) < _hoy_fr - _td_fr(days=7):
+                                        _anio_fr += 1
+                                except ValueError:
+                                    pass
+                                _fecha_res = f"{_anio_fr}-{_mes}-{_dia}"
                             else:
                                 _fecha_res = _fecha_txt  # fallback
                             break
