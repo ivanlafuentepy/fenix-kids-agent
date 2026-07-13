@@ -1,5 +1,6 @@
 # agent/tools/reservas.py — Acciones sobre clases de prueba
-# Busca PRUEBA FENIX en Airtable para reagendar y confirmar reservas.
+# Confirma y reagenda sobre RESERVAS FENIX (migración 2.C: PRUEBA FENIX ya no
+# se lee ni se escribe acá; la reserva actual sale de los links del niño).
 
 import os
 import re
@@ -49,33 +50,48 @@ async def gestionar_prueba(
 
 async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nueva: str | None = None, **kwargs) -> dict:
     """
-    Reagenda clase de prueba. Busca registros en PRUEBA FENIX por teléfono.
+    Reagenda la clase de prueba sobre RESERVAS FENIX (migración 2.C: la tabla
+    PRUEBA FENIX ya no se lee ni se escribe acá). Las reservas actuales salen
+    de los links del niño (grupo familiar niño-eje) y el reagendamiento real lo
+    hace gestionar_reserva (crea la nueva ANTES de borrar la vieja, A9).
 
-    Si hora_nueva se especifica y es válida → actualiza en Airtable.
-    Si no → retorna las reservas actuales para que Claude pregunte.
+    Si hora/fecha nuevas vienen → reagenda. Si no → retorna las reservas
+    actuales para que Claude pregunte.
     """
-    from agent.airtable_client import _get_records, _patch, _PRUEBAS
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from agent.airtable_client import obtener_grupo_familiar, _get_records, _RESERVAS
 
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
+    # Reservas futuras actuales por los links RESERVAS FENIX de los hijos
+    grupo = await obtener_grupo_familiar(telefono)
+    reservas_info: list[dict] = []
+    if grupo:
+        _hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+        _rids = [rid for h in grupo["hijos"] for rid in (h.get("reserva_ids") or [])][-60:]
+        if _rids:
+            _or = ",".join(f"RECORD_ID()='{rid}'" for rid in _rids)
+            _formula = f"OR({_or})" if len(_rids) > 1 else _or
+            for r in await _get_records(_RESERVAS, formula=_formula, max_records=len(_rids)):
+                f = r.get("fields", {})
+                _f = f.get("FECHA", "")
+                _f = (_f[0] if _f else "") if isinstance(_f, list) else _f
+                if _f < _hoy:
+                    continue
+                _h = f.get("HORA", "")
+                _h = (_h[0] if _h else "") if isinstance(_h, list) else _h
+                _n = f.get("NOMBRE COMPLETO", "")
+                _n = (_n[0] if _n else "?") if isinstance(_n, list) else (_n or "?")
+                reservas_info.append({"record_id": r["id"], "hijo": _n, "fecha": _f, "hora": _h})
 
-    if not pruebas:
+    if not reservas_info:
         return {
             "texto": "No encontré una reserva de clase de prueba para este número.",
             "reagendado": False,
         }
 
-    # Armar info de reservas actuales
-    reservas_info = []
-    for pr in pruebas:
-        f = pr.get("fields", {})
-        reservas_info.append({
-            "record_id": pr["id"],
-            "hijo": f.get("NOMBRE HIJO", "?"),
-            "fecha": f.get("FECHA RESERVA", "?"),
-            "hora": f.get("HORA", "?"),
-        })
-
-    hora_actual = reservas_info[0]["hora"] if reservas_info else "?"
+    reservas_info.sort(key=lambda r: r["fecha"])
+    hora_actual = reservas_info[0]["hora"]
+    fecha_actual = reservas_info[0]["fecha"]
 
     # Si no especificó NI hora NI fecha → retornar reservas actuales + opciones
     # (antes exigía hora: "pasanos al sábado 11, mismo horario" era imposible
@@ -106,57 +122,56 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
             "reagendado": False,
         }
 
-    # Actualizar TODOS los registros en Airtable
-    campos_update = {}
-    if hora_nueva:
-        campos_update["HORA"] = hora_nueva
-    if fecha_nueva:
-        fecha_iso = _parsear_fecha(fecha_nueva)
-        if fecha_iso:
-            campos_update["FECHA RESERVA"] = fecha_iso
-    if not campos_update:
-        return {"texto": "No se especificó nueva fecha ni hora.", "reagendado": False}
-
-    hijos_reagendados = []
-    prueba_ids = []
-    for r in reservas_info:
-        await _patch(_PRUEBAS, r["record_id"], campos_update)
-        hijos_reagendados.append(r["hijo"])
-        prueba_ids.append(r["record_id"])
-        logger.info(f"[REAGENDAR-TOOL] {r['hijo']} ({telefono}): {r['fecha']} {r['hora']} → {fecha_nueva or r['fecha']} {hora_nueva or r['hora']}")
-
-    # A1: reagendar la RESERVA FENIX real (dual-write). Fecha/hora: la nueva
-    # si vino, si no la actual (cubre el reagendamiento solo-fecha).
-    _fecha_real = _parsear_fecha(fecha_nueva) if fecha_nueva else _parsear_fecha(reservas_info[0]["fecha"])
+    # Fecha/hora destino: la nueva si vino, si no la actual (solo-fecha o solo-hora)
+    _fecha_real = _parsear_fecha(fecha_nueva) if fecha_nueva else fecha_actual
     _hora_real = hora_nueva or hora_actual
-    if _fecha_real and _hora_real in _HORARIOS_VALIDOS:
-        await _crear_reserva_real(telefono, _fecha_real, _hora_real, reagendar=True)
+    if not _fecha_real:
+        return {
+            "texto": f"No pude entender la fecha '{fecha_nueva}'. Usá formato como '31 de mayo' o '2026-05-31'.",
+            "reagendado": False,
+        }
 
-    hijos_txt = ", ".join(hijos_reagendados)
-    _fecha_display = campos_update.get("FECHA RESERVA") or reservas_info[0]["fecha"]
+    # Reagendar en RESERVAS (crea antes de borrar); si no había previa, agenda.
+    from agent.tools.agenda import gestionar_reserva
+    res = await gestionar_reserva(telefono, "reagendar", fecha=_fecha_real, hora=_hora_real)
+    if res.get("error"):
+        res = await gestionar_reserva(telefono, "agendar", fecha=_fecha_real, hora=_hora_real)
+    if res.get("error"):
+        return {
+            "texto": "No pude reagendar la reserva. " + (res.get("message") or ""),
+            "reagendado": False,
+            "error": True,
+            "error_category": res.get("error_category", "business"),
+            "is_retryable": res.get("is_retryable", True),
+            "message": res.get("message", "No se pudo reagendar."),
+        }
+
+    _reserva_ids = res.get("reserva_ids", [])
+    await _vincular_reservas_lead(telefono, _reserva_ids)
+    hijos_txt = res.get("hijos", "?")
 
     # Notificar admin por WhatsApp
-    nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
-    admin_phone = os.getenv("ADMIN_PHONE", "")
+    _tuts = (grupo or {}).get("tutores") or []
+    nombre_resp = (_tuts[0].get("nombre", "?") if _tuts else "?")
     notificacion_admin = {
         "enviar_admin": True,
         "mensaje_admin": (
             f"🔄 REAGENDAMIENTO\n"
             f"👤 {nombre_resp}\n"
             f"👧 {hijos_txt}\n"
-            f"❌ De: {reservas_info[0]['fecha']} {hora_actual}\n"
-            f"✅ A: {_fecha_display} {_hora_real}\n"
+            f"❌ De: {fecha_actual} {hora_actual}\n"
+            f"✅ A: {_fecha_real} {_hora_real}\n"
             f"📱 https://wa.me/{telefono}"
         ),
     }
 
     return {
-        "texto": f"Listo! Reserva actualizada ✅ — {hijos_txt} → {_fecha_display} {_hora_real}h",
+        "texto": f"Listo! Reserva actualizada ✅ — {hijos_txt} → {_fecha_real} {_hora_real}h",
         "reagendado": True,
         "hora_anterior": hora_actual,
         "hora_nueva": _hora_real,
         "hijos": hijos_txt,
-        "prueba_ids": prueba_ids,
+        "reserva_ids": _reserva_ids,
         **notificacion_admin,
     }
 
@@ -263,13 +278,11 @@ async def _vincular_reservas_lead(telefono: str, reserva_ids: list[str]) -> None
 
 async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwargs) -> dict:
     """
-    Confirma o crea una reserva de clase de prueba en PRUEBA FENIX.
+    Confirma la reserva de la clase de prueba (migración 2.C: solo RESERVAS).
 
-    Si ya existe registro para este teléfono → actualiza fecha y hora.
-    Si no existe → retorna error (el lead necesita pasar por el flujo primero).
+    Crea la RESERVA real en RESERVAS FENIX para todos los hijos de la familia
+    del lead (la familia existe por el dual-write al pagar) y la vincula al LEAD.
     """
-    from agent.airtable_client import _get_records, _patch, _PRUEBAS
-
     # Validar hora
     if hora not in _HORARIOS_VALIDOS:
         return {
@@ -306,88 +319,40 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
             "message": f"La fecha {fecha_iso} no es sábado.",
         }
 
-    # Buscar registros existentes en PRUEBA FENIX (compat con el flujo viejo)
-    pruebas = await _get_records(_PRUEBAS, formula=f"{{TELEFONO}}='{telefono}'", max_records=10)
-
-    if not pruebas:
-        # MIGRACIÓN: ya no dependemos de PRUEBA FENIX. La familia se crea al pagar
-        # (M1 / Fase 2.A), así que creamos la RESERVA real en RESERVAS FENIX desde
-        # la familia y la vinculamos al LEAD (para verla parada en la tabla de leads).
-        from agent.tools.agenda import gestionar_reserva
-        _res = await gestionar_reserva(telefono, "agendar", fecha=fecha_iso, hora=hora)
-        if _res.get("error"):
-            return {
-                "texto": "No pude confirmar la reserva. " + (_res.get("message") or ""),
-                "confirmada": False,
-                "error": True,
-                "error_category": _res.get("error_category", "business"),
-                "is_retryable": _res.get("is_retryable", False),
-                "message": _res.get("message", "No se pudo crear la reserva."),
-            }
-        _reserva_ids = _res.get("reserva_ids", [])
-        await _vincular_reservas_lead(telefono, _reserva_ids)
-        _meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-                  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        _d = date.fromisoformat(fecha_iso)
-        _fecha_display = f"sábado {_d.day} de {_meses[_d.month - 1]}"
-        _hijos = _res.get("hijos", "")
+    # Migración 2.C: la confirmación va DIRECTO a RESERVAS FENIX (PRUEBA ya no
+    # se lee ni se escribe). La familia existe por el dual-write al pagar; la
+    # reserva se vincula al LEAD para verla desde la tabla de leads.
+    from agent.tools.agenda import gestionar_reserva
+    _res = await gestionar_reserva(telefono, "agendar", fecha=fecha_iso, hora=hora)
+    if _res.get("error"):
         return {
-            "texto": f"Reserva confirmada ✅ {_hijos} el {_fecha_display} a las {hora}h",
-            "confirmada": True,
-            "fecha": fecha_iso,
-            "fecha_display": _fecha_display,
-            "hora": hora,
-            "hijos": _hijos,
-            "reserva_ids": _reserva_ids,
-            "enviar_admin": True,
-            "mensaje_admin": (
-                f"✅ RESERVA CONFIRMADA\n"
-                f"👧 {_hijos}\n"
-                f"📅 {_fecha_display} a las {hora}h\n"
-                f"📱 https://wa.me/{telefono}"
-            ),
+            "texto": "No pude confirmar la reserva. " + (_res.get("message") or ""),
+            "confirmada": False,
+            "error": True,
+            "error_category": _res.get("error_category", "business"),
+            "is_retryable": _res.get("is_retryable", False),
+            "message": _res.get("message", "No se pudo crear la reserva."),
         }
-
-    # Actualizar fecha y hora en todos los registros
-    meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-    fecha_display = f"sábado {d.day} de {meses_es[d.month - 1]}"
-
-    hijos_confirmados = []
-    prueba_ids = []
-    for pr in pruebas:
-        f = pr.get("fields", {})
-        await _patch(_PRUEBAS, pr["id"], {"FECHA RESERVA": fecha_iso, "HORA": hora})
-        hijos_confirmados.append(f.get("NOMBRE HIJO", "?"))
-        prueba_ids.append(pr["id"])
-        logger.info(f"[CONFIRMAR-TOOL] {f.get('NOMBRE HIJO', '?')} ({telefono}): {fecha_iso} {hora}")
-
-    # A1: crear la RESERVA FENIX real (dual-write — el _patch a PRUEBA de arriba se mantiene)
-    await _crear_reserva_real(telefono, fecha_iso, hora, reagendar=False)
-
-    hijos_txt = ", ".join(hijos_confirmados)
-    nombre_resp = pruebas[0].get("fields", {}).get("NOMBRE", "?")
-
-    # Notificar admin
-    admin_phone = os.getenv("ADMIN_PHONE", "")
-    notificacion_admin = {
+    _reserva_ids = _res.get("reserva_ids", [])
+    await _vincular_reservas_lead(telefono, _reserva_ids)
+    _meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    _d = date.fromisoformat(fecha_iso)
+    _fecha_display = f"sábado {_d.day} de {_meses[_d.month - 1]}"
+    _hijos = _res.get("hijos", "")
+    return {
+        "texto": f"Reserva confirmada ✅ {_hijos} el {_fecha_display} a las {hora}h",
+        "confirmada": True,
+        "fecha": fecha_iso,
+        "fecha_display": _fecha_display,
+        "hora": hora,
+        "hijos": _hijos,
+        "reserva_ids": _reserva_ids,
         "enviar_admin": True,
         "mensaje_admin": (
             f"✅ RESERVA CONFIRMADA\n"
-            f"👤 {nombre_resp}\n"
-            f"👧 {hijos_txt}\n"
-            f"📅 {fecha_display} a las {hora}h\n"
+            f"👧 {_hijos}\n"
+            f"📅 {_fecha_display} a las {hora}h\n"
             f"📱 https://wa.me/{telefono}"
         ),
-    }
-
-    return {
-        "texto": f"Reserva confirmada ✅ {hijos_txt} el {fecha_display} a las {hora}h",
-        "confirmada": True,
-        "fecha": fecha_iso,
-        "fecha_display": fecha_display,
-        "hora": hora,
-        "hijos": hijos_txt,
-        "prueba_ids": prueba_ids,
-        **notificacion_admin,
     }
