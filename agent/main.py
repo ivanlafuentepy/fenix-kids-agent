@@ -273,6 +273,9 @@ async def lifespan(app: FastAPI):
         "monitor_salud": _monitor_salud_task,
         "keepalive_ventana": _keepalive_ventana_task,
         "facturas_fenix": _facturas_task,
+        # Estaba lanzado pero SIN registrar: si moría, nadie alertaba
+        # (auditoría 2026-07-12, A20)
+        "confirmacion_sabado": _conf_sabado_task,
     })
 
     print(f"[STARTUP] FENIX KIDS — puerto {PORT}", flush=True)
@@ -284,11 +287,9 @@ async def lifespan(app: FastAPI):
     )
     print("[STARTUP] Monitor de producción: conversaciones + salud activos", flush=True)
     yield
-    _recordatorios_task.cancel()
-    _noche_task.cancel()
-    _keepalive_task.cancel()
-    _monitor_conv_task.cancel()
-    _monitor_salud_task.cancel()
+    # Cancelar TODOS los tasks registrados (antes solo se cancelaban 5 de ~10)
+    for _t in _monitor_bg_tasks.values():
+        _t.cancel()
 
 
 app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)

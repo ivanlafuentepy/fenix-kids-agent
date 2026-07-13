@@ -126,9 +126,10 @@ def _en_horario_reporte_ok() -> bool:
 async def _detectar_sin_respuesta() -> list[dict]:
     """
     Encuentra teléfonos cuyo último mensaje es del user y tiene >10 min sin respuesta.
-    Solo mira la última hora para no cargar toda la DB.
+    Ventana de 6 horas: con 1 hora, un lead sin respuesta hace 1h+ DESAPARECÍA
+    del radar en el ciclo siguiente en vez de escalar (auditoría 2026-07-12, A20).
     """
-    hace_1h = datetime.utcnow() - timedelta(hours=1)
+    hace_1h = datetime.utcnow() - timedelta(hours=6)
     resultados = []
 
     async with async_session() as session:
