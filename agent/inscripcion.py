@@ -318,13 +318,14 @@ async def _iniciar_inscripcion(admin_phone: str, texto_completo: str):
             "prueba": prueba,
             "todas_pruebas": todas_pruebas,
             "parsed": parsed,
+            "tutor_id": matches[0].get("tutor_id", ""),
         }
         await proveedor.enviar_mensaje(admin_phone, msg)
         return
 
     # Todo completo → mostrar resumen y pedir confirmación
     metodo = parsed.get("metodo", "TRANSFER")
-    await _mostrar_confirmacion(admin_phone, prueba, todas_pruebas, parsed, metodo)
+    await _mostrar_confirmacion(admin_phone, prueba, todas_pruebas, parsed, metodo, tutor_id=matches[0].get("tutor_id", ""))
 
 
 async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
@@ -359,11 +360,12 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
                         "prueba": prueba,
                         "todas_pruebas": todas,
                         "parsed": parsed,
+                        "tutor_id": matches[idx].get("tutor_id", ""),
                     }
                     await proveedor.enviar_mensaje(admin_phone, f"Falta: {', '.join(faltantes)}\nCompletá (texto libre):")
                 else:
                     metodo = parsed.get("metodo", "TRANSFER")
-                    await _mostrar_confirmacion(admin_phone, prueba, todas, parsed, metodo)
+                    await _mostrar_confirmacion(admin_phone, prueba, todas, parsed, metodo, tutor_id=matches[idx].get("tutor_id", ""))
             else:
                 await proveedor.enviar_mensaje(admin_phone, f"Elegí entre 1 y {len(matches)}")
         except ValueError:
@@ -394,7 +396,7 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
 
         # Todo completo → pedir confirmación
         metodo = parsed.get("metodo", "TRANSFER")
-        await _mostrar_confirmacion(admin_phone, datos["prueba"], datos["todas_pruebas"], parsed, metodo)
+        await _mostrar_confirmacion(admin_phone, datos["prueba"], datos["todas_pruebas"], parsed, metodo, tutor_id=datos.get("tutor_id", ""))
         return
 
     # Confirmar con si/no
@@ -405,7 +407,8 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
             d = datos
             await _ejecutar_inscripcion(
                 admin_phone, d["prueba"], d["todas_pruebas"],
-                d["plan"], d["metodo"], d["monto"], d["matricula"]
+                d["plan"], d["metodo"], d["monto"], d["matricula"],
+                tutor_id=d.get("tutor_id", ""),
             )
         elif _r in ("no", "cancelar", "cancel", "na"):
             _inscripcion_pendiente.pop(admin_phone, None)
@@ -417,7 +420,7 @@ async def _procesar_respuesta_inscripcion(admin_phone: str, texto: str):
     _inscripcion_pendiente.pop(admin_phone, None)
 
 
-async def _mostrar_confirmacion(admin_phone: str, prueba: dict, todas_pruebas: list[dict], parsed: dict, metodo: str):
+async def _mostrar_confirmacion(admin_phone: str, prueba: dict, todas_pruebas: list[dict], parsed: dict, metodo: str, tutor_id: str = ""):
     """Muestra resumen y pide confirmación si/no."""
     fp = prueba.get("fields", {})
     tel = fp.get("TELEFONO", "")
@@ -449,19 +452,22 @@ async def _mostrar_confirmacion(admin_phone: str, prueba: dict, todas_pruebas: l
         "metodo": metodo,
         "monto": monto,
         "matricula": matricula,
+        "tutor_id": tutor_id,
     }
     await proveedor.enviar_mensaje(admin_phone, msg)
 
 
 async def _ejecutar_inscripcion(
     admin_phone: str, prueba: dict, todas_pruebas: list[dict],
-    plan: str, metodo: str, monto: int, matricula: int
+    plan: str, metodo: str, monto: int, matricula: int,
+    tutor_id: str = "",
 ):
-    """Crea FAMILIA + NIÑOS + PAGOS + marca INSCRIPTO."""
+    """Inscribe niño-eje (F7.b): NIÑOS → ACTIVO + PLAN, PAGOS linkeados a
+    NIÑOS FENIX + PAGA, LEAD → INSCRIPTO. FAMILIAS ya no se crea ni patchea."""
     from agent.airtable_client import (
-        _get_records, _post, _patch, _LEADS, _FAMILIAS,
-        crear_familia, crear_nino,
-        buscar_familia_por_telefono, obtener_ninos_de_familia,
+        _get_records, _post, _patch, _LEADS, _NINOS, _TUTORES,
+        buscar_tutor_por_telefono, crear_o_actualizar_tutor, crear_nino,
+        deducir_genero,
     )
 
     fp = prueba.get("fields", {})
@@ -469,103 +475,82 @@ async def _ejecutar_inscripcion(
     nombre_padre = fp.get("NOMBRE", "")
     apellido_padre = fp.get("APELLIDO", "")
 
-    # ── 1. Buscar o crear FAMILIA ─────────────────────────────────────
-    # Si la familia ya existe (creada al pagar la prueba, en estado A PRUEBA),
-    # la reutilizamos y la promovemos a ACTIVO en vez de crear una duplicada.
-    # Hoy todavía no se crea familia en la prueba → esta rama queda dormida
-    # hasta que se active el flujo de pago (deploy siguiente de la Fase 2).
-    familia_existente = await buscar_familia_por_telefono(tel)
-    ninos_previos = []
-    if familia_existente:
-        familia_id = familia_existente["id"]
-        ninos_previos = await obtener_ninos_de_familia(familia_id)
-        logger.info(f"[INSCRIPCION] Reutilizando FAMILIA existente {familia_id} para {tel}")
+    # ── 1. Resolver o crear el TUTOR ──────────────────────────────────
+    if not tutor_id and tel:
+        _t = await buscar_tutor_por_telefono(tel)
+        tutor_id = _t["id"] if _t else ""
+    parentesco_tutor = ""
+    if tutor_id:
+        _trec = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
+        parentesco_tutor = ((_trec[0].get("fields", {}) or {}).get("PARENTESCO") or "").strip() if _trec else ""
     else:
-        familia_id = await crear_familia({
-            "padre": {
-                "nombre": nombre_padre,
-                "apellido": apellido_padre,
-                "telefono": tel,
-            }
-        })
-        if not familia_id:
-            await proveedor.enviar_mensaje(admin_phone, "Error creando familia en Airtable")
-            return
+        genero = deducir_genero(nombre_padre or "")
+        parentesco_tutor = "Mamá" if genero == "MUJER" else "Papá"
+        tutor_id = await crear_o_actualizar_tutor(
+            {"nombre": nombre_padre or "Lead", "apellido": apellido_padre, "telefono": tel},
+            parentesco_tutor,
+        )
+    if not tutor_id:
+        await proveedor.enviar_mensaje(admin_phone, "Error creando el tutor en Airtable")
+        return
+    _link_nino = {"madre_id": tutor_id} if parentesco_tutor == "Mamá" else {"padre_id": tutor_id}
 
-    await _patch(_FAMILIAS, familia_id, {
-        "PLAN": plan,
-        "METODO PAGO": metodo,
-        "ESTADO PLAN": "ACTIVO",
-    })
-
-    # ── 2. Crear o reutilizar NIÑO(S) ─────────────────────────────────
-    # Si la familia ya traía niños (creados en la prueba), los matcheamos
-    # por NOMBRE para no duplicar; igual linkeamos PRUEBA→NIÑO y migramos cara.
-    def _match_nino_previo(nombre_hijo: str) -> str | None:
-        nh = (nombre_hijo or "").strip().lower()
-        if not nh:
-            return None
-        for np in ninos_previos:
-            if (np.get("nombre") or "").strip().lower() == nh:
-                return np.get("id")
-        return None
-
+    # ── 2. NIÑOS: reutilizar los A PRUEBA (el candidato trae _nino_id) o crear ──
     ninos_creados = []
+    _nino_ids_pago: list[str] = []
     for op in todas_pruebas:
         of = op.get("fields", {})
         h_nombre = of.get("NOMBRE HIJO", "")
         h_apellido = of.get("APELLIDO HIJO", "")
         h_fn = of.get("FECHA NACIMIENTO", "")
         h_genero = of.get("GENERO", "")
-        if h_nombre:
-            # 2.C-C5: si el candidato vino de NIÑOS (pseudo-PRUEBA), ya trae el id
-            nino_id = op.get("_nino_id") or _match_nino_previo(h_nombre)
-            if nino_id:
-                logger.info(f"[INSCRIPCION] Reutilizando NIÑO existente {nino_id} ({h_nombre})")
-            else:
-                nino_id = await crear_nino({
-                    "nombre": h_nombre,
-                    "apellido": h_apellido,
-                    "fecha_nacimiento": h_fn,
-                    "sexo": h_genero,
-                }, familia_id)
-            if nino_id:
-                ninos_creados.append(f"{h_nombre} {h_apellido}")
-    # ── 3. Crear PAGOS ───────────────────────────────────────────────
+        if not h_nombre:
+            continue
+        nino_id = op.get("_nino_id")
+        if nino_id:
+            logger.info(f"[INSCRIPCION] Reutilizando NIÑO existente {nino_id} ({h_nombre})")
+        else:
+            nino_id = await crear_nino({
+                "nombre": h_nombre,
+                "apellido": h_apellido,
+                "fecha_nacimiento": h_fn,
+                "sexo": h_genero,
+            }, estado="ACTIVO", **_link_nino)
+        if nino_id:
+            _nino_ids_pago.append(nino_id)
+            ninos_creados.append(f"{h_nombre} {h_apellido}")
+
+    # ── 3. Promover cada niño: ESTADO=ACTIVO + PLAN (F7.b: el plan vive en
+    # el niño — decidido 13/07; soporta hermanos con planes distintos) ──
+    for _nid_p in _nino_ids_pago:
+        try:
+            await _patch(_NINOS, _nid_p, {"ESTADO": "ACTIVO", "PLAN": plan})
+            logger.info(f"[INSCRIPCION] NIÑO {_nid_p} → ESTADO=ACTIVO, PLAN={plan}")
+        except Exception as _e_p:
+            logger.warning(f"[INSCRIPCION] No pude promover el niño {_nid_p}: {_e_p}")
+
+    # ── 4. Crear PAGOS ───────────────────────────────────────────────
     _pagos_tabla = "PAGOS"
     pagos_creados = []
 
     # Guard anti-duplicado (mismo patrón que registrar_pago_fenix): si el admin
     # corre "cargar familia" dos veces (timeout, reintento), los POST directos
     # duplicaban matrícula + cuota en PAGOS (auditoría 2026-07-12, A1).
-    # Se saltea la creación si la familia ya tiene un PAGO con ese CONCEPTO hoy.
-    # Migración niño-eje: el guard mira la UNIÓN FAMILIAS.PAGOS ∪ NIÑOS.PAGOS
-    # (sobrevive al corte futuro de FAMILIA FENIX en los pagos).
+    # Niño-eje: el guard mira la unión de los PAGOS de los niños.
     _conceptos_hoy: set[str] = set()
-    _nino_ids_pago: list[str] = []
-    _ninos_a_promover: list[str] = []
     try:
-        _fam_g = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-        _fam_g_fields = (_fam_g[0].get("fields", {}) or {}) if _fam_g else {}
-        # Los niños de la familia (previos + recién creados: el link inverso ya los ve)
-        _nino_ids_pago = _fam_g_fields.get("NIÑOS FENIX", []) or []
-        _pago_ids_g = list(_fam_g_fields.get("PAGOS", []) or [])
+        _pago_ids_g: list[str] = []
         if _nino_ids_pago:
             import httpx as _httpx_g
-            from agent.airtable_client import _BASE_URL as _BURL_g, _headers as _hdrs_g, _NINOS as _NINOS_g
+            from agent.airtable_client import _BASE_URL as _BURL_g, _headers as _hdrs_g
             async with _httpx_g.AsyncClient() as _cl_g:
                 for _nid_g in _nino_ids_pago:
                     try:
-                        _r_g = await _cl_g.get(f"{_BURL_g}/{_NINOS_g}/{_nid_g}", headers=_hdrs_g(), timeout=10)
+                        _r_g = await _cl_g.get(f"{_BURL_g}/{_NINOS}/{_nid_g}", headers=_hdrs_g(), timeout=10)
                         if _r_g.status_code == 200:
-                            _f_n_g = _r_g.json().get("fields", {})
-                            for _pid_g in _f_n_g.get("PAGOS", []) or []:
+                            for _pid_g in _r_g.json().get("fields", {}).get("PAGOS", []) or []:
                                 if _pid_g not in _pago_ids_g:
                                     _pago_ids_g.append(_pid_g)
-                            # Niño-eje: los reutilizados de la prueba quedaron A PRUEBA
-                            # → al inscribirse la familia, el niño pasa a ACTIVO.
-                            if (_f_n_g.get("ESTADO") or "") != "ACTIVO":
-                                _ninos_a_promover.append(_nid_g)
                     except Exception as _e_n:
                         logger.warning(f"[INSCRIPCION] Guard: no pude leer PAGOS del niño {_nid_g}: {_e_n}")
         if _pago_ids_g:
@@ -582,39 +567,12 @@ async def _ejecutar_inscripcion(
     except Exception as _e_g:
         logger.warning(f"[INSCRIPCION] Guard anti-dup no pudo leer PAGOS: {_e_g}")
 
-    # Promover los niños a ACTIVO (espejo del ESTADO PLAN de la familia, paso 1).
-    # Best-effort: si falla, el niño queda A PRUEBA y se corrige a mano.
-    for _nid_p in _ninos_a_promover:
-        try:
-            from agent.airtable_client import _NINOS as _NINOS_p
-            await _patch(_NINOS_p, _nid_p, {"ESTADO": "ACTIVO"})
-            logger.info(f"[INSCRIPCION] NIÑO {_nid_p} promovido a ESTADO=ACTIVO")
-        except Exception as _e_p:
-            logger.warning(f"[INSCRIPCION] No pude promover ESTADO del niño {_nid_p}: {_e_p}")
-
-    # Tutor pagador (PAGA, niño-eje): el marcado ES QUIEN PAGA; si no, el del
-    # teléfono de la prueba; si no, el único tutor. Best-effort: si falla, los
-    # PAGOS se crean igual (solo con FAMILIA FENIX + NIÑOS FENIX).
-    _tutor_paga_id = None
-    try:
-        from agent.airtable_client import obtener_tutores_de_familia
-        _tuts = [t for t in await obtener_tutores_de_familia(familia_id) if t.get("id")]
-        _marcado = next((t for t in _tuts if t.get("es_quien_paga")), None)
-        _por_cell = next(
-            (t for t in _tuts if tel and tel in (t.get("cell_limpio"), t.get("cell"))),
-            None,
-        ) if tel else None
-        _elegido = _marcado or _por_cell or (_tuts[0] if len(_tuts) == 1 else None)
-        _tutor_paga_id = _elegido["id"] if _elegido else None
-    except Exception as _e_t:
-        logger.warning(f"[INSCRIPCION] No pude resolver el tutor pagador: {_e_t}")
-
-    # Campos niño-eje comunes a matrícula y plan (dual-write: FAMILIA FENIX sigue)
+    # Campos niño-eje comunes a matrícula y plan
     _campos_nino_eje: dict = {}
     if _nino_ids_pago:
         _campos_nino_eje["NIÑOS FENIX"] = _nino_ids_pago
-    if _tutor_paga_id:
-        _campos_nino_eje["PAGA"] = [_tutor_paga_id]
+    if tutor_id:
+        _campos_nino_eje["PAGA"] = [tutor_id]
 
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",
@@ -663,12 +621,14 @@ async def _ejecutar_inscripcion(
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
 
-    leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
-    for lead in leads:
-        await _patch(_LEADS, lead["id"], {
-            "CONVERSION": "INSCRIPTO",
-            "FAMILIA": [familia_id],
-        })
+    # ── LEAD → INSCRIPTO + link al tutor (F7.b: FAMILIA ya no se linkea) ──
+    if tel:
+        leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
+        for lead in leads:
+            await _patch(_LEADS, lead["id"], {
+                "CONVERSION": "INSCRIPTO",
+                "TUTOR FENIX": [tutor_id],
+            })
 
     # ── Confirmar ─────────────────────────────────────────────────────
     msg = (
@@ -677,10 +637,9 @@ async def _ejecutar_inscripcion(
         f"👶 Hijos: {', '.join(ninos_creados) if ninos_creados else 'ninguno'}\n"
         f"📋 Plan: {plan}\n"
         f"💳 Método: {metodo}\n"
-        f"💰 Pagos: {', '.join(pagos_creados) if pagos_creados else 'ninguno'}\n"
-        f"🟢 Estado: ACTIVO\n\n"
-        f"PRUEBA → INSCRIPTO ✅\n"
+        f"💰 Pagos: {', '.join(pagos_creados) if pagos_creados else 'ninguno'}\n\n"
+        f"NIÑOS → ACTIVO + PLAN ✅\n"
         f"LEAD → INSCRIPTO ✅"
     )
     await proveedor.enviar_mensaje(admin_phone, msg)
-    logger.info(f"[INSCRIPCION] Familia creada: {nombre_padre} {apellido_padre} ({tel}) plan={plan} monto={monto} matri={matricula}")
+    logger.info(f"[INSCRIPCION] Grupo inscripto: {nombre_padre} {apellido_padre} ({tel}) tutor={tutor_id} ninos={_nino_ids_pago} plan={plan} monto={monto} matri={matricula}")
