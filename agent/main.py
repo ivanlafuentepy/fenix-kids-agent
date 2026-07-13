@@ -795,24 +795,24 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
 
     resultado = {"fecha": fecha_iso, "fecha_label": f"Sábado {sabado.day}/{sabado.month}", "turnos": []}
 
-    # Cargar familias + niños para fotos y teléfonos
-    from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
+    # Cargar niños + tutores para fotos, nombres y teléfonos (niño-eje:
+    # PADRE/MADRE del niño → TUTORES; FAMILIAS ya no se consulta)
+    from agent.airtable_client import _get_records, _NINOS, _TUTORES
     _ninos_recs = await _get_records(_NINOS, max_records=1000)
     _ninos_map = {}
     for _nr in _ninos_recs:
         _nf = _nr.get("fields", {})
         _ninos_map[_nr["id"]] = {
             "foto": (_nf.get("FOTO") or [{}])[0].get("url", "") if _nf.get("FOTO") else "",
-            "familia_id": (_nf.get("FAMILIA") or [None])[0],
+            "tutor_ids": (_nf.get("PADRE") or []) + (_nf.get("MADRE") or []),
         }
-    _familias_recs = await _get_records(_FAMILIAS, max_records=1000)
-    _fam_map = {}
-    for _fr in _familias_recs:
-        _ff = _fr.get("fields", {})
-        _fam_map[_fr["id"]] = {
-            "padre": _ff.get("NOMBRE PADRE", ""),
-            "madre": _ff.get("NOMBRE MADRE", ""),
-            "cell": _ff.get("CELL PADRE", "") or _ff.get("CELL MADRE", ""),
+    _tut_recs = await _get_records(_TUTORES, max_records=1000)
+    _tut_map = {}
+    for _tr in _tut_recs:
+        _tf = _tr.get("fields", {})
+        _tut_map[_tr["id"]] = {
+            "nombre": _tf.get("NOMBRE", ""),
+            "cell": _tf.get("CELL", ""),
         }
 
     # Fuente única: RESERVAS FENIX — inscriptos y pruebas split por es_prueba
@@ -823,7 +823,7 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
         turno_data = {"hora": hora, "aurora": [], "prueba": []}
         for n in ninos_hora:
             _nino_extra = _ninos_map.get(n.get("id", ""), {})
-            _fam_extra = _fam_map.get(_nino_extra.get("familia_id") or n.get("familia_id"), {})
+            _tuts_n = [_tut_map.get(tid, {}) for tid in _nino_extra.get("tutor_ids", [])]
             _destino = "prueba" if n.get("es_prueba") else "aurora"
             turno_data[_destino].append({
                 "nombre": n.get("nombre", ""),
@@ -832,8 +832,8 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
                 "edad": n.get("edad", ""),
                 "slug": _slug(n.get("nombre", ""), n.get("apellido", "")),
                 "foto": _nino_extra.get("foto", ""),
-                "padre": _fam_extra.get("padre", "") or _fam_extra.get("madre", ""),
-                "cell": _fam_extra.get("cell", ""),
+                "padre": next((t["nombre"] for t in _tuts_n if t.get("nombre")), ""),
+                "cell": next((t["cell"] for t in _tuts_n if t.get("cell")), ""),
             })
         resultado["turnos"].append(turno_data)
 
@@ -852,26 +852,22 @@ async def estadisticas(_: bool = Depends(_require_admin)):
 @app.get("/api/alumnos")
 async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
     """Devuelve todos los alumnos (NIÑOS FENIX). Protegido: X-ADMIN-KEY o ?k=."""
-    from agent.airtable_client import _get_records, _NINOS, _FAMILIAS
+    from agent.airtable_client import _get_records, _NINOS, _TUTORES
     from datetime import date
     import unicodedata
     import re
 
-    # TODO(migración): _get_records trunca a 100 — NIÑOS/FAMILIAS van a superarlo;
-    # paginar con offset cuando pase (regla airtable-seguro).
     records = await _get_records(_NINOS, max_records=1000)
 
-    # Cargar familias para obtener teléfonos padres + estado del plan
-    familias_cache = {}
-    familias_recs = await _get_records(_FAMILIAS, max_records=1000)
-    for fam in familias_recs:
-        ff = fam.get("fields", {})
-        familias_cache[fam["id"]] = {
-            "padre": ff.get("NOMBRE PADRE", ""),
-            "madre": ff.get("NOMBRE MADRE", ""),
-            "cell_padre": ff.get("CELL PADRE", ""),
-            "cell_madre": ff.get("CELL MADRE", ""),
-            "estado_plan": ff.get("ESTADO PLAN", ""),
+    # Cargar tutores para nombres y teléfonos (niño-eje: PADRE/MADRE del niño;
+    # FAMILIAS ya no se consulta — el estado sale de NIÑOS.ESTADO)
+    tutores_cache = {}
+    tutores_recs = await _get_records(_TUTORES, max_records=1000)
+    for tut in tutores_recs:
+        tf = tut.get("fields", {})
+        tutores_cache[tut["id"]] = {
+            "nombre": tf.get("NOMBRE", ""),
+            "cell": tf.get("CELL", ""),
         }
 
     alumnos = []
@@ -904,15 +900,13 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
         # Reservas count
         reservas = f.get("RESERVAS FENIX", [])
         n_reservas = len(reservas) if isinstance(reservas, list) else 0
-        # Familia / teléfonos padres
-        familia_ids = f.get("FAMILIA", [])
-        padre_info = {}
-        if familia_ids and isinstance(familia_ids, list):
-            padre_info = familias_cache.get(familia_ids[0], {})
+        # Tutores del niño (niño-eje): PADRE/MADRE son links a TUTORES
+        _padre_t = tutores_cache.get((f.get("PADRE") or [None])[0] or "", {})
+        _madre_t = tutores_cache.get((f.get("MADRE") or [None])[0] or "", {})
 
-        # es_prueba: la familia del niño está A PRUEBA (migración 2.B — antes
-        # los de prueba venían de la tabla PRUEBA FENIX, ahora viven en NIÑOS)
-        _es_prueba_al = padre_info.get("estado_plan", "") == "A PRUEBA"
+        # es_prueba: el ESTADO vive en el niño (migración niño-eje — antes se
+        # miraba el ESTADO PLAN de su familia)
+        _es_prueba_al = (f.get("ESTADO") or "") == "A PRUEBA"
         alumnos.append({
             "id": rec["id"],
             "nombre": nombre,
@@ -924,10 +918,10 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
             "foto": foto_url,
             "reservas": n_reservas,
             "fecha_nacimiento": fn,
-            "padre": padre_info.get("padre", ""),
-            "madre": padre_info.get("madre", ""),
-            "cell_padre": padre_info.get("cell_padre", ""),
-            "cell_madre": padre_info.get("cell_madre", ""),
+            "padre": _padre_t.get("nombre", ""),
+            "madre": _madre_t.get("nombre", ""),
+            "cell_padre": _padre_t.get("cell", ""),
+            "cell_madre": _madre_t.get("cell", ""),
             **({"es_prueba": True} if _es_prueba_al else {}),
         })
 
