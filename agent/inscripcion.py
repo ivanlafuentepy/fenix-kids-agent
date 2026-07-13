@@ -111,43 +111,79 @@ def _parsear_inscripcion(texto: str) -> dict:
 
 
 async def _candidatos_a_prueba() -> list[dict]:
-    """Candidatos a inscribir (migración 2.C-C5): FAMILIAS en ESTADO A PRUEBA
-    con sus NIÑOS y el tutor de contacto — la tabla PRUEBA FENIX ya no se lee.
+    """Candidatos a inscribir (F7.b): NIÑOS con ESTADO='A PRUEBA' agrupados por
+    tutor (links PADRE/MADRE del niño) — FAMILIAS ya no se enumera. Cubre los
+    dos modelos: altas niño-eje nuevas y fichas legacy (C0 backfilleó el ESTADO
+    de todos los niños; si un niño no tiene tutor linkeado, se agrupa por su
+    FAMILIA legacy).
 
     Cada candidato tiene el formato pseudo-PRUEBA que espera el resto del flujo:
     {"prueba": {"id": "", "fields": {TELEFONO, NOMBRE, APELLIDO}},
      "todas_pruebas": [{"id": "", "_nino_id", "fields": {NOMBRE HIJO, APELLIDO HIJO,
-                        EDAD HIJO, FECHA NACIMIENTO, GENERO}}, ...]}
+                        EDAD HIJO, FECHA NACIMIENTO, GENERO}}, ...],
+     "tutor_id": rec del tutor (si se resolvió), "familia_id": rec legacy o ""}
     """
-    from agent.airtable_client import _get_records, _FAMILIAS, _NINOS
+    from agent.airtable_client import _get_records, _FAMILIAS, _NINOS, _TUTORES
 
-    fams = await _get_records(_FAMILIAS, formula="{ESTADO PLAN}='A PRUEBA'", max_records=1000)
-    if not fams:
+    ninos = await _get_records(_NINOS, formula="{ESTADO}='A PRUEBA'", max_records=1000)
+    if not ninos:
         return []
-    ninos = await _get_records(_NINOS, max_records=2000)
-    nino_por_id = {n["id"]: (n.get("fields", {}) or {}) for n in ninos}
+
+    # Agrupar niños que comparten algún tutor; sin tutor → por familia legacy;
+    # sin nada → grupo propio.
+    grupos: list[dict] = []
+    for n in ninos:
+        nf = n.get("fields", {}) or {}
+        if not (nf.get("NOMBRE") or "").strip():
+            continue
+        tutor_ids = (nf.get("PADRE") or []) + (nf.get("MADRE") or [])
+        familia_id = (nf.get("FAMILIA") or [""])[0]
+        destino = None
+        for g in grupos:
+            if (tutor_ids and set(tutor_ids) & set(g["tutor_ids"])) or \
+               (not tutor_ids and familia_id and familia_id == g["familia_id"]):
+                destino = g
+                break
+        if not destino:
+            destino = {"tutor_ids": [], "familia_id": familia_id if not tutor_ids else "", "ninos": []}
+            grupos.append(destino)
+        destino["ninos"].append(n)
+        for t in tutor_ids:
+            if t not in destino["tutor_ids"]:
+                destino["tutor_ids"].append(t)
 
     candidatos = []
-    for fam in fams:
-        ff = fam.get("fields", {}) or {}
-        nombres_tut = ff.get("NOMBRES TUTORES", []) or []
-        if not isinstance(nombres_tut, list):
-            nombres_tut = [nombres_tut]
-        cells_tut = ff.get("CELLS LIMPIOS TUTORES", []) or []
-        if not isinstance(cells_tut, list):
-            cells_tut = [cells_tut]
-        _nom_completo = (nombres_tut[0] if nombres_tut else "").strip()
-        _partes = _nom_completo.split()
-        tel = (cells_tut[0] if cells_tut else "").strip()
+    for g in grupos:
+        tel, nombre, apellido, tutor_id = "", "", "", ""
+        if g["tutor_ids"]:
+            tutor_id = g["tutor_ids"][0]
+            trec = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
+            if trec:
+                tf = trec[0].get("fields", {}) or {}
+                nombre = (tf.get("NOMBRE") or "").strip()
+                apellido = (tf.get("APELLIDO") or "").strip()
+                tel = (tf.get("CELL LIMPIO") or "").strip()
+        elif g["familia_id"]:
+            frec = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{g['familia_id']}'", max_records=1)
+            if frec:
+                ff = frec[0].get("fields", {}) or {}
+                nombres_tut = ff.get("NOMBRES TUTORES", []) or []
+                if not isinstance(nombres_tut, list):
+                    nombres_tut = [nombres_tut]
+                cells_tut = ff.get("CELLS LIMPIOS TUTORES", []) or []
+                if not isinstance(cells_tut, list):
+                    cells_tut = [cells_tut]
+                _partes = (nombres_tut[0] if nombres_tut else "").strip().split()
+                nombre = _partes[0] if _partes else ""
+                apellido = " ".join(_partes[1:]) if len(_partes) > 1 else ""
+                tel = (cells_tut[0] if cells_tut else "").strip()
 
         hijos = []
-        for nid in ff.get("NIÑOS FENIX", []) or []:
-            nf = nino_por_id.get(nid, {})
-            if not (nf.get("NOMBRE") or "").strip():
-                continue
+        for n in g["ninos"]:
+            nf = n.get("fields", {}) or {}
             hijos.append({
                 "id": "",  # sin registro PRUEBA — nada que patchear ahí
-                "_nino_id": nid,
+                "_nino_id": n["id"],
                 "fields": {
                     "NOMBRE HIJO": nf.get("NOMBRE", ""),
                     "APELLIDO HIJO": nf.get("APELLIDO", ""),
@@ -162,12 +198,13 @@ async def _candidatos_a_prueba() -> list[dict]:
                 "id": "",
                 "fields": {
                     "TELEFONO": tel,
-                    "NOMBRE": _partes[0] if _partes else "",
-                    "APELLIDO": " ".join(_partes[1:]) if len(_partes) > 1 else "",
+                    "NOMBRE": nombre,
+                    "APELLIDO": apellido,
                 },
             },
             "todas_pruebas": hijos,
-            "familia_id": fam["id"],
+            "tutor_id": tutor_id,
+            "familia_id": g["familia_id"],
         })
     return candidatos
 
