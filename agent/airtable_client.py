@@ -817,9 +817,21 @@ async def crear_familia(datos: dict) -> str | None:
 
 # ── NIÑOS ─────────────────────────────────────────────────────────────────────
 
-async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
+async def crear_nino(
+    datos_nino: dict,
+    familia_id: str = "",
+    *,
+    padre_id: str = "",
+    madre_id: str = "",
+    estado: str = "",
+) -> str | None:
     """
-    Crea un registro en NIÑOS vinculado a una FAMILIA.
+    Crea un registro en NIÑOS (niño-eje, F7.b).
+
+    - padre_id / madre_id: links directos a TUTORES FENIX (el modelo nuevo).
+    - estado: ESTADO explícito del niño (A PRUEBA / ACTIVO / ...). Si no viene
+      y hay familia_id, se espeja el ESTADO PLAN de la familia (transición).
+    - familia_id: link legacy a FAMILIAS, opcional — muere con la tabla.
 
     datos_nino = {nombre, apellido, ci, fecha_nacimiento, sexo, talla_remera}
     Retorna el record_id del NIÑO creado.
@@ -861,25 +873,33 @@ async def crear_nino(datos_nino: dict, familia_id: str) -> str | None:
     if datos_nino.get("talla_remera"):
         campos["TALLA REMERA"] = str(datos_nino["talla_remera"]).strip()
 
-    campos["FAMILIA"] = [familia_id]
+    # Links niño-eje: el niño apunta directo a sus tutores.
+    if padre_id:
+        campos["PADRE"] = [padre_id]
+    if madre_id:
+        campos["MADRE"] = [madre_id]
+    if familia_id:
+        campos["FAMILIA"] = [familia_id]
 
-    # Migración niño-eje: ESTADO del niño espeja el ESTADO PLAN de su familia
-    # al crearse (A PRUEBA / ACTIVO / etc). Todos los flujos setean el estado de
-    # la familia ANTES de crear los niños. Familia sin ESTADO PLAN → niño sin
-    # ESTADO (vacío = cliente, misma semántica que familia_es_activa).
-    try:
-        async with httpx.AsyncClient() as _cl_est:
-            _r_est = await _cl_est.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
-            if _r_est.status_code == 200:
-                _estado_flia = (_r_est.json().get("fields", {}).get("ESTADO PLAN") or "").strip()
-                if _estado_flia:
-                    campos["ESTADO"] = _estado_flia
-    except Exception as e:
-        logger.warning(f"[NIÑO] No pude espejar ESTADO de la familia {familia_id}: {e}")
+    # ESTADO del niño: explícito si vino (modelo nuevo); si no, espeja el
+    # ESTADO PLAN de la familia (transición). Sin familia ni estado → vacío
+    # (= cliente, misma semántica que familia_es_activa).
+    if estado:
+        campos["ESTADO"] = estado.strip()
+    elif familia_id:
+        try:
+            async with httpx.AsyncClient() as _cl_est:
+                _r_est = await _cl_est.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
+                if _r_est.status_code == 200:
+                    _estado_flia = (_r_est.json().get("fields", {}).get("ESTADO PLAN") or "").strip()
+                    if _estado_flia:
+                        campos["ESTADO"] = _estado_flia
+        except Exception as e:
+            logger.warning(f"[NIÑO] No pude espejar ESTADO de la familia {familia_id}: {e}")
 
     resultado = await _post(_NINOS, campos)
     if resultado:
-        logger.info(f"Niño creado: {resultado['id']} en familia {familia_id}")
+        logger.info(f"Niño creado: {resultado['id']} familia={familia_id or '-'} padre={padre_id or '-'} madre={madre_id or '-'} estado={campos.get('ESTADO', '-')}")
         if datos_nino.get("nombre"):
             from agent.concurrencia import _fire_and_forget
             from agent.voces_alumnos import generar_audios_nino
