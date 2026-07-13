@@ -1437,33 +1437,33 @@ async def registrar_pago_fenix(
     lead_id: str | None = None,
     telefono: str = "",
 ) -> str | None:
-    """Crea un registro de PAGO en la tabla PAGOS vinculado a la FAMILIA FENIX
-    (y al LEAD FENIX si se pasa lead_id, para verlo desde la tabla de leads).
+    """Crea un registro de PAGO en la tabla PAGOS (niño-eje, corte F7): linkea
+    a NIÑOS FENIX (los hermanos que cubre — un pago, un monto, N hermanos;
+    NUNCA se parte), a PAGA (el tutor que puso la plata) y al LEAD FENIX si se
+    pasa lead_id. FAMILIA FENIX ya NO se escribe (2026-07-13); familia_id queda
+    como fallback de resolución para fichas legacy.
 
-    Migración niño-eje (dual-write): el PAGO además linkea a NIÑOS FENIX (los
-    hermanos que cubre — un pago, un monto, N hermanos; NUNCA se parte) y a
-    PAGA (el tutor que puso la plata). FAMILIA FENIX se sigue escribiendo hasta
-    el corte final. Si la derivación de niños/tutor falla, el pago se crea
-    igual solo con FAMILIA FENIX — nunca se pierde un pago por esto.
-
-    El código es la ÚNICA fuente del pago. Idempotente: si la familia ya tiene un PAGO de prueba
-    registrado HOY, no lo duplica.
+    El código es la ÚNICA fuente del pago. Idempotente: si ya hay un PAGO de
+    prueba registrado HOY (visto por los niños o la familia legacy), no lo duplica.
 
     Retorna el record_id del PAGO (nuevo o el existente) o None si falla.
     """
-    if not familia_id or monto <= 0:
-        logger.warning(f"[PAGO] registrar_pago_fenix sin familia o monto<=0: familia={familia_id} monto={monto}")
+    if monto <= 0 or not (telefono or familia_id):
+        logger.warning(f"[PAGO] registrar_pago_fenix sin destinatario o monto<=0: familia={familia_id} tel={telefono} monto={monto}")
         return None
 
-    fam = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-    fam_fields = (fam[0].get("fields", {}) or {}) if fam else {}
-    nino_ids = fam_fields.get("NIÑOS FENIX", []) or []
+    # Niños que cubre el pago: grupo familiar (tutor → hijos), con fallback
+    # legacy a FAMILIAS adentro de obtener_grupo_familiar
+    grupo = await obtener_grupo_familiar(telefono, familia_id=familia_id or "")
+    nino_ids = [h["id"] for h in (grupo or {}).get("hijos", []) if h.get("id")]
 
-    # Guard anti-duplicado: ¿ya hay un PAGO de prueba creado hoy? Se mira la
-    # UNIÓN de los PAGOS de la familia (modelo viejo) y de sus niños (link
-    # inverso NIÑOS.PAGOS, modelo nuevo) — así el guard sigue funcionando
-    # cuando se corte la escritura de FAMILIA FENIX.
-    pago_ids = list(fam_fields.get("PAGOS", []) or [])
+    # Guard anti-duplicado: ¿ya hay un PAGO de prueba creado hoy? Unión de los
+    # PAGOS de los niños (link inverso, modelo nuevo) y de la familia legacy.
+    pago_ids: list[str] = []
+    if familia_id:
+        fam = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
+        if fam:
+            pago_ids = list((fam[0].get("fields", {}) or {}).get("PAGOS", []) or [])
     if nino_ids:
         async with httpx.AsyncClient() as client:
             for nid in nino_ids:
@@ -1495,7 +1495,7 @@ async def registrar_pago_fenix(
     # Con 2+ tutores sin señal clara, no se adivina (queda sin PAGA).
     tutor_paga_id = None
     try:
-        tutores = [t for t in await obtener_tutores_de_familia(familia_id) if t.get("id")]
+        tutores = [t for t in (grupo or {}).get("tutores", []) if t.get("id")]
         _por_cell = next(
             (t for t in tutores if telefono and telefono in (t.get("cell_limpio"), t.get("cell"))),
             None,
@@ -1504,7 +1504,7 @@ async def registrar_pago_fenix(
         _elegido = _por_cell or _marcado or (tutores[0] if len(tutores) == 1 else None)
         tutor_paga_id = _elegido["id"] if _elegido else None
     except Exception as e:
-        logger.warning(f"[PAGO] No pude resolver el tutor pagador de {familia_id}: {e}")
+        logger.warning(f"[PAGO] No pude resolver el tutor pagador ({telefono}): {e}")
 
     campos_pago = {
         "MONTO": monto,
@@ -1512,7 +1512,6 @@ async def registrar_pago_fenix(
         "CONCEPTO": concepto,
         "ESTADO DE PAGO": "PAGADO",
         "FUENTE": "FENIX KIDS ACADEMY",
-        "FAMILIA FENIX": [familia_id],
         "EXCEL": True,
     }
     if nino_ids:

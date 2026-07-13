@@ -603,7 +603,6 @@ async def _ejecutar_inscripcion(
             "CONCEPTO": _matri_concepto,
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
-            "FAMILIA FENIX": [familia_id],
             "EXCEL": True,
             **_campos_nino_eje,
         })
@@ -621,7 +620,6 @@ async def _ejecutar_inscripcion(
             "CONCEPTO": concepto_plan,
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
-            "FAMILIA FENIX": [familia_id],
             "EXCEL": True,
             **_campos_nino_eje,
         })

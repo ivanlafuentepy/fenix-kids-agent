@@ -45,9 +45,9 @@ async def crear_factura_fenix(
     tutor_id: str = "",
 ) -> str | None:
     """Crea el registro en FACTURAS para que el robot facturador lo emita.
-    NO toca el PAGO. Niño-eje: linkea TUTOR (el robot lee el lookup TUTOR RUC);
-    FAMILIA FENIX se sigue escribiendo como fallback legacy hasta el corte.
-    Retorna el record_id de la factura o None."""
+    NO toca el PAGO. Niño-eje (corte F7): linkea TUTOR — el robot lee el
+    lookup TUTOR RUC. FAMILIA FENIX ya no se escribe; familia_id queda solo
+    para resolver el tutor de fichas legacy. Retorna el record_id o None."""
     descripcion = ("Clase de prueba FENIX Kids — sábado en el parque"
                    if concepto == "PRUEBA" else "Clase FENIX Kids — sábado en el parque")
     campos = {
@@ -61,8 +61,6 @@ async def crear_factura_fenix(
         campos["PAGO"] = [pago_rid]
     if tutor_id:
         campos["TUTOR"] = [tutor_id]
-    if familia_id:
-        campos["FAMILIA FENIX"] = [familia_id]
     record = await _post(_FACTURAS, campos)
     if record:
         logger.info(f"[FACTURA] Creada factura {record.get('id')} (pago {pago_rid}, tutor {tutor_id or '—'}, familia {familia_id})")
