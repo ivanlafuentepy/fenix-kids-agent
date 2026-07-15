@@ -374,3 +374,25 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Fénix:** Ejecuté **2.D**: backup JSON (75+8 → `backups/2026-07-13/`), rescaté el histórico (`scripts/migrar_historico_prueba.py`: 34 reservas con PRESENTE + 11 caras re-indexadas en Rekognition, idempotente), borré **−419 líneas** de código legacy, y **renombré la tabla a "PRUEBA FENIX LEGACY"** (canario ~30 días). "Resumen anuncios" migró a PAGOS. Después **F7.a**: PAGOS y FACTURAS ya no linkean FAMILIA FENIX. Le expliqué que F7.b (las altas todavía crean FAMILIAS) es un refactor de ~10 piezas que dejo mapeado para la próxima — tocarlo al final de 20 deploys es como se rompen producciones.
 
 **Commits (23 en fenix, C0→F7.a):** `f943b71` C0 · `1ead97a` C1 · `711e796` C2 · `1322e51` C3 · `c90fcec` C4 · `0b9a3e2` C5 · `758fb8c` C6 · `c655a4c` docs · `64839e5` F2.a · `426d7f8` F2.b · `ec1a2e0` F2.c · `258fab0` F3 · `87cd6f1` F3.b · `203d180` 2.C-C1 · `7541d69` C5 · `5eddd05` C2 · `9ac7e50` C3 · `1388b0c` C4 · `82bf6c3` C6 · `0d2f5e5` F5 · `4838cda` F6 · `69c3589` 2.D backfill · `4c061b0` 2.D limpieza · `7ab5097` F7.a. **Robot facturador:** `ccb5089` (master). **Airtable:** tabla renombrada a PRUEBA FENIX LEGACY.
+
+---
+
+## 2026-07-14 — F7.b: el corte de altas de FAMILIAS + limpieza de datos
+
+**Iván:** seguimos con esto (F7.b — el último tramo: las altas todavía crean FAMILIAS).
+**Fénix:** Leí el worklist punto por punto de la memoria y corrí `/pre-cambio`. Ejecuté F7.b entero en **10 deploys niño-eje incrementales** (`c3b3741`→`506d30a`), cada uno SUCCESS + prod 200 + logs limpios antes del siguiente: (a) `crear_o_actualizar_tutor` idempotente por CELL LIMPIO+PARENTESCO; (b) `crear_nino` con links PADRE/MADRE+ESTADO; (c) agenda/formulario por grupo familiar + es_prueba por NIÑO.ESTADO; **(c3) el CORTE** — `crear_grupo_a_prueba` reemplaza `crear_familia_a_prueba`, lead por campo nuevo `LEADS.TUTOR FENIX`; (d) inscripción niño-eje; (e) candidatos desde NIÑOS A PRUEBA; (f) registro/cargar niño/modoalumno/reset por tutor; (g) borrados los endpoints de check-in por familia; (i) RESERVAS/ASISTENCIA sueltan FAMILIAS. De paso maté 3 bugs viejos (cancelar reservas y guard-dup por FIND-sobre-link, patch a FAMILIAS.PLAN inexistente).
+
+**Iván (decisión):** el PLAN, ¿dónde queda al cortar FAMILIAS? → **Campo PLAN en NIÑOS**.
+**Fénix:** Creé el campo `NIÑOS.PLAN` (select, 4 opciones) por Metadata API con el token de Dorita. La inscripción lo escribe por niño — soporta hermanos con planes distintos, que era justo lo que el modelo niño-eje quería resolver.
+
+**Fénix (decisión propia):** la columna `tutor_id` en la DB **NO la creé** — al terminar el refactor tenía cero consumidores (el tutor se resuelve por CELL LIMPIO, el id se cachea en `estado_json`), y la regla del plan era "columna DB solo cuando algo la lea".
+
+**Iván:** seguimos.
+**Fénix:** Verifiqué que prod pasó la noche limpio y audité las fichas incompletas que bloqueaban F7.c. Hallazgos: **Martina Martinez** era una alumna real huérfana de links (la familia tenía su reserva) → la linkeé a Hector/Jessica; las **dos "FAMILIA Britez" NO eran duplicadas** (Johanna y Antonia Iliada, familias distintas — la "fuga" era el FIND por nombre ya muerto); quedaban 5 familias muertas (0 niños/pagos/reservas) + 9 tutores sin hijos.
+
+**Iván (decisión):** borrar todo (las 5 familias muertas + los tutores).
+**Fénix:** Backup local en `backups/2026-07-14/`, borré 9 tutores + 5 familias (conservé tu tutor con el CODIGO 43E8EW del juego). Estado final: 101 tutores, 1 solo sin hijos (vos, admin), 1 niño huérfano (ALAN TEST). Los datos ya no bloquean F7.c.
+
+**Nota:** F7.b quedó sin probar en vivo (ningún lead pagó). Pendiente probar el alta niño-eje end-to-end con número de test + "cargar familia". F7.c código (sacar fallbacks → LEGACY → borrar) queda para después del sábado 18 — los fallbacks son la red de seguridad hasta que un sábado real valide todo.
+
+**Commits (11 en fenix, F7.b-a→i):** `c3b3741` (a) · `87fc53d` (b) · `b022474` (c1) · `5314090` (c2) · `fc4a9db` (c3, el corte) · `38e0ef8` (e) · `cecb90e` (d) · `d5a2e6a` (f1) · `819883e` (f2) · `467cf3b` (g) · `506d30a` (i). **Airtable:** campos nuevos `LEADS.TUTOR FENIX` (`fldOaYMkJdtihJrj2`) y `NIÑOS.PLAN` (`fldNyWFtzD0NO48HC`); borradas 5 familias + 9 tutores muertos.

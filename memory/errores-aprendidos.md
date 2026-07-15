@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-07-14 — `git commit -m @'…'@` (here-string) de PowerShell se rompe con comillas internas
+
+**Síntoma:** commiteando F7.b-c1 con un mensaje multi-línea vía
+`git commit -m @'…texto con "comillas" y (paréntesis)…'@`, PowerShell **no pasó el here-string
+como un solo argumento**: git recibió las palabras sueltas como pathspecs →
+`error: pathspec 'encontre' did not match any file(s)` y no commiteó. Tuve que rehacerlo.
+
+**Causa raíz:** el here-string `@'…'@` como valor de `-m` es frágil cuando el cuerpo tiene
+comillas dobles, paréntesis o apóstrofes — el parser de PowerShell + el paso al exe nativo lo
+fragmenta. No es determinístico según el contenido.
+
+**Solución que SÍ funciona:** escribir el mensaje a un archivo (Write tool → scratchpad) y
+`git commit -F <ruta>`. Cero problemas de escaping, cualquier contenido. Lo usé para el resto de
+los commits de la sesión sin un solo fallo.
+
+**Regla:** para mensajes de commit **multi-línea** en PowerShell, NO usar `-m @'…'@`. Usar
+`git commit -F <archivo>` con el mensaje escrito a un archivo. Para mensajes de una línea, `-m "…"`
+está bien. (Los `-m "…" -m "…"` múltiples de una línea cada uno también funcionan.)
+
+---
+
 ## 2026-07-13 — `FIND(record_id, ARRAYJOIN({campo_link}))` SIEMPRE da 0 — funciones rotas en prod sin que nadie lo note
 
 **Síntoma:** durante la migración FAMILIAS descubrí que `buscar_reservas_familia` y
