@@ -55,3 +55,8 @@ contactos/
 
 # Cache de wrangler (deploy Cloudflare Pages)
 .wrangler/
+
+# Otros asistentes de IA — en este repo solo reina Claude Code
+AGENTS.md
+.agents/
+.codex/
