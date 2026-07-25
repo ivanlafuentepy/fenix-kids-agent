@@ -468,3 +468,35 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 - `9df6358` — feat(juego): check visible junto al nombre cuando ya tiene pulsera vinculada
 - `f225e03` — feat(juego): endpoint y botón para desvincular una pulsera NFC
 - `c2ec37d` — feat(juego): botón para desvincular TODAS las pulseras al terminar el entrenamiento
+
+---
+
+## 2026-07-25 — Firmware estación NFC: LED sigue la pulsera + fix de protocolo NFC
+
+**Ivan:** ¿hasta cuántos colores tiene nuestra argolla conectada al ESP32?
+**Fenix:** Es un anillo WS2812 COB direccionable (RGB) — millones de colores posibles, el ESP32 controla cada LED individualmente. No es una limitación de "N colores fijos".
+
+**Ivan:** ahora cuando el niño pasa una vez muestra verde, ¿qué pasa si pone la pulsera varias veces en la estación?
+**Fenix:** Expliqué el dedupe ya diseñado en `SPEC-NFC-CIRCUITO.md`: el LED prende siempre (feedback local, no depende de la red), pero el backend solo cuenta la PRIMERA pasada por estación dentro de la vuelta abierta.
+
+**Ivan:** el LED se prende una vez y no se prende más — debería prender cada vez que paso
+**Fenix:** Leí `firmware/estacion/estacion.ino`: el antirrebote de 2s y que el RC522 no vuelve a "ver" un tag en HALT sin WUPA. Confirmé con Iván que probaba tocando y soltando.
+
+**Ivan:** debería quedarse prendido todo el tiempo que esté apoyado, ahora es muy corto
+**Fenix:** Cambié el blink fijo de 400ms por un loop de presencia con `PICC_WakeupA` (a diferencia de REQA, sí despierta un tag en HALT sin sacarlo del campo) — el LED se apaga recién cuando deja de responder. Guie a Iván para compilar/flashear con `arduino-cli` (ya instalado, `C:\Program Files\Arduino CLI\arduino-cli.exe`, no en el PATH de la sesión) — COM3, libs MFRC522/FastLED/ArduinoJson ya instaladas.
+
+**Ivan:** se quedó prendido 10 segundos solo
+**Fenix:** El POST a Railway (`enviar_tap`) estaba ANTES del loop de presencia — el HTTPS bloqueante demoraba el apagado del LED aunque ya hubiera sacado la pulsera. Reordené: LED → esperar hasta que la saquen → recién ahí el POST (como ya decía el propio spec: el feedback local nunca debe depender de la red). Reflasheado y confirmado.
+
+**Ivan:** con la caja de madera cerrada dejó de leer (antes leía apoyando sobre la tapa), solo lee si abro la caja y toco el RC522 directo
+**Fenix:** Sospecha principal: el anillo LED quedó físicamente encima de la antena (bobina) del RC522, bloqueando el campo. Subí `PCD_SetAntennaGain(RxGain_max)` como mitigación por software (de fábrica arranca en ganancia media) — si no alcanza, hay que reubicar el anillo.
+
+**Ivan:** la moneda (NTAG213) dejó de encender la luz, el llavero (Mifare Classic) sigue andando; si pongo la moneda después no me lee el llavero, y viceversa
+**Fenix:** Encontré el bug real en el loop de presencia agregado antes: `HaltA` solo es válido en estado ACTIVE, pero el código lo mandaba justo después de un `WakeupA` exitoso — el tag queda en READY (no seleccionado), y mandarle Halt ahí es comportamiento NO definido por ISO14443. El NTAG213 se cuelga en ese estado y deja de responderle al lector, bloqueando la detección de CUALQUIER tag nuevo. Fix: completar el ciclo `WakeupA → PICC_Select → HaltA`. Compilado y flasheado.
+
+**Ivan:** /cierre
+
+**Commits de la sesión:**
+- `86f8f87` — fix(firmware): estación NFC quincho — LED sigue presencia real y corrige bloqueo de lectura cruzada
+
+**Pendiente:** Iván todavía no confirmó si el fix WUPA→Select→Halt resolvió la lectura cruzada moneda/llavero, ni si la ganancia máxima de antena alcanzó para leer con la caja cerrada (ver `docs/FENIX_RESUMEN.md` #286).

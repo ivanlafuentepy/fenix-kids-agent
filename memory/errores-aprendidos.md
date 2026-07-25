@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-07-25 — RC522/NFC: HaltA después de WakeupA sin Select bloquea la detección de CUALQUIER tag nuevo
+
+**Síntoma:** en el firmware de la estación NFC (`firmware/estacion/estacion.ino`), al implementar "el LED se queda prendido mientras la pulsera está apoyada" con un loop de `PICC_WakeupA` (para detectar si el tag sigue en el campo sin necesidad de sacarlo), apareció un bug nuevo: si se tocaba una moneda NTAG213 y después un llavero Mifare Classic (o al revés), el SEGUNDO tag dejaba de leerse — no un tag específico, cualquiera que viniera después.
+
+**Causa raíz:** por el estándar ISO14443-3, el comando `HaltA` (dormir el tag) solo es válido cuando el tag está en estado **ACTIVE** (ya pasó por anticolisión + Select). El código hacía `WakeupA` (que lleva el tag de HALT a **READY**, no a ACTIVE) y le mandaba `HaltA` inmediatamente después, sin completar el `Select`. Mandarle Halt a un tag en READY es **comportamiento no definido por el estándar** — cada chip reacciona distinto: el Mifare Classic lo toleraba, pero el NTAG213 se quedaba colgado en ese estado intermedio y dejaba de responderle al lector, lo que bloqueaba la detección de CUALQUIER tag nuevo hasta que el que quedó mal (el primero) se retiraba físicamente del campo.
+
+**Regla:** para detectar "¿este tag sigue apoyado?" sin necesidad de que lo saquen, el ciclo correcto es **`WakeupA` → `PICC_Select(&lector.uid)` → recién ahí `HaltA`** — nunca Halt directo después de un Wakeup. Esto aplica a cualquier firmware RC522/PN532 de este proyecto (estaciones NFC del juego) que necesite "mantener encendido mientras esté apoyado" en vez de un blink de duración fija. Ver también: el feedback local (LED) NUNCA debe esperar al POST de red — si el envío HTTPS es bloqueante y se hace ANTES del apagado del LED, un WiFi lento hace que el LED se quede prendido de más aunque ya se sacó el tag (bug relacionado, mismo commit `86f8f87`).
+
 ## 2026-07-25 — Web NFC "no funciona" en Android no-mainstream: el diálogo Wallet/Etiquetas tapa la confirmación
 
 **Síntoma:** al vincular pulseras reales en `/profe.html` desde un celular Huawei (sin Google
