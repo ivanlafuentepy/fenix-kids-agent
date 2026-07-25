@@ -438,3 +438,33 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 - `1faf741` — feat(firmware): anillo WS2811 en quincho — feedback local instantáneo
 
 **Cambios de infraestructura (no-código):** driver CP2102 instalado en esta PC · `JUEGO_ESTACIONES=quincho` en Railway (temporal, revertir cuando estén las otras estaciones) · niño de prueba "FENIX"/guardián mamba vinculado a UID `8BD8DF00` en Postgres (sin tocar Airtable).
+
+---
+
+## 2026-07-25 — Piloto en vivo: vincular pulseras reales + gestión de muñequeras
+
+**Ivan:** ¿Cómo se vinculan las pulseras?
+**Fenix:** Expliqué el flujo de `/profe.html`: Chrome Android + NFC prendido, elegir al niño, botón "Vincular pulsera NFC", apoyar la muñequera atrás del teléfono.
+
+**Ivan:** [en un Huawei] me dice web nfc no disponible cargá el uid a mano / son los botones que compré por Aliexpress y no tengo otro celular
+**Fenix:** Sospeché que el Huawei sin Google Play no tenía Chrome real y sugerí probar en la tablet del tótem (ya confirmada con Chrome genuino + NFC).
+
+**Ivan:** pero creo que ya está funcionando, proba a mirar si está conectado un botón NFC a Alan
+**Fenix:** Instalé `psycopg2` al vuelo y consulté la tabla `pulseras` de Postgres directo (vía `DATABASE_PUBLIC_URL` del servicio Postgres en Railway) — confirmé que el UID del botón SÍ había quedado vinculado a Alan, con timestamp de recién. El Web NFC del Huawei funcionaba después de todo; lo que pasaba era que el diálogo nativo de Android ("Wallet o Etiquetas") tapaba el cartel de confirmación antes de que Ivan lo viera.
+
+**Ivan:** debería haber un check o ícono junto al nombre para saber que se vinculó
+**Fenix:** Agregué el check ✅ junto al nombre en la lista de `/profe.html` (`9df6358`) — ya no depende de ver el toast a tiempo, queda visible en la lista.
+
+**Ivan:** ¿y qué pasa cuando termina el entrenamiento, cómo se desvincula?
+**Fenix:** No existía esa función — la agregué: `POST /juego/nfc-desvincular` + botón por niño (`f225e03`).
+
+**Ivan:** debería haber un botón para desvincular a todos
+**Fenix:** Agregado `POST /juego/nfc-desvincular-todas` + botón con confirmación, para resetear el pool completo de muñequeras de una sola vez al terminar (`c2ec37d`).
+
+**Ivan:** /cierre
+**Fenix:** Cierre de sesión.
+
+**Commits de la sesión:**
+- `9df6358` — feat(juego): check visible junto al nombre cuando ya tiene pulsera vinculada
+- `f225e03` — feat(juego): endpoint y botón para desvincular una pulsera NFC
+- `c2ec37d` — feat(juego): botón para desvincular TODAS las pulseras al terminar el entrenamiento

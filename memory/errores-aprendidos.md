@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-07-25 — Web NFC "no funciona" en Android no-mainstream: el diálogo Wallet/Etiquetas tapa la confirmación
+
+**Síntoma:** al vincular pulseras reales en `/profe.html` desde un celular Huawei (sin Google
+Play), el escaneo NFC parecía no completar — no se veía el cartel verde de confirmación, y
+apareció un aviso nativo de Android "etiqueta vacía". Se sospechó que el Huawei no tenía Chrome
+real (por el veto de Google a Huawei) y por lo tanto no soportaba `NDEFReader`.
+
+**Causa raíz — la sospecha era FALSA.** El Web NFC sí funcionó de punta a punta: se confirmó
+consultando directo la tabla `pulseras` de Postgres que el UID había quedado vinculado, con
+timestamp de recién. Lo que pasaba era **puramente de UX**: al tocar la etiqueta, Android muestra
+un diálogo del sistema preguntando "¿Wallet o Etiquetas?" — ese diálogo tapa la pantalla justo
+cuando aparecería el toast de confirmación de la web, dando la falsa impresión de que falló.
+
+**Regla:** antes de asumir que un dispositivo Android "no soporta" Web NFC, **verificar el
+resultado real en la base de datos** (o el log del backend) en vez de confiar en lo que se ve/no
+se ve en pantalla — el diálogo Wallet/Etiquetas es un falso negativo muy convincente. Elegir
+siempre **"Etiquetas"** en ese diálogo (nunca Wallet). Si hace falta confirmar visualmente en la
+propia app, considerar mover el toast a un lugar que sobreviva la interrupción del diálogo (o
+usar el check ✅ persistente en la lista, ya implementado en `/profe.html`).
+
+---
+
+## 2026-07-25 — Para consultar Postgres de Railway desde afuera, usar `DATABASE_PUBLIC_URL`, no `DATABASE_URL`
+
+**Síntoma:** necesité consultar la tabla `pulseras` directo desde esta PC (fuera de Railway) para
+verificar una vinculación NFC. La variable `DATABASE_URL` del servicio del agente apunta a
+`postgres.railway.internal` — **solo resuelve dentro de la red privada de Railway**, no desde
+afuera.
+
+**Causa raíz:** Railway expone DOS connection strings para su Postgres: `DATABASE_URL` (host
+`.railway.internal`, para servicios DEL MISMO proyecto Railway) y `DATABASE_PUBLIC_URL` (host
+`*.proxy.rlwy.net`, con el proxy TCP público — esa es la que sirve desde una laptop/script
+externo). La pública vive en las variables del servicio **Postgres** mismo, no en las del
+servicio `fenix-kids-agent`.
+
+**Regla:** para debug de datos en caliente desde fuera de Railway (sin pasar por un endpoint
+admin del agente), usar `DATABASE_PUBLIC_URL` del servicio Postgres vía la API GraphQL de
+Railway (`variables(projectId, environmentId, serviceId: <id del servicio Postgres>)`), instalar
+`psycopg2-binary` si hace falta, y consultar directo. Nunca imprimir la contraseña completa en
+texto plano al usuario aunque se use en un comando — son los mismos secretos que ya viven en
+Railway.
+
+---
+
 ## 2026-07-25 — `crear_evento("vuelta", ...)` animaba la TV pero NUNCA pagaba plata real
 
 **Síntoma:** al armar el circuito NFC físico y probar el cierre de vuelta en `/juego/totem-nfc`,
