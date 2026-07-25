@@ -407,6 +407,22 @@ async def _acreditar_oro_llegada(nino_id: str, nombre: str) -> int:
     return ORO_LLEGADA
 
 
+async def _acreditar_plata_vuelta(nino_id: str | None, nombre: str, vuelta_info: dict) -> None:
+    """Plata REAL a la billetera al cerrar una vuelta del circuito (best-effort, nunca
+    rompe el tap/saludo). Antes de esto, el cierre de vuelta por NFC solo emitía el
+    evento de celebración para la TV sin pasar por _acreditar — la única puerta al
+    dinero — así que la billetera nunca se actualizaba de verdad."""
+    if not nino_id:
+        return
+    try:
+        guardian = await _guardian_de_nino(nino_id, nombre)
+        if guardian:
+            await _acreditar(guardian, "plata", vuelta_info["plata"],
+                             f"Vuelta {vuelta_info['numero']} del circuito (NFC)")
+    except Exception as e:
+        logger.warning(f"[JUEGO] acreditar plata de vuelta falló para {nombre}: {e}")
+
+
 async def _accion_reto_dia(guardian: dict, video_key: str) -> dict:
     """Un día del reto cumplido (la llama reto-video en P5 — SIEMPRE con video).
     +50 plata, +250 bonus al 5to. Máx 1 por día PY."""
@@ -660,6 +676,38 @@ async def _pulsera_por_uid(session, uid: str) -> "Pulsera | None":
     return r.scalar_one_or_none()
 
 
+async def _pulsera_por_nino_id(session, nino_id: str) -> "Pulsera | None":
+    r = await session.execute(select(Pulsera).where(
+        Pulsera.nino_airtable_id == nino_id, Pulsera.activa == True))  # noqa: E712
+    return r.scalar_one_or_none()
+
+
+async def _evaluar_circuito(session, p: "Pulsera") -> dict:
+    """¿La pulsera de p ya completó las estaciones activas? Si sí, cierra la vuelta acá
+    mismo (INSERT JuegoVuelta + sella las pasadas abiertas) — el caller commitea y emite
+    los eventos después. Usado por el tap del tótem Y por el check-in facial (misma
+    regla, dos formas de "llegar al tótem"). Devuelve {"faltan": [...], "vuelta_info": {...}|None}."""
+    hoy0 = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    abiertas = await _pasadas_abiertas(session, p.uid)
+    tocadas = {x.estacion_id for x in abiertas if x.estacion_id in ESTACIONES_ACTIVAS}
+    faltan = [e for e in ESTACIONES_ACTIVAS if e not in tocadas]
+
+    vuelta_info = None
+    if not faltan and tocadas:
+        n_hoy = await session.execute(
+            select(JuegoVuelta).where(JuegoVuelta.uid == p.uid, JuegoVuelta.cerrada >= hoy0))
+        numero = len(list(n_hoy.scalars().all())) + 1
+        plata = PLATA_VUELTA + (BONUS_5_VUELTAS if numero == 5 else 0) + (BONUS_10_VUELTAS if numero == 10 else 0)
+        v = JuegoVuelta(uid=p.uid, nino_nombre=p.nino_nombre, numero_dia=numero,
+                        estaciones_ok=len(tocadas), plata=plata)
+        session.add(v)
+        await session.flush()
+        for pas in abiertas:                          # las pasadas quedan selladas a esta vuelta
+            pas.vuelta_id = v.id
+        vuelta_info = {"numero": numero, "plata": plata}
+    return {"faltan": faltan, "vuelta_info": vuelta_info}
+
+
 async def _pasadas_abiertas(session, uid: str) -> list["JuegoPasada"]:
     """Pasadas válidas del uid que aún no pertenecen a ninguna vuelta cerrada."""
     r = await session.execute(
@@ -766,23 +814,9 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
             llegada_evento = True
 
         # (2) circuito — ¿tiene todas las estaciones?
-        abiertas = await _pasadas_abiertas(session, uid)
-        tocadas = {x.estacion_id for x in abiertas if x.estacion_id in ESTACIONES_ACTIVAS}
-        faltan = [e for e in ESTACIONES_ACTIVAS if e not in tocadas]
-
-        vuelta_info = None
-        if not faltan and tocadas:
-            n_hoy = await session.execute(
-                select(JuegoVuelta).where(JuegoVuelta.uid == uid, JuegoVuelta.cerrada >= hoy0))
-            numero = len(list(n_hoy.scalars().all())) + 1
-            plata = PLATA_VUELTA + (BONUS_5_VUELTAS if numero == 5 else 0) + (BONUS_10_VUELTAS if numero == 10 else 0)
-            v = JuegoVuelta(uid=uid, nino_nombre=p.nino_nombre, numero_dia=numero,
-                            estaciones_ok=len(tocadas), plata=plata)
-            session.add(v)
-            await session.flush()
-            for pas in abiertas:                          # las pasadas quedan selladas a esta vuelta
-                pas.vuelta_id = v.id
-            vuelta_info = {"numero": numero, "plata": plata}
+        resultado = await _evaluar_circuito(session, p)
+        faltan = resultado["faltan"]
+        vuelta_info = resultado["vuelta_info"]
         await session.commit()
 
     # eventos fuera de la transacción (best-effort, la TV los celebra)
@@ -802,6 +836,7 @@ async def juego_totem_nfc(payload: dict = Body(...), x_juego_key: str | None = H
         await crear_evento("llegada", p.nino_nombre, p.guardian,
                            _payload_llegada_con_dias(dias, {"via": "nfc"}))
     if vuelta_info:
+        await _acreditar_plata_vuelta(p.nino_airtable_id, p.nino_nombre, vuelta_info)
         sub = f"¡Bonus de {vuelta_info['numero']} vueltas!" if vuelta_info["numero"] in (5, 10) else ""
         await crear_evento("vuelta", p.nino_nombre, p.guardian,
                            {"v": vuelta_info["numero"], "coins": f"+{vuelta_info['plata']} 🥈", "sub": sub})
@@ -868,6 +903,34 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
         guardian = await _guardian_de_nino(nino_id, nombre)
     except Exception as e:
         logger.warning(f"[JUEGO] guardian no disponible para {nombre}: {e}")
+
+    # circuito NFC: si el niño tiene pulsera y ya tocó todas las estaciones activas,
+    # el rostro frente al tótem CIERRA LA VUELTA — no depende del gate de llegada
+    # diaria, un niño puede cerrar varias vueltas por día volviendo al espejo.
+    circuito = None
+    p_pulsera = None
+    try:
+        async with async_session() as session:
+            p_pulsera = await _pulsera_por_nino_id(session, nino_id)
+            if p_pulsera:
+                circuito = await _evaluar_circuito(session, p_pulsera)
+                await session.commit()
+    except Exception as e:
+        logger.warning(f"[JUEGO] checkin-face: evaluar circuito falló para {nombre}: {e}")
+    if circuito and circuito["vuelta_info"]:
+        vi = circuito["vuelta_info"]
+        if guardian:  # la ÚNICA puerta al dinero es _acreditar — el evento solo la anima
+            try:
+                await _acreditar(guardian, "plata", vi["plata"],
+                                 f"Vuelta {vi['numero']} del circuito (NFC)")
+            except Exception as e:
+                logger.warning(f"[JUEGO] checkin-face: acreditar plata falló para {nombre}: {e}")
+        sub = f"¡Bonus de {vi['numero']} vueltas!" if vi["numero"] in (5, 10) else ""
+        await crear_evento("vuelta", nombre, p_pulsera.guardian if p_pulsera else None,
+                           {"v": vi["numero"], "coins": f"+{vi['plata']} 🥈", "sub": sub})
+    circuito_pub = ({"faltan": circuito["faltan"], "vuelta_cerrada": bool(circuito["vuelta_info"])}
+                     if circuito else None)
+
     estado_g = _estado_de(guardian) if guardian else {}
     repetido = estado_g.get("ult_oro_llegada") == _hoy_py()
 
@@ -885,12 +948,14 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
                 return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
                         "repetido": True, "presentacion": True,
                         "confidence": round(best["confidence"], 1),
-                        "guardian": _guardian_publico(guardian)}, headers=_CORS)
+                        "guardian": _guardian_publico(guardian),
+                        "circuito": circuito_pub}, headers=_CORS)
             except Exception as e:
                 logger.warning(f"[JUEGO] presentación falló para {nombre}: {e}")
         return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre},
                 "repetido": True, "confidence": round(best["confidence"], 1),
-                "guardian": _guardian_publico(guardian) if guardian else None}, headers=_CORS)
+                "guardian": _guardian_publico(guardian) if guardian else None,
+                "circuito": circuito_pub}, headers=_CORS)
 
     # asistencia real (best-effort — nunca rompe el saludo)
     try:
@@ -919,7 +984,8 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
                        _payload_llegada_con_dias(dias, {"via": "face", "conf": round(best["confidence"], 1)}))
     return JSONResponse(content={"ok": True, "nino": {"id": nino_id, "nombre": nombre}, "dias_casa": dias,
             "oro": oro, "confidence": round(best["confidence"], 1),
-            "guardian": await _guardian_publico_seguro(nino_id, nombre)}, headers=_CORS)
+            "guardian": await _guardian_publico_seguro(nino_id, nombre),
+            "circuito": circuito_pub}, headers=_CORS)
 
 
 async def _guardian_publico_seguro(nino_id: str, nombre: str) -> dict | None:
