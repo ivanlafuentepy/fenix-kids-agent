@@ -747,6 +747,26 @@ async def nfc_vincular(payload: dict = Body(...), x_juego_key: str | None = Head
     return {"ok": True, "uid": uid, "nino_nombre": nombre}
 
 
+@router.post("/juego/nfc-desvincular")
+async def nfc_desvincular(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
+    """Libera la pulsera de un niño (fin de temporada, se pierde, pasa a otro chico). NO borra
+    el historial de pasadas/vueltas — solo la marca inactiva; nfc-vincular puede reactivar el
+    mismo UID para OTRO niño después sin chocar con el 409."""
+    _auth(x_juego_key)
+    nino_id = str(payload.get("nino_id", "") or "").strip()
+    if not nino_id:
+        raise HTTPException(status_code=422, detail="nino_id requerido")
+    async with async_session() as session:
+        p = await _pulsera_por_nino_id(session, nino_id)
+        if not p:
+            return {"ok": False, "motivo": "sin_pulsera"}
+        uid, nombre = p.uid, p.nino_nombre
+        p.activa = False
+        await session.commit()
+    logger.info(f"[JUEGO] pulsera {uid} desvinculada de {nombre}")
+    return {"ok": True, "uid": uid, "nino_nombre": nombre}
+
+
 @router.post("/juego/estacion")
 async def juego_estacion(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
     """Tap en una estación: registra la PASADA (timestamp del servidor). NO cierra vueltas.

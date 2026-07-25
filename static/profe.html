@@ -71,10 +71,12 @@
       <button class="acc" onclick="evento('dragon','+200 🥈')">⚔️ Dragón</button>
       <button class="acc" onclick="evento('tesoro','+300 🥈')">🏴‍☠️ Tesoro</button>
       <button class="acc nfc" onclick="vincular()">📿 Vincular pulsera NFC</button>
+      <button class="acc nfc" onclick="desvincular()">🔓 Desvincular pulsera</button>
     </div>
     <div class="mini">Vincular: apoyá la muñequera contra la parte de atrás del celu cuando
     aparezca "escaneando". Solo Chrome en Android. Si no anda, cargá el código UID a mano
-    (aparece en el lector de la estación).</div>
+    (aparece en el lector de la estación). Desvincular: libera la pulsera de este niño (fin de
+    temporada, se pierde, pasa a otro chico) — no borra su historial de vueltas.</div>
   </div>
 </div>
 
@@ -160,6 +162,21 @@ async function vincular(){
   }
   else if (r.status===409) toast(d.detail || "Esa pulsera es de otro niño", true);
   else toast(`No salió (${r.status})`, true);
+}
+
+async function desvincular(){
+  if (!sel) return toast("Elegí un niño primero", true);
+  const r = await fetch(`${API}/juego/nfc-desvincular`, {method:"POST",
+    headers:{"Content-Type":"application/json","X-JUEGO-KEY":KEY},
+    body: JSON.stringify({nino_id: sel.id})});
+  const d = await r.json().catch(()=>({}));
+  if (r.ok && d.ok){
+    sel.tiene_pulsera = false;
+    pintar();
+    toast(`Pulsera liberada de ${sel.nombre}`);
+  } else if (r.ok && !d.ok){
+    toast(`${sel.nombre} no tenía pulsera vinculada`, true);
+  } else toast(`No salió (${r.status})`, true);
 }
 
 if (KEY){ document.getElementById("clave").value = KEY; entrar(); }
