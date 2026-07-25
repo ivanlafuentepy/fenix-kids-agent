@@ -5,6 +5,47 @@
 
 ---
 
+## 2026-07-25 — `crear_evento("vuelta", ...)` animaba la TV pero NUNCA pagaba plata real
+
+**Síntoma:** al armar el circuito NFC físico y probar el cierre de vuelta en `/juego/totem-nfc`,
+la TV festejaba "+100 🥈" pero el saldo `PLATA` del guardián en Airtable **nunca subía**. Bug
+preexistente, no introducido en esta sesión — solo salió a la luz al probar hardware real por
+primera vez.
+
+**Causa raíz:** el cierre de vuelta por NFC solo llamaba `crear_evento("vuelta", ...)` (que
+alimenta el polling de la TV) y nunca pasaba por `_acreditar()` — la función que el propio código
+documenta como **"única puerta al dinero"** (PATCH del saldo en GUARDIANES + fila en
+MOVIMIENTOS). El camino manual (`/juego/vuelta-face`, el botón del profe en la tablet) sí lo hacía
+bien; el camino NFC lo omitía por completo.
+
+**Regla:** en `agent/juego_endpoints.py`, **cualquier feature nueva que otorgue oro/plata tiene
+que llamar `_acreditar()` explícitamente** — emitir el evento de celebración (`crear_evento`) NO
+alcanza, esa función solo anima la TV, no toca el saldo. Antes de dar por ganada una moneda,
+grep `_acreditar` en el flujo nuevo y confirmar que está.
+
+---
+
+## 2026-07-24/25 — ESP32: variante "-U" sin antena + SSID con espacio invisible
+
+**Síntoma 1:** un ESP32 nunca lograba conectarse a ninguna red WiFi (`NO_AP_FOUND` constante,
+antena o no). **Síntoma 2:** otro ESP32 (DevKitC normal) tampoco conectaba a la red esperada de
+La Casona, mismo error.
+
+**Causa raíz 1:** el módulo era la variante **"WROOM-32U"** (nombre en el chip metálico termina
+en **-U**) — tiene un conector IPEX/U.FL para antena EXTERNA en vez de la antena de PCB soldada.
+Sin antena física conectada ahí, el radio no tiene por dónde transmitir. La variante sin sufijo
+(o "-D") trae la antena de PCB integrada y anda de una.
+
+**Causa raíz 2:** el SSID real de la red tenía un **espacio invisible** antes del sufijo
+(`LA CASONA LAFUENTE _EXT`, no `..._EXT` pegado) — imposible de notar mirando el celular/router,
+y el nombre puesto a mano en el firmware no coincidía ni por asomo.
+
+**Regla:** (1) **antes de comprar/usar un ESP32 para un proyecto con WiFi, confirmar que NO
+termina en "-U"** (o asegurarse de tener la antena externa). (2) **Nunca tipear un SSID a mano de
+memoria en firmware** — agregar un `WiFi.scanNetworks()` al arranque del sketch que imprima los
+SSIDs reales + RSSI (ver `firmware/estacion/estacion.ino::escanear_redes()`) y copiar el nombre
+exacto de ahí, no adivinarlo.
+
 ## 2026-07-14 — `git commit -m @'…'@` (here-string) de PowerShell se rompe con comillas internas
 
 **Síntoma:** commiteando F7.b-c1 con un mensaje multi-línea vía

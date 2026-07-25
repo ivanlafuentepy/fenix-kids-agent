@@ -396,3 +396,45 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Nota:** F7.b quedó sin probar en vivo (ningún lead pagó). Pendiente probar el alta niño-eje end-to-end con número de test + "cargar familia". F7.c código (sacar fallbacks → LEGACY → borrar) queda para después del sábado 18 — los fallbacks son la red de seguridad hasta que un sábado real valide todo.
 
 **Commits (11 en fenix, F7.b-a→i):** `c3b3741` (a) · `87fc53d` (b) · `b022474` (c1) · `5314090` (c2) · `fc4a9db` (c3, el corte) · `38e0ef8` (e) · `cecb90e` (d) · `d5a2e6a` (f1) · `819883e` (f2) · `467cf3b` (g) · `506d30a` (i). **Airtable:** campos nuevos `LEADS.TUTOR FENIX` (`fldOaYMkJdtihJrj2`) y `NIÑOS.PLAN` (`fldNyWFtzD0NO48HC`); borradas 5 familias + 9 tutores muertos.
+
+---
+
+## 2026-07-24/25 — Primera estación NFC física armada + fix de plata + piloto de mañana
+
+**Ivan:** cuántos días asistieron amira y eladio? (consulta rápida sobre 2 niños puntuales)
+**Fenix:** Consulté Airtable — 1 día cada uno (la clase de prueba del 16/5), 0 asistencias registradas después. Estado "A PRUEBA — VENCIDO".
+
+**Ivan:** [mandó fotos de un cable Mini-USB] este sirve?
+**Fenix:** No — es Mini-USB (conector viejo), el ESP32 usa Micro-USB o USB-C. Cuando Ivan insistió que el ESP32 pedía Mini-USB, reconocí el error sin evidencia visual del puerto real y pedí confirmación en vez de sostener la afirmación sin verla.
+
+**Ivan:** esta conectado el esp32! (pidió verificar)
+**Fenix:** `arduino-cli` no estaba en el PATH ni el driver CP2102 instalado (Device Manager: error 28). Instalé el driver por `pnputil` elevado (con OK explícito de Ivan por el UAC), quedó en COM3, verificado con `board list`.
+
+**Ivan:** tengo que soldar los 8 pines o solo los dos extremos / vos me estás jodiendo, no me consultaste nada
+**Fenix:** El RC522 vino con agujeros pelados sin header (normal en estos kits, no fue un invento mío) — expliqué por qué hacen falta los 8 puntos de soldadura (cada uno es una señal SPI distinta) y guié paso a paso: cautín, estaño 63/37, header recto, técnica de soldado. Primera soldadura de Ivan, salió bien (verificado con `VersionReg = 0x92`).
+
+**Ivan:** [cableado RC522↔ESP32, luego WiFi no conectaba] pero es mini usb lo que pide este esp32! / no es micro
+**Fenix:** El WiFi fallaba con `NO_AP_FOUND` constante. Agregué `escanear_redes()` al sketch para ver los SSIDs reales — encontré la causa: la red se llama `LA CASONA LAFUENTE _EXT` **con un espacio** antes de "_EXT", invisible a simple vista. Usamos la red base sin extensor. Conectó.
+
+**Ivan:** hacemos un niño de prueba y le cargamos este llavero
+**Fenix:** Usé `/juego/nfc-vincular` (sin `nino_id`, a propósito — no ensucia Airtable con un niño falso). Probé el circuito completo: UID → POST → `estaciones_completadas`. Anduvo.
+
+**Ivan:** quiero armar la vuelta con una sola estación — pase por quincho, vuelva al Fénix, complete la vuelta
+**Fenix:** Cambié `JUEGO_ESTACIONES` en Railway a solo `quincho` (con OK explícito, + restart). Para el tótem, en vez de armar hardware nuevo con un segundo ESP32-U (sin antena, no conectaba a WiFi), propuse reusar el check-in facial que ya existe: lo extendí para que evalúe el circuito en cada escaneo y cierre la vuelta sola.
+
+**Ivan:** y no se podría hacer que cuando llega al tótem al leer el rostro se vaya a mirar si completó y le otorgue la vuelta
+**Fenix:** Exacto lo que hice — pero de paso encontré un bug real preexistente: el cierre de vuelta por NFC nunca acreditaba la plata real a la billetera (`_acreditar`), solo animaba la TV. Lo arreglé en los dos caminos (NFC y facial) y actualicé `totem.html` para avisar "vuelta completada" o "te falta pasar por X".
+
+**Ivan:** [frustración repetida con jumpers/cables finos para el anillo LED, "una mierda", "no tiene sentido esta forma definitiva"]
+**Fenix:** Reconocí que el jumper-hack para un cable tan fino no era forma definitiva de nada — la solución real es soldar el cable a un pin suelto (no al ESP32 en sí), y ofrecí parar ahí varias veces dado lo tarde que era. Ivan decidió seguir; terminamos soldando y el anillo WS2811 quedó andando — prende verde apenas lee el UID, ANTES de que conecte el WiFi (confirmado en el log).
+
+**Ivan:** /cierre
+**Fenix:** Cierre de sesión.
+
+**Commits de la sesión:**
+- `b51f9c7` — feat(firmware): estación NFC quincho — RC522+ESP32, WiFi + POST real
+- `5732953` — fix(juego): acreditar plata real al cerrar vuelta + circuito en check-in facial
+- `80765df` — feat(mundo-fenix): tótem avisa vuelta completada o estación faltante
+- `1faf741` — feat(firmware): anillo WS2811 en quincho — feedback local instantáneo
+
+**Cambios de infraestructura (no-código):** driver CP2102 instalado en esta PC · `JUEGO_ESTACIONES=quincho` en Railway (temporal, revertir cuando estén las otras estaciones) · niño de prueba "FENIX"/guardián mamba vinculado a UID `8BD8DF00` en Postgres (sin tocar Airtable).
