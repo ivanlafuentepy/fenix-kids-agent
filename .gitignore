@@ -1,5 +1,6 @@
 # Secretos — NUNCA subir a GitHub
 .env
+firmware/**/config.h
 
 # Credenciales Google (contienen claves privadas)
 config/google_credentials*.json

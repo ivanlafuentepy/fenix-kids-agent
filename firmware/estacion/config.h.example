@@ -1,0 +1,12 @@
+// firmware/estacion/config.h.example — plantilla de credenciales.
+//
+// Copiar a config.h (mismo directorio) y completar con los valores reales.
+// config.h está en .gitignore — NUNCA subirlo a git.
+
+#define WIFI_SSID      "NOMBRE_DE_LA_RED"
+#define WIFI_PASSWORD  "CONTRASENA_DE_LA_RED"
+
+#define SERVER_HOST    "fenix-kids-agent-production.up.railway.app"
+#define JUEGO_API_KEY  "TU_JUEGO_API_KEY"     // = env JUEGO_API_KEY en Railway
+
+#define ESTACION_ID    "quincho"              // ninja|arbol|basket|quincho|muelle
