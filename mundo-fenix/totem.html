@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Espejo del Guardián — Fenix Kids</title>
+<style>
+  /* ══ Paleta Mundo Fenix ══ */
+  :root{
+    --ash:#0d0a12; --smoke:#1c1626; --cream:#fde9d2; --ember:#ff6a1a;
+    --flame:#e23a2e; --gold:#ffc24b; --good:#6fd08a; --muted:#8c7d93;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--ash);color:var(--cream);
+    font-family:var(--sans);user-select:none;-webkit-user-select:none}
+
+  /* ══ Lienzo de brasas de fondo ══ */
+  #brasas{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+  /* ══ Escenario ══ */
+  /* espejo pegado ARRIBA — la cámara física está en el borde superior de la tablet,
+     así el niño mira hacia arriba (a la cámara) y la foto lo enfoca de frente */
+  #stage{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;
+    align-items:center;justify-content:flex-start;gap:2.2vh;padding:1vh 4vw 3vh}
+
+
+  /* ══ El espejo (cámara) ══ */
+  #marco{position:relative;width:min(52vh,86vw);aspect-ratio:3/4;border-radius:50% 50% 46% 46%/44% 44% 52% 52%;
+    padding:10px;background:linear-gradient(160deg,#ffc24b,#e23a2e 45%,#7a3a10 90%);
+    box-shadow:0 0 60px #ff6a1a33, inset 0 0 22px #00000088;
+    animation:latido 3.2s ease-in-out infinite}
+  @keyframes latido{0%,100%{box-shadow:0 0 46px #ff6a1a2e, inset 0 0 22px #00000088}
+                    50%{box-shadow:0 0 90px #ff6a1a55, inset 0 0 22px #00000088}}
+  #marco .vidrio{width:100%;height:100%;border-radius:inherit;overflow:hidden;
+    background:#000;position:relative}
+  #cam{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejado real */
+  #velo{position:absolute;inset:0;border-radius:inherit;
+    background:radial-gradient(ellipse at 50% 38%, transparent 55%, #0d0a12b0 100%)}
+
+  /* ══ Overlays de estado (arriba del espejo) ══ */
+  .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:1.6vh;border-radius:inherit;text-align:center;padding:4%}
+
+  /* ══ El espejo SELLADO (escudo) → FENIX (se enciende al despertar) ══ */
+  #marcoWrap{position:relative;display:flex;align-items:center;justify-content:center}
+  #marco{position:relative;z-index:1}
+
+  /* Capa del FENIX dentro del espejo. Sin imagen aún → un resplandor de fuego
+     (NO queda negro). Cuando Iván ponga assets/fenix_dormido.png y fenix_fuego.png,
+     el <img> los muestra encima con mix-blend-mode:screen (el negro desaparece). */
+  #fenix{position:absolute;inset:0;border-radius:inherit;z-index:2;overflow:hidden;
+    background:radial-gradient(ellipse at 50% 46%, #2a1330 0%, #170e1e 66%, #0d0a12 100%);
+    display:flex;align-items:center;justify-content:center;transition:opacity 1.2s ease}
+  #fenix.oculto{opacity:0;pointer-events:none}
+  #fenixGlow{position:absolute;inset:0;
+    background:radial-gradient(ellipse at 50% 54%, #ff6a1a00 40%, transparent 72%);
+    transition:background 1.1s ease}
+  body.encendido #fenixGlow{
+    background:radial-gradient(ellipse at 50% 52%, #ffc24b55 0%, #ff6a1a33 34%, #e23a2e11 55%, transparent 74%);
+    animation:latir 2.4s ease-in-out infinite}
+  @keyframes latir{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.08);opacity:1}}
+  /* Fenix VIVO — video (screen = el fondo negro del video se vuelve invisible,
+     solo flota el Fenix con su fuego). object-fit:contain + fondo negro = las
+     barras del letterbox también desaparecen con screen. */
+  #fenixVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+    mix-blend-mode:screen;opacity:0;transition:opacity 1s ease;transform:scale(1.02)}
+  #fenixVid.visible{opacity:1}
+
+  /* El escudo Fenix Kids — sello del espejo dormido */
+  #sello{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;
+    transition:opacity 1s ease, transform 1.1s ease}
+  #sello img{width:56%;filter:drop-shadow(0 0 26px #ffc24b3a);
+    animation:respira 3.8s ease-in-out infinite}
+  @keyframes respira{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.03)}}
+  #sello.roto{opacity:0;transform:scale(1.55)}   /* el sello se abre al despertar */
+  #sello.roto img{animation:none}
+
+  #cuenta{font-family:var(--serif);font-size:min(22vh,34vw);color:var(--gold);
+    text-shadow:0 0 40px #ffc24baa, 0 4px 0 #7a3a10;display:none}
+  #espera{display:none;background:#0d0a12c9}
+  #espera .llama{font-size:min(9vh,14vw);animation:flota 1.1s ease-in-out infinite alternate}
+  @keyframes flota{from{transform:translateY(6px) scale(.96)}to{transform:translateY(-6px) scale(1.06)}}
+  #espera p{font-family:var(--serif);font-size:min(3.4vh,5.6vw);color:var(--cream)}
+
+  @keyframes pulso{0%,100%{transform:scale(1);opacity:.95}50%{transform:scale(1.06);opacity:1}}
+
+  /* ══ Pantallas de resultado (tapan todo) ══ */
+  .panel{position:fixed;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;
+    justify-content:center;gap:2.4vh;text-align:center;padding:4vh 6vw}
+  #exito{background:radial-gradient(ellipse at 50% 30%, #1e2a1a 0%, var(--ash) 75%)}
+  #exito .hola{font-family:var(--serif);font-size:min(5vh,8vw);color:var(--good)}
+  #exito .nombre{font-family:var(--serif);font-size:min(9.5vh,14vw);line-height:1;color:var(--gold);
+    text-shadow:0 0 46px #ffc24b66;letter-spacing:.04em}
+  #exito .oro{font-size:min(3.4vh,6vw);color:var(--gold)}
+
+  /* ══ LA FUSIÓN: la foto real arde y se transforma en el Guardián ══ */
+  .fusion{position:relative;width:min(34vh,54vw);aspect-ratio:1;flex-shrink:0}
+  .fusion img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%}
+  #exFoto{object-fit:cover;border:5px solid var(--gold);box-shadow:0 0 44px #ffc24b55;
+    transform:scaleX(-1)} /* espejada — como el niño se vio en el espejo */
+  #exRobot{object-fit:contain;opacity:0;transform:scale(.65);
+    filter:drop-shadow(0 0 34px #ffc24b88);
+    transition:opacity .7s ease, transform .9s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes arder{
+    0%{filter:none}
+    55%{filter:brightness(1.9) saturate(2.2) sepia(.5) hue-rotate(-25deg)}
+    100%{filter:brightness(3.2) saturate(2.6) sepia(.8) hue-rotate(-30deg) blur(7px);opacity:0}}
+  #exito.fusionando #exFoto{animation:arder 2.1s ease-in forwards}
+  #exito.fusionado #exRobot{opacity:1;transform:scale(1)}
+  #exFlash{position:absolute;inset:-14%;border-radius:50%;opacity:0;pointer-events:none;
+    background:radial-gradient(circle,#fff8e0 0%,#ffc24b 42%,transparent 70%)}
+  #exito.fusionado #exFlash{animation:destello .85s ease-out}
+  @keyframes destello{0%{opacity:0}16%{opacity:1}100%{opacity:0}}
+  #exRemate{display:none;font-family:var(--serif);font-size:min(4.4vh,7vw);color:var(--gold);
+    text-shadow:0 0 26px #ffc24b77;line-height:1.15}
+  #exito.fusionado #exRemate{display:block;animation:pulso 1.3s ease-in-out infinite}
+  /* la billetera queda visible tras la fusión — ahora muestra las monedas reales */
+  #fallo1,#fallo2{background:radial-gradient(ellipse at 50% 30%, #2a1c10 0%, var(--ash) 75%)}
+
+  /* ══ Selector de Guardián (primera vez — todavía no tiene avatar) ══ */
+  #elegir{background:radial-gradient(ellipse at 50% 22%, #241633 0%, var(--ash) 78%);
+    justify-content:flex-start;padding-top:4vh;gap:1.4vh}
+  #elegir h2{font-family:var(--serif);font-size:min(4.4vh,7vw);color:var(--gold);
+    text-shadow:0 0 26px #ffc24b55}
+  #elegir .sub{font-size:min(2.6vh,4.4vw);color:var(--muted)}
+  #grillaRobots{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(17vh,27vw),1fr));
+    gap:1.8vh 2vw;width:100%;max-width:92vw;overflow-y:auto;padding-bottom:2vh}
+  .robotOpt{display:flex;flex-direction:column;align-items:center;gap:.6vh;border:none;
+    background:#1c1626cc;border-radius:18px;padding:1.4vh 1vw;cursor:pointer;
+    box-shadow:inset 0 0 0 2px #ffc24b22}
+  .robotOpt img{width:min(12vh,19vw);height:min(12vh,19vw);object-fit:contain;
+    filter:drop-shadow(0 0 14px #ffc24b44)}
+  .robotOpt span{font-family:var(--serif);font-size:min(2.2vh,3.6vw);color:var(--cream);
+    letter-spacing:.06em}
+  .robotOpt:active{transform:scale(.94)}
+  #elegir.eligiendo .robotOpt{pointer-events:none;opacity:.45}
+  #elegir.eligiendo .robotOpt.elegido{opacity:1;box-shadow:inset 0 0 0 3px var(--gold);
+    animation:pulso 1s ease-in-out infinite}
+
+  /* ══ Pregunta de vuelta del circuito (2ª pasada del día, sin NFC todavía) ══ */
+  #vuelta{background:radial-gradient(ellipse at 50% 26%, #10231a 0%, var(--ash) 78%)}
+  /* Contador de vueltas: [ − ]  N  [ + ] — el profe cuenta en la tablet */
+  #vuStepper{display:flex;align-items:center;justify-content:center;gap:6vw;margin:1.5vh 0 .5vh}
+  .stepBtn{width:min(15vh,24vw);height:min(15vh,24vw);border-radius:50%;border:none;cursor:pointer;
+    font-size:min(9vh,15vw);font-weight:900;line-height:1;color:#2a1505;
+    background:linear-gradient(160deg,var(--gold),var(--ember));box-shadow:0 6px 24px #ff6a1a44;
+    display:flex;align-items:center;justify-content:center;user-select:none}
+  .stepBtn:active{transform:scale(.92)}
+  .stepBtn:disabled{opacity:.3;box-shadow:none}
+  #vuN{font-family:var(--serif);font-size:min(20vh,30vw);color:var(--gold);min-width:2.2ch;
+    text-align:center;line-height:1;font-weight:700}
+  #vuBotones{display:flex;gap:5vw;margin-top:1vh}
+  .boton.secundario{background:#1c1626;color:var(--cream);
+    box-shadow:inset 0 0 0 2px #8c7d9355}
+  .panel h2{font-family:var(--serif);font-size:min(5.4vh,8.4vw);color:var(--cream)}
+  .panel p{font-size:min(3vh,5vw);color:var(--muted);max-width:34ch}
+  .boton{font-family:var(--serif);font-size:min(3.8vh,6.4vw);padding:2vh 6vw;border:none;
+    border-radius:99px;background:linear-gradient(160deg,var(--gold),var(--ember));
+    color:#2a1505;font-weight:700;letter-spacing:.03em;box-shadow:0 6px 24px #ff6a1a44;cursor:pointer}
+  .boton:active{transform:scale(.96)}
+  .emoji-grande{font-size:min(12vh,20vw)}
+
+  /* ══ Marca abajo ══ */
+  #pie{position:fixed;bottom:1.6vh;left:0;right:0;text-align:center;z-index:2;
+    color:#8c7d9377;font-size:min(1.8vh,3.2vw);letter-spacing:.22em;font-family:var(--serif)}
+</style>
+</head>
+<body>
+<canvas id="brasas"></canvas>
+
+<div id="stage">
+  <div id="marcoWrap">
+    <div id="marco">
+      <div class="vidrio">
+        <video id="cam" autoplay playsinline muted></video>
+        <div id="velo"></div>
+        <!-- El Fenix dentro del espejo: resplandor + (futuras) imágenes del ave -->
+        <div id="fenix">
+          <div id="fenixGlow"></div>
+          <!-- Fenix vivo (video de Dreamina/Seedance). Fondo negro → screen lo limpia. -->
+          <video id="fenixVid" src="assets/fenix_saludo.mp4" muted loop playsinline preload="auto"></video>
+        </div>
+        <!-- El escudo Fenix Kids sella el espejo dormido -->
+        <div id="sello"><img src="assets/escudo.png" alt="Fenix Kids Academy"></div>
+        <div class="overlay"><div id="cuenta">3</div></div>
+        <div class="overlay" id="espera">
+          <div class="llama">🔥</div>
+          <p>El Guardián te está mirando…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Resultados -->
+<div class="panel" id="exito">
+  <div class="hola">¡El Guardián te reconoció!</div>
+  <div class="nombre" id="exNombre">MATEO</div>
+  <div class="fusion">
+    <img id="exFoto" src="" alt="">
+    <img id="exRobot" src="" alt="">
+    <div id="exFlash"></div>
+  </div>
+  <div class="oro" id="exOro">+10 🥇 ¡Mirá la pantalla grande!</div>
+  <div id="exRemate">¡LISTO, GUARDIÁN!<br>¡A ENTRENAR! 🔥</div>
+</div>
+
+<!-- 2ª pasada del día: ¿completó una vuelta del circuito? (puente sin NFC) -->
+<div class="panel" id="vuelta">
+  <div class="emoji-grande">🏃</div>
+  <h2 id="vuTitulo">¿Cuántas vueltas hizo?</h2>
+  <p>El profe cuenta las vueltas del circuito 👀</p>
+  <div id="vuStepper">
+    <button class="stepBtn" id="vuMenos" aria-label="menos">−</button>
+    <div id="vuN">1</div>
+    <button class="stepBtn" id="vuMas" aria-label="más">+</button>
+  </div>
+  <div id="vuBotones">
+    <button class="boton" id="btnVueltaSi">REGISTRAR 🔥</button>
+    <button class="boton secundario" id="btnVueltaNo">Todavía no</button>
+  </div>
+</div>
+
+<!-- Primera vez: el niño elige su Guardián acá mismo -->
+<div class="panel" id="elegir">
+  <h2 id="elTitulo">¡Elegí tu Guardián!</h2>
+  <div class="sub" id="elSub">Tocá el que va a entrenar con vos 🔥</div>
+  <div id="grillaRobots"></div>
+</div>
+
+<div class="panel" id="fallo1">
+  <div class="emoji-grande">🌀</div>
+  <h2>¡Casi!</h2>
+  <p>Acomodate frente al espejo, que se te vea bien la cara, y probá una vez más.</p>
+  <button class="boton" id="btnReintentar">PROBAR DE NUEVO</button>
+</div>
+
+<div class="panel" id="fallo2">
+  <div class="emoji-grande">🧙</div>
+  <h2>Pedile al Guardián Mayor</h2>
+  <p>Decile al profe que te anote — ¡tu bienvenida te espera igual!</p>
+</div>
+
+<div id="pie">FENIX KIDS · LA CASONA</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   CONFIG — al conectar el backend real (fase B de la spec),
+   poner la URL de Railway. Con null corre en MODO DEMO (simula).
+   ═══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  API_URL: "https://fenix-kids-agent-production.up.railway.app",  // BACKEND REAL (conectado 07/07)
+  JUEGO_KEY: "",  // se pide UNA vez y queda en el dispositivo (localStorage)
+  VOZ_EN_TOTEM: false,               // el circo (voz de George) lo hace la TV; el espejo solo lee rápido
+  DEMO_NINOS: [                      // solo para modo demo
+    {nombre:"MATEO", guardian:"mamba", voz:"mateo"},
+    {nombre:"LOLA",  guardian:"aura",  voz:"lola"},
+    {nombre:"BENJA", guardian:"furia", voz:"benja"},
+    {nombre:"EMMA",  guardian:"flash", voz:"emma"},
+  ],
+};
+/* clave del juego: guardada en el dispositivo, se pide una sola vez (kiosk-friendly) */
+if (CONFIG.API_URL && !CONFIG.JUEGO_KEY){
+  CONFIG.JUEGO_KEY = localStorage.getItem("mf_juego_key") || "";
+  if (!CONFIG.JUEGO_KEY){
+    CONFIG.JUEGO_KEY = (prompt("Clave del Guardián Mayor (una sola vez):") || "").trim();
+    if (CONFIG.JUEGO_KEY) localStorage.setItem("mf_juego_key", CONFIG.JUEGO_KEY);
+  }
+}
+
+
+/* ══ refs ══ */
+const $ = id => document.getElementById(id);
+const cam = $("cam"), cuenta = $("cuenta"), espera = $("espera");
+let intentos = 0, ocupado = false, audioCtx = null, vozAudio = null;
+
+/* ══ Cámara frontal ══ */
+async function iniciarCamara(){
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"user", width:{ideal:1280}, height:{ideal:720}}, audio:false });
+    cam.srcObject = s;
+  }catch(e){
+    $("stage").insertAdjacentHTML("beforeend",
+      `<p style="color:var(--flame)">⚠️ No pude abrir la cámara: ${e.name}.<br>
+       Recordá: necesita HTTPS (o localhost) y permiso de cámara.</p>`);
+  }
+}
+
+/* ══ Sonidos con WebAudio (sin archivos) ══ */
+function beep(freq, dur=0.14, tipo="sine", vol=0.4){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = tipo; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  }catch(e){}
+}
+const dingExito = () => { beep(523,.12); setTimeout(()=>beep(659,.12),120); setTimeout(()=>beep(784,.3),240); };
+
+/* ══ Captura del frame (máx 720p, JPEG 0.8) ══ */
+function capturar(){
+  const c = document.createElement("canvas");
+  const esc = Math.min(1, 720 / cam.videoHeight || 1);
+  c.width  = Math.round(cam.videoWidth  * esc);
+  c.height = Math.round(cam.videoHeight * esc);
+  c.getContext("2d").drawImage(cam, 0, 0, c.width, c.height);
+  const dataUrl = c.toDataURL("image/jpeg", 0.8);
+  return { b64: dataUrl.split(",")[1],   // para la API (Rekognition)
+           dataUrl };                     // para mostrar en la fusión
+}
+
+/* ══ Reconocimiento: backend real o demo ══ */
+async function reconocer(fotoB64){
+  if(!CONFIG.API_URL){
+    /* MODO DEMO: 1.8s de suspenso, 70% éxito con un niño al azar */
+    await new Promise(r=>setTimeout(r,1800));
+    if(Math.random() < 0.7){
+      const n = CONFIG.DEMO_NINOS[Math.floor(Math.random()*CONFIG.DEMO_NINOS.length)];
+      return {ok:true, nino:n};
+    }
+    return {ok:false, motivo:"no_reconocido"};
+  }
+  const r = await fetch(`${CONFIG.API_URL}/juego/checkin-face`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-JUEGO-KEY":CONFIG.JUEGO_KEY},
+    body: JSON.stringify({foto_base64: fotoB64}),
+  });
+  return r.json();
+}
+
+/* ══ DESPERTAR: el niño toca → el espejo se enciende y ESCUCHA el "¡Hola Fenix!" ══ */
+async function despertar(){
+  if(ocupado) return; ocupado = true;
+  pedirFullscreen();
+
+  document.body.classList.add("encendido");     // el resplandor de fuego se enciende
+  $("sello").classList.add("roto");             // el escudo se abre y se disuelve
+  const vid = $("fenixVid");                     // Fenix COBRA VIDA (el video)
+  try{ vid.currentTime = 0; vid.play().catch(()=>{}); }catch(e){}
+  setTimeout(()=>vid.classList.add("visible"), 200);
+  beep(330,.4,"sine",.3); setTimeout(()=>beep(494,.5,"sine",.35), 300);
+
+  $("fenix").classList.add("oculto");           // el fuego se abre → aparece el reflejo
+  escucharComando();                            // ← espera el "¡Hola Fenix!"; si no lo dice, se apaga
+}
+
+/* ══ ESCUCHA el comando "¡Hola Fenix!" (Web Speech API — anda en Chrome, NO en Fully Kiosk).
+   Si lo oye → lee la cara. Si NO lo dice en unos segundos → se apaga (no saca foto). ══ */
+let rec = null, escuchaTimer = null;
+const WAKE = /fenix|fenis|feniks/;              // sobre texto ya normalizado (sin tildes)
+function escucharComando(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){                                       // navegador sin motor de voz (Fully Kiosk):
+    escuchaTimer = setTimeout(ritual, 2200);      // no puede escuchar → lee igual tras un ratito
+    return;
+  }
+  let disparado = false;
+  const disparar = () => {                        // oyó "Fenix" → a leer la cara
+    if(disparado) return; disparado = true;
+    clearTimeout(escuchaTimer); pararEscucha(); ritual();
+  };
+  /* si no dice "Fenix" en 6s → se apaga, sin foto */
+  escuchaTimer = setTimeout(() => {
+    if(!disparado){ pararEscucha(); volverIdle(); }
+  }, 6000);
+  rec = new SR(); rec.lang = "es-419"; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = e => {
+    let txt = "";
+    for(let i=e.resultIndex; i<e.results.length; i++) txt += e.results[i][0].transcript;
+    txt = txt.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");  // sin tildes
+    if(WAKE.test(txt)) disparar();
+  };
+  rec.onerror = () => {};                         // no-speech / network → onend reintenta
+  rec.onend = () => { if(!disparado && ocupado){ try{ rec.start(); }catch(e){} } };
+  try{ rec.start(); }
+  catch(e){ escuchaTimer = setTimeout(disparar, 2200); }   // si el mic falla, lee igual
+}
+function pararEscucha(){ try{ rec && rec.stop(); rec = null; }catch(e){} }
+
+/* ══ Ritual de la foto: reflejo → foto → esperar → resultado (sin countdown) ══ */
+async function ritual(){
+  /* respiro corto: ya dijo "¡Hola Fenix!", que mire la cámara → foto */
+  await new Promise(r=>setTimeout(r,600));
+  beep(880,.25,"triangle",.5);
+
+  const foto = capturar();
+  espera.style.display = "flex";
+
+  let res;
+  try{ res = await reconocer(foto.b64); }
+  catch(e){ res = {ok:false, motivo:"error_red"}; }
+  espera.style.display = "none";
+
+  if(res.ok){
+    mostrarExito(res, foto.dataUrl);
+  }else{
+    intentos++;
+    if(intentos < 2) mostrarPanel("fallo1");
+    else{
+      mostrarPanel("fallo2"); beep(220,.4,"sawtooth",.2);
+      setTimeout(volverIdle, 8000);
+    }
+  }
+}
+
+/* ══ ÉXITO: con avatar → fusión directa; sin avatar → primero elige su Guardián ══ */
+const ROBOTS = ["mamba","sophie","apolo","furia","maikol","nina","drakon","flash","shakira","aura"];
+const PANELES = ["exito","vuelta","elegir","fallo1","fallo2"];
+
+function mostrarExito(res, fotoUrl){
+  const nino = res.nino || {}, g = res.guardian || null;
+  if(g && !g.robot){ mostrarSelector(res, fotoUrl); return; }        // primera vez → elige
+  if(res.presentacion && g){                                         // recién eligió y volvió al espejo
+    fusionar(nino, g.robot, fotoUrl, "¡Mirá la pantalla grande! 📺", 6000);  // la TV da las monedas
+    return;
+  }
+  if(res.repetido && g){                                              // ya llegó hoy → ¿vuelta?
+    const c = res.circuito;
+    if(c && c.vuelta_cerrada){                    // circuito NFC ya la cerró sola (backend)
+      fusionar(nino, g.robot || "mamba", fotoUrl, "¡VUELTA COMPLETADA! 🏆 ¡Mirá la pantalla grande! 📺", 6000);
+      return;
+    }
+    if(c && !c.vuelta_cerrada){                   // tiene pulsera pero le falta alguna estación
+      mostrarPanel("vuelta");
+      $("vuStepper").style.display = "none";
+      $("vuBotones").style.display = "none";
+      $("vuTitulo").textContent = `Te falta pasar por: ${c.faltan.join(", ")}`;
+      beep(440,.2);
+      setTimeout(volverIdle, 4000);
+      return;
+    }
+    mostrarPreguntaVuelta(res, fotoUrl); return;  // sin pulsera vinculada → conteo manual (fallback)
+  }
+  const robot = (g && g.robot) || nino.guardian || "mamba";          // nino.guardian = modo demo
+  const linea = (res.oro ? `+${res.oro} 🥇 hoy · ` : "") +
+                (g ? `Tus monedas: ${g.oro} 🥇` : "¡Mirá la pantalla grande!");
+  fusionar(nino, robot, fotoUrl, linea);
+}
+
+/* ══ Vuelta del circuito por cara (2ª pasada del día — sin NFC todavía) ══ */
+let tVuelta = null, resVuelta = null, fotoVuelta = null, vuCount = 1;
+const VU_MAX = 20;
+function _pintarVuCount(){
+  $("vuN").textContent = vuCount;
+  $("vuMenos").disabled = vuCount <= 1;
+  $("vuMas").disabled = vuCount >= VU_MAX;
+}
+function mostrarPreguntaVuelta(res, fotoUrl){
+  resVuelta = res; fotoVuelta = fotoUrl;
+  vuCount = 1; _pintarVuCount();
+  $("vuTitulo").textContent = `¿Cuántas vueltas hizo ${res.nino.nombre}?`;
+  $("vuStepper").style.display = "flex";
+  $("vuBotones").style.display = "flex";
+  $("btnVueltaSi").disabled = false;
+  mostrarPanel("vuelta");
+  beep(659,.14); setTimeout(()=>beep(784,.2),140);
+  clearTimeout(tVuelta);
+  tVuelta = setTimeout(volverIdle, 30000);          // sin respuesta en 30s → idle
+}
+
+function despedirVuelta(msg){
+  clearTimeout(tVuelta);
+  $("vuTitulo").textContent = msg;
+  $("vuStepper").style.display = "none";
+  $("vuBotones").style.display = "none";
+  tVuelta = setTimeout(volverIdle, 2600);
+}
+
+async function confirmarVuelta(){
+  clearTimeout(tVuelta);
+  $("btnVueltaSi").disabled = true;                 // anti doble-tap local
+  $("vuMenos").disabled = true; $("vuMas").disabled = true;
+  beep(880,.18,"triangle",.5);
+  let r = null;
+  try{
+    const resp = await fetch(`${CONFIG.API_URL}/juego/vuelta-face`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-JUEGO-KEY":CONFIG.JUEGO_KEY},
+      body: JSON.stringify({nino_id: resVuelta.nino.id, nombre: resVuelta.nino.nombre, cantidad: vuCount}),
+    });
+    r = await resp.json();
+  }catch(e){}
+  if(r && r.ok){
+    const g = r.guardian || {};
+    const cuantas = r.cantidad || 1;
+    const primera = (r.numero || 1) - cuantas + 1;
+    const bonus = [5,10].some(b => b >= primera && b <= r.numero) ? " ¡BONUS!" : "";
+    const cab = cuantas > 1 ? `¡${cuantas} VUELTAS!` : `¡VUELTA ${r.numero}!`;
+    fusionar(resVuelta.nino, g.robot || "mamba", fotoVuelta,
+             `${cab}${bonus} +${r.plata} 🥈 · Tenés ${g.plata ?? 0} 🥈`, 7000);
+  } else if(r && r.detail === "vuelta_muy_rapida"){
+    despedirVuelta("Esa vuelta ya la contamos — ¡seguí corriendo! 🏃🔥");
+  } else {
+    mostrarPanel("fallo1"); beep(220,.4,"sawtooth",.2);
+  }
+}
+
+/* ══ Selector de Guardián (primera vez) ══ */
+let tSelector = null;
+function mostrarSelector(res, fotoUrl){
+  $("elTitulo").textContent = `¡Elegí tu Guardián, ${res.nino.nombre}!`;
+  $("elSub").textContent = "Tocá el que va a entrenar con vos 🔥";
+  $("elSub").style.display = ""; $("grillaRobots").style.display = "";
+  const grid = $("grillaRobots");
+  grid.innerHTML = ROBOTS.map(r =>
+    `<button class="robotOpt" data-robot="${r}">
+       <img src="assets/guardianes/${r}.png" alt="${r}"><span>${r.toUpperCase()}</span>
+     </button>`).join("");
+  $("elegir").classList.remove("eligiendo");
+  grid.querySelectorAll(".robotOpt").forEach(b =>
+    b.addEventListener("click", () => elegirRobot(b, res, fotoUrl)));
+  mostrarPanel("elegir");
+  beep(659,.14); setTimeout(()=>beep(784,.2),140);
+  clearTimeout(tSelector);
+  tSelector = setTimeout(volverIdle, 60000);        // si no elige en 1 min, el espejo se duerme
+}
+
+async function elegirRobot(btn, res, fotoUrl){
+  const robot = btn.dataset.robot;
+  $("elegir").classList.add("eligiendo"); btn.classList.add("elegido");
+  beep(880,.18,"triangle",.5);
+  let r = null;
+  try{
+    const resp = await fetch(`${CONFIG.API_URL}/juego/elegir-robot`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-JUEGO-KEY":CONFIG.JUEGO_KEY},
+      body: JSON.stringify({nino_id: res.nino.id, robot, nombre: res.nino.nombre}),
+    });
+    r = await resp.json();
+  }catch(e){}
+  clearTimeout(tSelector);
+  if(!r || !r.ok){                                   // no se guardó → reintentar (re-escaneo)
+    $("elegir").classList.remove("eligiendo");
+    mostrarPanel("fallo1"); beep(220,.4,"sawtooth",.2);
+    return;
+  }
+  const g = r.guardian || {};
+  const elegido = g.robot || robot;                  // ya_tenia → respeta el que quedó
+  /* nada de monedas acá: lo manda de vuelta al espejo y la TV hace la presentación */
+  clearTimeout(tSelector);
+  $("elTitulo").textContent = `¡${elegido.toUpperCase()} es tuyo! 🔥`;
+  $("elSub").textContent = "Volvé a mirarte al espejo…";
+  $("elSub").style.display = "";
+  $("grillaRobots").style.display = "none";
+  beep(659,.16); setTimeout(()=>beep(880,.16),140); setTimeout(()=>beep(1175,.4,"triangle",.5),280);
+  tSelector = setTimeout(volverIdle, 3200);
+}
+
+/* ══ LA FUSIÓN: foto real → arde en fuego → aparece su Guardián ══ */
+let tFusion = [];   // timers de la secuencia (se limpian en volverIdle)
+function fusionar(nino, robot, fotoUrl, lineaOro, idleMs = 4500){
+  const panel = $("exito");
+  panel.classList.remove("fusionando","fusionado");
+  $("exNombre").textContent = nino.nombre;
+  $("exFoto").src = fotoUrl || "";
+  $("exRobot").src = `assets/guardianes/${robot}.png`;
+  if(lineaOro) $("exOro").textContent = lineaOro;
+  mostrarPanel("exito"); dingExito();
+
+  /* voz opcional en el espejo (por defecto OFF — el circo con la voz de George
+     lo hace la TV al levantar el evento "llegada"). */
+  if(CONFIG.VOZ_EN_TOTEM){
+    try{
+      if(vozAudio) vozAudio.pause();
+      vozAudio = new Audio(`assets/voz/llegada_${(nino.voz||nino.nombre||"").toLowerCase()}.mp3`);
+      vozAudio.play().catch(()=>{});
+    }catch(e){}
+  }
+
+  /* secuencia CORTA: el espejo confirma rápido y vuelve a idle → la cola avanza.
+     La celebración grande (voz, monedas) la hace la TV. */
+  tFusion.push(setTimeout(()=>panel.classList.add("fusionando"), 700));       // la foto arde
+  tFusion.push(setTimeout(()=>{                                              // flash → Guardián
+    panel.classList.add("fusionado");
+    beep(659,.16); setTimeout(()=>beep(880,.16),140); setTimeout(()=>beep(1175,.4,"triangle",.5),280);
+  }, 1600));
+  tFusion.push(setTimeout(volverIdle, idleMs));                              // vuelve al próximo niño
+}
+
+function mostrarPanel(id){ PANELES.forEach(p=>$(p).style.display = p===id?"flex":"none"); }
+function volverIdle(){
+  tFusion.forEach(clearTimeout); tFusion = [];       // matar la secuencia de fusión
+  clearTimeout(tSelector); clearTimeout(tVuelta);    // matar timeouts de selector y vuelta
+  clearTimeout(escuchaTimer); pararEscucha();        // cortar la escucha del comando
+  $("exito").classList.remove("fusionando","fusionado");
+  PANELES.forEach(p=>$(p).style.display="none");
+  if(vozAudio){ vozAudio.pause(); vozAudio=null; }
+  intentos = 0; ocupado = false;
+  document.body.classList.remove("encendido");                       // el fuego se apaga
+  $("fenix").classList.remove("oculto");                             // vuelve el fondo del espejo
+  const fv=$("fenixVid"); fv.classList.remove("visible");            // Fenix se duerme
+  setTimeout(()=>{ try{fv.pause();}catch(e){} }, 1000);              // pausa tras el fade
+  $("sello").classList.remove("roto");                               // el escudo vuelve a sellar
+}
+
+/* ══ Interacciones ══ */
+/* tocar CUALQUIER parte de la pantalla despierta al Guardián (el niño solo toca) */
+$("stage").addEventListener("click", despertar);
+$("btnReintentar").addEventListener("click", ()=>{
+  PANELES.forEach(p=>$(p).style.display="none");
+  ritual();                                    // ya está despierto → directo a la foto
+});
+$("btnVueltaSi").addEventListener("click", confirmarVuelta);
+$("btnVueltaNo").addEventListener("click", ()=>despedirVuelta("¡Dale que podés! 💪"));
+$("vuMenos").addEventListener("click", ()=>{ if(vuCount>1){ vuCount--; _pintarVuCount(); beep(523,.08); }
+  clearTimeout(tVuelta); tVuelta=setTimeout(volverIdle,30000); });
+$("vuMas").addEventListener("click", ()=>{ if(vuCount<VU_MAX){ vuCount++; _pintarVuCount(); beep(784,.08); }
+  clearTimeout(tVuelta); tVuelta=setTimeout(volverIdle,30000); });
+
+/* fullscreen + pantalla siempre despierta (kiosco) */
+function pedirFullscreen(){
+  const el = document.documentElement;
+  if(!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+}
+async function wakeLock(){
+  try{ if("wakeLock" in navigator) await navigator.wakeLock.request("screen"); }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) wakeLock(); });
+
+/* ══ Brasas flotando de fondo ══ */
+const bz = $("brasas"), bc = bz.getContext("2d");
+let parts = [];
+function resizeBrasas(){ bz.width=innerWidth; bz.height=innerHeight; }
+addEventListener("resize", resizeBrasas); resizeBrasas();
+function tickBrasas(){
+  bc.clearRect(0,0,bz.width,bz.height);
+  if(parts.length < 26 && Math.random()<.3)
+    parts.push({x:Math.random()*bz.width, y:bz.height+8, r:1+Math.random()*2.6,
+                v:.35+Math.random()*.9, a:.12+Math.random()*.4});
+  parts.forEach(p=>{ p.y-=p.v; p.x+=Math.sin(p.y/46)*.35; p.a*=.9992; });
+  parts = parts.filter(p=>p.y>-10 && p.a>.02);
+  parts.forEach(p=>{
+    bc.beginPath(); bc.arc(p.x,p.y,p.r,0,7);
+    bc.fillStyle = `rgba(255,${140+Math.random()*60|0},40,${p.a})`; bc.fill();
+  });
+  requestAnimationFrame(tickBrasas);
+}
+tickBrasas();
+
+/* ══ Auto-reload: la tablet vive con la página abierta días — sin esto, un deploy
+   nuevo no llega nunca (bug AlanTest 11/07). Cada 10 min compara el ETag del HTML
+   deployado y, SOLO en reposo (sin niño en el flujo), se recarga. La cámara y la
+   JUEGO_KEY sobreviven al reload (permiso del sitio + localStorage). ══ */
+/* Pages NO manda ETag en el HTML → se compara un hash del texto completo. */
+let _verActual = null;
+function _hashTxt(t){ let h=0; for(let i=0;i<t.length;i++){ h=(h*31+t.charCodeAt(i))|0; } return h+":"+t.length; }
+async function _chequearVersion(){
+  try{
+    const r = await fetch(location.pathname, {cache:"no-store"});
+    if(!r.ok) return;
+    const v = _hashTxt(await r.text());
+    if(_verActual === null){ _verActual = v; return; }
+    if(v !== _verActual && !ocupado) location.reload();
+  }catch(e){}
+}
+setInterval(_chequearVersion, 600000);
+_chequearVersion();
+
+/* ══ arranque ══ */
+iniciarCamara(); wakeLock();
+</script>
+</body>
+</html>
