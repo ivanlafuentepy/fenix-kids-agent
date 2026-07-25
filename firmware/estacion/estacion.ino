@@ -26,6 +26,9 @@
 #define NUM_LEDS  16
 CRGB leds[NUM_LEDS];
 
+// Buzzer piezo PASIVO (necesita tone()/PWM, no un simple HIGH — a diferencia de uno activo).
+#define PIN_BUZZER 25
+
 MFRC522 lector(PIN_SS, PIN_RST);
 
 // Antirrebote local: la misma pulsera apoyada 3 segundos no dispara 40 POSTs.
@@ -47,6 +50,8 @@ void setup() {
   FastLED.setBrightness(120);
   FastLED.clear();
   FastLED.show();
+
+  pinMode(PIN_BUZZER, OUTPUT);
 
   Serial.println();
   Serial.println(F("== FENIX KIDS — estación NFC (fase N2) =="));
@@ -80,6 +85,7 @@ void loop() {
   Serial.println(uid);
   fill_solid(leds, NUM_LEDS, CRGB::Green);   // se prende y queda prendido mientras esté apoyada
   FastLED.show();
+  beep();   // feedback inmediato, igual que el LED, no depende de la red
   esperar_hasta_que_saque_la_pulsera();
 
   FastLED.clear();
@@ -116,6 +122,16 @@ void esperar_hasta_que_saque_la_pulsera() {
     if (lector.PICC_Select(&lector.uid) != MFRC522::STATUS_OK) break;        // no se pudo re-seleccionar: se sacó
     lector.PICC_HaltA();   // ahora sí es válido: estaba en ACTIVE
   }
+}
+
+// Barrido de frecuencias en vez de un tono fijo: un piezo pasivo suena bien más fuerte
+// en su frecuencia de resonancia, y no sabemos cuál es la de este disco puntual.
+void beep() {
+  for (int f = 1500; f <= 4500; f += 300) {
+    tone(PIN_BUZZER, f, 25);
+    delay(25);
+  }
+  noTone(PIN_BUZZER);
 }
 
 void cerrar_lectura() {
