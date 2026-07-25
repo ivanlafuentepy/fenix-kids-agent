@@ -41,6 +41,7 @@ void setup() {
   SPI.begin();
   lector.PCD_Init();
   delay(50);            // el RC522 necesita un respiro antes de responder la versión
+  lector.PCD_SetAntennaGain(MFRC522::RxGain_max);   // de fábrica arranca en ganancia media, no la máxima
 
   FastLED.addLeds<WS2811, PIN_LED, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(120);
@@ -77,10 +78,14 @@ void loop() {
 
   Serial.print(F("UID: "));
   Serial.println(uid);
-  prender_led(CRGB::Green, 400);   // feedback local instantáneo — no depende del WiFi/POST
-  enviar_tap(uid);
+  fill_solid(leds, NUM_LEDS, CRGB::Green);   // se prende y queda prendido mientras esté apoyada
+  FastLED.show();
+  esperar_hasta_que_saque_la_pulsera();
 
+  FastLED.clear();
+  FastLED.show();
   cerrar_lectura();
+  enviar_tap(uid);   // recién ahora — el POST a Railway NUNCA debe demorar el LED (SPEC-NFC-CIRCUITO §4C)
 }
 
 // UID en hex mayúsculas sin separadores (04A2B3C4D5) — el formato que espera el backend.
@@ -94,13 +99,23 @@ String uid_normalizado() {
   return s;
 }
 
-// Prende el anillo entero de un color por ms milisegundos, después lo apaga.
-void prender_led(CRGB color, int ms) {
-  fill_solid(leds, NUM_LEDS, color);
-  FastLED.show();
-  delay(ms);
-  FastLED.clear();
-  FastLED.show();
+// Un tag en HALT sigue respondiendo a WUPA (a diferencia de REQA) mientras siga
+// apoyado en el campo — por eso lo usamos para saber si YA lo sacaron, en vez de
+// asumir que un simple HaltA significa que se fue.
+// OJO: HaltA solo es válido si el tag está en estado ACTIVE. Después de un WUPA el tag
+// queda en READY (todavía no seleccionado) — mandarle HaltA ahí es comportamiento NO
+// definido por el estándar y algunos chips (NTAG213) se cuelgan ahí y dejan de responder
+// a CUALQUIER tag nuevo. Por eso hay que completar el Select antes de volver a Haltear.
+void esperar_hasta_que_saque_la_pulsera() {
+  lector.PICC_HaltA();
+  while (true) {
+    delay(150);
+    byte atqa[2];
+    byte atqa_size = sizeof(atqa);
+    if (lector.PICC_WakeupA(atqa, &atqa_size) != MFRC522::STATUS_OK) break;   // ya no responde: se sacó
+    if (lector.PICC_Select(&lector.uid) != MFRC522::STATUS_OK) break;        // no se pudo re-seleccionar: se sacó
+    lector.PICC_HaltA();   // ahora sí es válido: estaba en ACTIVE
+  }
 }
 
 void cerrar_lectura() {
