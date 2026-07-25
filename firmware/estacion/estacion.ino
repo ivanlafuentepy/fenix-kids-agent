@@ -37,6 +37,15 @@ String ultimo_uid = "";
 unsigned long ultimo_ms = 0;
 const unsigned long ESPERA_MISMO_UID_MS = 2000;
 
+// DURACIÓN FIJA en vez de detectar el retiro real con WUPA/Select: se probó ese camino
+// (WakeupA→Select→HaltA en loop) y dos veces distintas terminó dejando al RC522 sin
+// responder a NINGÚN tag nuevo hasta reiniciar el ESP32 — probablemente un estado interno
+// del chip/librería que no se limpia bien con esa secuencia en este hardware puntual.
+// Se prefiere esto: menos preciso (el LED no seguía el retiro exacto), pero CONFIABLE
+// (nunca cuelga la detección del próximo tag, que es un problema mucho peor con chicos
+// tocando estaciones todo el rato).
+const unsigned long DURACION_LED_MS = 1500;
+
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000) { }
@@ -83,10 +92,10 @@ void loop() {
 
   Serial.print(F("UID: "));
   Serial.println(uid);
-  fill_solid(leds, NUM_LEDS, CRGB::Green);   // se prende y queda prendido mientras esté apoyada
+  fill_solid(leds, NUM_LEDS, CRGB::Green);   // prendido fijo — ver nota en DURACION_LED_MS
   FastLED.show();
   beep();   // feedback inmediato, igual que el LED, no depende de la red
-  esperar_hasta_que_saque_la_pulsera();
+  delay(DURACION_LED_MS);
 
   FastLED.clear();
   FastLED.show();
@@ -103,25 +112,6 @@ String uid_normalizado() {
   }
   s.toUpperCase();
   return s;
-}
-
-// Un tag en HALT sigue respondiendo a WUPA (a diferencia de REQA) mientras siga
-// apoyado en el campo — por eso lo usamos para saber si YA lo sacaron, en vez de
-// asumir que un simple HaltA significa que se fue.
-// OJO: HaltA solo es válido si el tag está en estado ACTIVE. Después de un WUPA el tag
-// queda en READY (todavía no seleccionado) — mandarle HaltA ahí es comportamiento NO
-// definido por el estándar y algunos chips (NTAG213) se cuelgan ahí y dejan de responder
-// a CUALQUIER tag nuevo. Por eso hay que completar el Select antes de volver a Haltear.
-void esperar_hasta_que_saque_la_pulsera() {
-  lector.PICC_HaltA();
-  while (true) {
-    delay(150);
-    byte atqa[2];
-    byte atqa_size = sizeof(atqa);
-    if (lector.PICC_WakeupA(atqa, &atqa_size) != MFRC522::STATUS_OK) break;   // ya no responde: se sacó
-    if (lector.PICC_Select(&lector.uid) != MFRC522::STATUS_OK) break;        // no se pudo re-seleccionar: se sacó
-    lector.PICC_HaltA();   // ahora sí es válido: estaba en ACTIVE
-  }
 }
 
 // Barrido de frecuencias en vez de un tono fijo: un piezo pasivo suena bien más fuerte
