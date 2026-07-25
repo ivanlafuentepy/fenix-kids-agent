@@ -78,6 +78,13 @@
     (aparece en el lector de la estación). Desvincular: libera la pulsera de este niño (fin de
     temporada, se pierde, pasa a otro chico) — no borra su historial de vueltas.</div>
   </div>
+
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:6px">Fin del entrenamiento</div>
+    <button class="acc" style="width:100%;background:#3a1d1a;color:#ff9a8a" onclick="desvincularTodas()">🔓🔓 Desvincular TODAS las pulseras</button>
+    <div class="mini">Libera de una todas las muñequeras activas — para reasignarlas la próxima
+    vez. No borra ningún historial de hoy.</div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -176,6 +183,18 @@ async function desvincular(){
     toast(`Pulsera liberada de ${sel.nombre}`);
   } else if (r.ok && !d.ok){
     toast(`${sel.nombre} no tenía pulsera vinculada`, true);
+  } else toast(`No salió (${r.status})`, true);
+}
+
+async function desvincularTodas(){
+  if (!confirm("¿Liberar TODAS las pulseras activas?\nNo borra el historial de hoy, solo las deja libres para reasignar.")) return;
+  const r = await fetch(`${API}/juego/nfc-desvincular-todas`, {method:"POST",
+    headers:{"X-JUEGO-KEY":KEY}});
+  const d = await r.json().catch(()=>({}));
+  if (r.ok && d.ok){
+    alumnos.forEach(a => a.tiene_pulsera = false);
+    pintar();
+    toast(`${d.cantidad} pulsera(s) liberada(s) 🔓`);
   } else toast(`No salió (${r.status})`, true);
 }
 

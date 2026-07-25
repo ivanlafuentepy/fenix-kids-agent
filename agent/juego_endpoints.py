@@ -767,6 +767,21 @@ async def nfc_desvincular(payload: dict = Body(...), x_juego_key: str | None = H
     return {"ok": True, "uid": uid, "nino_nombre": nombre}
 
 
+@router.post("/juego/nfc-desvincular-todas")
+async def nfc_desvincular_todas(x_juego_key: str | None = Header(default=None)):
+    """Libera TODAS las pulseras activas de una — fin del entrenamiento/temporada, resetea el
+    pool completo de muñequeras para la próxima vez. NO borra historial de pasadas/vueltas."""
+    _auth(x_juego_key)
+    async with async_session() as session:
+        r = await session.execute(select(Pulsera).where(Pulsera.activa == True))  # noqa: E712
+        activas = list(r.scalars().all())
+        for p in activas:
+            p.activa = False
+        await session.commit()
+    logger.info(f"[JUEGO] desvinculadas {len(activas)} pulseras de una")
+    return {"ok": True, "cantidad": len(activas)}
+
+
 @router.post("/juego/estacion")
 async def juego_estacion(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
     """Tap en una estación: registra la PASADA (timestamp del servidor). NO cierra vueltas.
