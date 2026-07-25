@@ -13,10 +13,18 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <FastLED.h>
 #include "config.h"
 
 #define PIN_SS   5    // SDA del RC522
 #define PIN_RST  22
+
+// Anillo COB WS2811, 27mm — no sabemos el número exacto de LEDs físicos, así que
+// pedimos de más (16). Los que no existen físicamente no reciben nada: no rompe nada,
+// solo garantiza que TODOS los que sí hay se prendan.
+#define PIN_LED   4
+#define NUM_LEDS  16
+CRGB leds[NUM_LEDS];
 
 MFRC522 lector(PIN_SS, PIN_RST);
 
@@ -33,6 +41,11 @@ void setup() {
   SPI.begin();
   lector.PCD_Init();
   delay(50);            // el RC522 necesita un respiro antes de responder la versión
+
+  FastLED.addLeds<WS2811, PIN_LED, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(120);
+  FastLED.clear();
+  FastLED.show();
 
   Serial.println();
   Serial.println(F("== FENIX KIDS — estación NFC (fase N2) =="));
@@ -64,6 +77,7 @@ void loop() {
 
   Serial.print(F("UID: "));
   Serial.println(uid);
+  prender_led(CRGB::Green, 400);   // feedback local instantáneo — no depende del WiFi/POST
   enviar_tap(uid);
 
   cerrar_lectura();
@@ -78,6 +92,15 @@ String uid_normalizado() {
   }
   s.toUpperCase();
   return s;
+}
+
+// Prende el anillo entero de un color por ms milisegundos, después lo apaga.
+void prender_led(CRGB color, int ms) {
+  fill_solid(leds, NUM_LEDS, color);
+  FastLED.show();
+  delay(ms);
+  FastLED.clear();
+  FastLED.show();
 }
 
 void cerrar_lectura() {
