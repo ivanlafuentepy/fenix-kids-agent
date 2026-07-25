@@ -113,7 +113,8 @@ function pintar(){
     .slice(0, 12).forEach(a => {
       const b = document.createElement("button");
       b.className = "alumno" + (sel && sel.id===a.id ? " sel" : "");
-      b.textContent = a.apodo ? `${a.nombre} "${a.apodo}" ${a.apellido}` : `${a.nombre} ${a.apellido}`;
+      const base = a.apodo ? `${a.nombre} "${a.apodo}" ${a.apellido}` : `${a.nombre} ${a.apellido}`;
+      b.textContent = a.tiene_pulsera ? `📿✅ ${base}` : base;
       b.onclick = ()=>{ sel = a; pintar();
         document.getElementById("selNombre").textContent = a.nombre;
         document.getElementById("accCard").style.opacity = 1; };
@@ -152,7 +153,11 @@ async function vincular(){
     headers:{"Content-Type":"application/json","X-JUEGO-KEY":KEY},
     body: JSON.stringify({uid, nino_nombre: sel.nombre, nino_id: sel.id})});
   const d = await r.json().catch(()=>({}));
-  if (r.ok) toast(`Pulsera ${d.uid} → ${sel.nombre} ✅`);
+  if (r.ok){
+    sel.tiene_pulsera = true;   // check inmediato en la lista, no depende de ver el toast
+    pintar();
+    toast(`Pulsera ${d.uid} → ${sel.nombre} ✅`);
+  }
   else if (r.status===409) toast(d.detail || "Esa pulsera es de otro niño", true);
   else toast(`No salió (${r.status})`, true);
 }

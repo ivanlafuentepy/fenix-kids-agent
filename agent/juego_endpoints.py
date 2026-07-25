@@ -1130,19 +1130,29 @@ async def _vuelta_face_inner(payload: dict, x_juego_key: str | None):
 
 @router.get("/juego/alumnos")
 async def juego_alumnos(x_juego_key: str | None = Header(default=None)):
-    """Lista {id, nombre, apodo} de NIÑOS FENIX para el selector del profe. Requiere key."""
+    """Lista {id, nombre, apodo, tiene_pulsera} de NIÑOS FENIX para el selector del profe.
+    tiene_pulsera marca quién ya tiene una pulsera NFC vinculada (para que el check quede
+    visible en la lista, no solo en un toast que se pierde). Requiere key."""
     _auth(x_juego_key)
     from agent.airtable_client import _get_records, _NINOS
     records = await _get_records(_NINOS, max_records=500)
+
+    async with async_session() as session:
+        r = await session.execute(select(Pulsera.nino_airtable_id).where(
+            Pulsera.activa == True, Pulsera.nino_airtable_id.isnot(None)))  # noqa: E712
+        con_pulsera = {row[0] for row in r.all()}
+
     alumnos = []
     for rec in records:
         f = rec.get("fields", {})
         nombre = (f.get("NOMBRE") or "").strip()
         if not nombre:
             continue
-        alumnos.append({"id": rec.get("id", ""), "nombre": nombre,
+        nino_id = rec.get("id", "")
+        alumnos.append({"id": nino_id, "nombre": nombre,
                         "apodo": (f.get("APODO") or "").strip(),
-                        "apellido": (f.get("APELLIDO") or "").strip()})
+                        "apellido": (f.get("APELLIDO") or "").strip(),
+                        "tiene_pulsera": nino_id in con_pulsera})
     alumnos.sort(key=lambda a: a["nombre"])
     return {"alumnos": alumnos}
 
