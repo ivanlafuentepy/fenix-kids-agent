@@ -5,13 +5,43 @@
 
 ---
 
-## 2026-07-25 — RC522/NFC: HaltA después de WakeupA sin Select bloquea la detección de CUALQUIER tag nuevo
+## 2026-07-25 — RC522/NFC: intentar "seguir la presencia real" de un tag (WakeupA/Select/Halt en loop) NO es confiable en este hardware — usar duración fija
 
-**Síntoma:** en el firmware de la estación NFC (`firmware/estacion/estacion.ino`), al implementar "el LED se queda prendido mientras la pulsera está apoyada" con un loop de `PICC_WakeupA` (para detectar si el tag sigue en el campo sin necesidad de sacarlo), apareció un bug nuevo: si se tocaba una moneda NTAG213 y después un llavero Mifare Classic (o al revés), el SEGUNDO tag dejaba de leerse — no un tag específico, cualquiera que viniera después.
+**⚠️ ACTUALIZADO el mismo día — la "regla" original de abajo quedó DESCARTADA.** Se probó en producción
+(hardware real, no simulado) y el fix protocolarmente correcto igual colgó el lector. Dejar el historial
+completo para no repetir el ciclo de "arreglarlo bien" → volver a romperse.
 
-**Causa raíz:** por el estándar ISO14443-3, el comando `HaltA` (dormir el tag) solo es válido cuando el tag está en estado **ACTIVE** (ya pasó por anticolisión + Select). El código hacía `WakeupA` (que lleva el tag de HALT a **READY**, no a ACTIVE) y le mandaba `HaltA` inmediatamente después, sin completar el `Select`. Mandarle Halt a un tag en READY es **comportamiento no definido por el estándar** — cada chip reacciona distinto: el Mifare Classic lo toleraba, pero el NTAG213 se quedaba colgado en ese estado intermedio y dejaba de responderle al lector, lo que bloqueaba la detección de CUALQUIER tag nuevo hasta que el que quedó mal (el primero) se retiraba físicamente del campo.
+**Intento 1 (descartado):** en `firmware/estacion/estacion.ino`, para que el LED se quedara prendido
+mientras la pulsera seguía apoyada (en vez de un blink fijo), se armó un loop con `PICC_WakeupA` (a
+diferencia de `PICC_IsNewCardPresent`/REQA, sí despierta un tag en HALT sin sacarlo del campo). Bug:
+tocar una moneda NTAG213 y después un llavero Mifare Classic (o al revés) dejaba de leer el SEGUNDO tag.
 
-**Regla:** para detectar "¿este tag sigue apoyado?" sin necesidad de que lo saquen, el ciclo correcto es **`WakeupA` → `PICC_Select(&lector.uid)` → recién ahí `HaltA`** — nunca Halt directo después de un Wakeup. Esto aplica a cualquier firmware RC522/PN532 de este proyecto (estaciones NFC del juego) que necesite "mantener encendido mientras esté apoyado" en vez de un blink de duración fija. Ver también: el feedback local (LED) NUNCA debe esperar al POST de red — si el envío HTTPS es bloqueante y se hace ANTES del apagado del LED, un WiFi lento hace que el LED se quede prendido de más aunque ya se sacó el tag (bug relacionado, mismo commit `86f8f87`).
+**Causa raíz del intento 1:** por ISO14443-3, `HaltA` solo es válido en estado ACTIVE (tras anticolisión +
+Select). El código mandaba `HaltA` justo después de un `WakeupA` exitoso, con el tag en READY (no
+ACTIVE) — comportamiento no definido por el estándar. Fix "correcto": completar el ciclo
+`WakeupA → PICC_Select(&uid) → HaltA`.
+
+**Intento 2 (TAMBIÉN descartado, mismo día, horas después):** con el ciclo completo Wakeup→Select→Halt
+ya aplicado (protocolarmente correcto), el bloqueo cruzado moneda/llavero **volvió a pasar, dos veces
+más** — y esta vez sin ningún error visible en el log: tras un tap exitoso, el lector quedaba mudo 50+
+segundos, sin detectar NINGÚN tag nuevo (ni siquiera un intento fallido registrado). Diagnosticado con
+captura de serial en vivo (`arduino-cli monitor` no servía en este harness — se armó un script `pyserial`
+para leer el puerto con timestamps). Causa exacta no identificada a nivel de registro del RC522 — solo
+se confirmó que el propio mecanismo de mantener el tag "despierto" con Halt/Wakeup/Select repetido es
+lo que lo produce, más allá de que sea protocolarmente correcto.
+
+**Regla final:** en este proyecto (RC522 + librería `MFRC522` + ESP32), **NO usar un loop de
+WakeupA/Select/Halt para detectar "¿el tag sigue apoyado?"** — es frágil y cuelga el lector para
+CUALQUIER tag nuevo, de forma silenciosa. En su lugar, usar **duración fija** para cualquier feedback
+que necesite "quedarse encendido un rato" (ej. LED tras un tap) — se pierde precisión (no sigue el
+retiro exacto), pero es 100% confiable. Ver commit `315e7f4` (revierte `86f8f87`). Si en el futuro se
+quiere retomar la detección de presencia real, primero investigar a nivel de registros del RC522
+(dumps de estado) por qué se cuelga — no asumir que "está bien por protocolo" = "va a andar en este
+hardware".
+
+**Relacionado (esto SÍ sigue valiendo):** el feedback local (LED) NUNCA debe esperar al POST de red —
+si el envío HTTPS es bloqueante y se hace ANTES del apagado del LED, un WiFi lento hace que el LED se
+quede prendido de más aunque ya se sacó el tag.
 
 ## 2026-07-25 — Web NFC "no funciona" en Android no-mainstream: el diálogo Wallet/Etiquetas tapa la confirmación
 

@@ -62,6 +62,16 @@ arduino-cli monitor -p COMx -c baudrate=115200
 2. Si el puerto no aparece en `board list`: falta el driver **CP2102** de Silicon Labs.
 3. Probá otro cable USB — muchos cables baratos son solo de carga, sin líneas de datos.
 
+### Si `arduino-cli monitor` no muestra nada
+
+En algunos entornos `arduino-cli monitor` corrido en background/redirigido no vuelca el log
+(queda vacío aunque el ESP32 esté imprimiendo). Alternativa que sí funciona, con `pyserial`
+(`py -3 -m pip install pyserial` si no está):
+
+```bash
+py -3 firmware/leer_serial.py COM3 90   # escucha el puerto 90 segundos, con timestamp por línea
+```
+
 ---
 
 ## Diagnóstico del lector

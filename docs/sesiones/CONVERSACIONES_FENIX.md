@@ -500,3 +500,33 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 - `86f8f87` — fix(firmware): estación NFC quincho — LED sigue presencia real y corrige bloqueo de lectura cruzada
 
 **Pendiente:** Iván todavía no confirmó si el fix WUPA→Select→Halt resolvió la lectura cruzada moneda/llavero, ni si la ganancia máxima de antena alcanzó para leer con la caja cerrada (ver `docs/FENIX_RESUMEN.md` #286).
+
+---
+
+## 2026-07-25 (continuación) — buzzer instalado + el fix de la mañana se REVIERTE
+
+**Ivan:** ah faltó instalar el módulo de altavoz para el sonido!
+**Fenix:** Anotado como pendiente #287 (buzzer nunca instalado ni programado).
+
+**Ivan:** hacemos ahora
+**Fenix:** Agregué buzzer HW-508 pasivo en GPIO25 con barrido de frecuencias 1500-4500Hz (para pegarle a la resonancia). Guie el cableado paso a paso (foto del módulo → identifiqué pines S/+/- del HW-508), y cuando el 3.3V y el 5V del ESP32 quedaron ocupados (LED+RC522), guie armar una breadboard para repartir el 5V a los tres consumidores.
+
+**Ivan:** listo, igual se escucha apenas
+**Fenix:** Es limitación física del piezo chico del HW-508, no de firmware — aceptado así para el piloto (el LED sigue siendo la confirmación visual principal). Marcado #287 como hecho.
+
+**Ivan:** de nuevo el mismo problema si yo pongo el botón después no quiere leer el llavero
+**Fenix:** El fix de la mañana (WUPA→Select→Halt) NO alcanzó — se reprodujo el mismo bloqueo. Armé un script `pyserial` (el `arduino-cli monitor` de este harness no capturaba nada) para ver el log en vivo mientras Iván probaba.
+
+**Ivan:** [varias pruebas guiadas, alternando "listo" con reportes de que seguía sin leer]
+**Fenix:** La captura de serial confirmó: tras un tap exitoso, el log quedaba MUDO 50+ segundos — el RC522 dejaba de responder a CUALQUIER tag nuevo, sin ningún error visible. El mecanismo WUPA/Select/Halt (aunque protocolarmente correcto por ISO14443) resultó frágil con este hardware/librería — decidí abandonarlo por confiabilidad.
+
+**Ivan:** si coloco uno después el otro no lee!!!!
+**Fenix:** Revertí el LED a duración FIJA (1.5s) en vez de tratar de seguir el retiro real de la pulsera — sin el loop de Wakeup/Select que colgaba el lector. Compilado, flasheado y confirmado con Iván alternando moneda/llavero varias veces sin colgarse.
+
+**Ivan:** perfecto /cierre
+
+**Commits de la sesión:**
+- `103ad53` — feat(firmware): agregar buzzer HW-508 a estacion quincho con barrido de frecuencias
+- `315e7f4` — fix(firmware): revertir WakeupA/Select a duracion fija — colgaba el lector con tags nuevos
+
+**Aprendizaje clave:** el mecanismo WUPA→Select→Halt en loop para "seguir la presencia real" de un tag NO es confiable en este hardware/librería (MFRC522 + ESP32) — se colgó 2 veces distintas (con NTAG213 Y con Mifare Classic), sin error visible. Registrado en `memory/errores-aprendidos.md` — NO reintentar ese enfoque sin resolver antes por qué se cuelga a bajo nivel.
