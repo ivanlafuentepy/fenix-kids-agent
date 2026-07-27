@@ -153,6 +153,31 @@ async def _espejar_formulario(telefono: str, flow_data: dict) -> None:
             logger.error(f"[RESERVA-FORM] espejo WhatsApp admin del formulario falló: {e}")
 
 
+async def _completar_pago_huerfano(telefono: str, nino_ids: list[str], tutor_id: str | None) -> None:
+    """Back-fill del PAGO: el pago se registra ANTES del formulario, así que si en
+    ese momento el niño no existía (extractor sin nombre), el PAGO nació sin
+    NIÑOS FENIX ni PAGA — huérfano e invisible en las vistas (caso 25/07).
+    Acá, con el niño ya real, se linkea. Solo toca PAGOs PRUEBA sin niños."""
+    from agent.airtable_client import _get_records, _patch, _LEADS, _PAGOS
+    if not nino_ids:
+        return
+    lead = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
+    pago_ids = (lead[0].get("fields", {}) or {}).get("PAGOS", []) if lead else []
+    if not pago_ids:
+        return
+    _or = ",".join(f"RECORD_ID()='{p}'" for p in pago_ids)
+    pagos = await _get_records(_PAGOS, formula=f"OR({_or})" if len(pago_ids) > 1 else _or,
+                               max_records=len(pago_ids))
+    for p in pagos:
+        pf = p.get("fields", {}) or {}
+        if (pf.get("CONCEPTO") or "").startswith("PRUEBA") and not pf.get("NIÑOS FENIX"):
+            campos: dict = {"NIÑOS FENIX": nino_ids}
+            if tutor_id and not pf.get("PAGA"):
+                campos["PAGA"] = [tutor_id]
+            await _patch(_PAGOS, p["id"], campos)
+            logger.info(f"[RESERVA-FORM] PAGO huérfano {p['id']} linkeado a niños {nino_ids}")
+
+
 async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     """Completa (o CREA) NIÑO + TUTORES a prueba con los datos del formulario y
     dispara la agenda (sábados). El niño NACE del formulario si no existe — antes,
@@ -207,6 +232,7 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     nino_apellido = (flow_data.get("nino_apellido") or "").strip()
     nino_ci = (flow_data.get("nino_ci") or "").strip()
     nino_fecha = _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", ""))
+    _nino_ids_form: list[str] = [h["id"] for h in hijos if h.get("id")]
     try:
         objetivo = None
         if nino_nombre:
@@ -232,6 +258,8 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
                  "fecha_nacimiento": nino_fecha},
                 padre_id=padre_id or "", madre_id=madre_id or "", estado="A PRUEBA",
             )
+            if nino_id:
+                _nino_ids_form.append(nino_id)
             logger.info(f"[RESERVA-FORM] Niño CREADO desde el formulario: {nino_id} para {telefono}")
     except Exception as e:
         logger.error(f"[RESERVA-FORM] error con el niño del formulario: {e}")
@@ -248,6 +276,13 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
             await vincular_tutor_a_lead(telefono, _sender_id)
         except Exception as e:
             logger.warning(f"[RESERVA-FORM] no pude vincular tutor al lead: {e}")
+
+    # PAGO — back-fill: el pago se registró ANTES del formulario; si nació sin
+    # niños linkeados (el caso Blas 25/07), linkearlo ahora que el niño existe
+    try:
+        await _completar_pago_huerfano(telefono, _nino_ids_form, _sender_id)
+    except Exception as e:
+        logger.error(f"[RESERVA-FORM] back-fill del pago falló: {e}")
 
     logger.info(f"[RESERVA-FORM] datos completados: grupo de {telefono} ({len(hijos)} hijos previos)")
 
