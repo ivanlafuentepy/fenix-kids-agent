@@ -146,6 +146,8 @@ async def main():
     ap.add_argument("--threshold", type=float, default=THRESHOLD_DEFAULT)
     ap.add_argument("--aplicar", action="store_true", help="Escribir tags en la DB (default: dry-run)")
     ap.add_argument("--todas", action="store_true", help="Re-procesar tambien las ya procesadas")
+    ap.add_argument("--solo-incremental", action="store_true",
+                     help="Abortar si el batch inicial no fue aplicado (para corridas automaticas)")
     ap.add_argument("--reporte", type=Path, default=None)
     args = ap.parse_args()
 
@@ -165,6 +167,10 @@ async def main():
 
     async with Session() as session:
         procesadas = set((await session.execute(select(FotoWebProcesada.archivo))).scalars())
+
+    if args.solo_incremental and not procesadas:
+        sys.exit("El batch inicial no fue aplicado todavia (fotos_web_procesadas vacia). "
+                 "Correr primero el dry-run + revision + --aplicar a mano.")
 
     ninos = await _ninos_airtable()
     fechas = _cargar_fechas(args.manifest)
