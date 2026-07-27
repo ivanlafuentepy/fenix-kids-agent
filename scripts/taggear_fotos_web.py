@@ -186,7 +186,7 @@ async def main():
         matches = await identificar_ninos(data, threshold=args.threshold) if caras else []
         resultados.append({"archivo": p.name, "caras": caras, "matches": matches})
         nombres = ", ".join(f"{ninos.get(m['nino_id'], {}).get('nombre', m['nino_id'])} {m['confidence']:.0f}%" for m in matches)
-        print(f"  [{i}/{len(pendientes)}] {p.name}: {caras} caras → {nombres or 'sin match'}")
+        print(f"  [{i}/{len(pendientes)}] {p.name}: {caras} caras -> {nombres or 'sin match'}")
 
     reporte = args.reporte or Path(os.getenv("TEMP", ".")) / "reporte_tagueo_fotos.html"
     _generar_reporte(reporte, resultados, ninos, args.dir.parent / "thumb", args.threshold)
