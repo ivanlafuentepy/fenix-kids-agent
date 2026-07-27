@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-07-27 — Formulario de reserva: el dato REAL del padre se descartaba si el registro donde apoyarlo no existía todavía
+
+**Qué falló:** primera prueba real en producción del formulario de reserva (25/07, lead 595981941407,
+"Blas Páez"). El papá pagó, el bot mandó el Flow de Meta, el papá lo completó — y **todos esos datos
+(nombre real del niño, CI, fecha de nacimiento, datos de mamá) se perdieron sin dejar rastro**. Ni en
+Airtable, ni en la DB, ni en los logs de Railway (solo un `WARNING` sin el contenido). El único indicio
+visible fue el mensaje "📋 Formulario de reserva completado" en Telegram — que no llevaba ningún dato,
+solo la palabra "completado". El pago tampoco aparecía en las vistas filtradas de PAGOS.
+
+**Causa raíz (dos bugs compuestos, no uno):**
+1. `formulario_reserva.py` — `procesar_formulario_reserva` solo sabía **ACTUALIZAR** un niño que ya
+   existiera (`obtener_grupo_familiar`). Si el extractor de Haiku no había capturado el nombre del niño
+   antes (así que el niño todavía no existía en Airtable), la función devolvía `None`, el código
+   loggeaba un `warning` y **saltaba todo el bloque de datos** — el `flow_data` completo se tiraba ahí
+   mismo, sin persistir en ningún lado.
+2. `registrar_pago_fenix` arma los links `NIÑOS FENIX`/`PAGA` del PAGO a partir del grupo familiar **en
+   el instante del pago** — que ocurre ANTES del formulario. Si el niño nace 5 minutos después (cuando
+   el formulario sí lo crea), el PAGO queda huérfano para siempre: nadie vuelve a mirarlo.
+
+De fondo: el diseño trataba el dato **adivinado** (nombre que Haiku extrae del chat) como el eje sobre
+el que se construye todo, y el dato **real y verificado** (el formulario) como un complemento opcional
+que solo sabe decorar lo adivinado. Cuando la adivinanza fallaba, el dato real no tenía dónde apoyarse
+y se perdía.
+
+**Cómo se resolvió** (commits `7541b7e`, `1a8216d`, 27/07):
+- Si el niño no existe, `procesar_formulario_reserva` ahora lo **CREA** con los datos reales del
+  formulario (no solo actualiza).
+- El contenido completo del formulario se guarda en DB **antes** de cualquier lógica, y se espeja
+  siempre a Telegram + WhatsApp del admin — aunque todo lo demás falle después, el dato queda visible.
+- `esperando_formulario_reserva=False` dejó de ser condición para PROCESAR el formulario — con el flag
+  apagado (ej. el padre completa el Flow tarde, tras el rescate +24h), el mensaje caía al pipeline
+  normal como texto `"[formulario]"` y se perdía igual.
+- `prueba_creada=True` se setea al procesar — desarma el detector legacy de texto que, en el caso real,
+  recreó al niño con el nombre ADIVINADO por encima de los datos reales que el formulario acababa de
+  guardar.
+- Back-fill: al crear/completar el niño, se buscan los PAGOs `PRUEBA` del lead sin `NIÑOS FENIX` y se
+  les cuelga el link — cierra el agujero del punto 2 sin tocar `registrar_pago_fenix`.
+
+**Regla para la próxima:** cuando un dato le llega al sistema desde una fuente verificada (formulario,
+comprobante, confirmación explícita del usuario) y el registro donde ese dato "encaja" todavía no
+existe, **la respuesta es CREAR el registro, nunca descartar el dato**. Y todo dato que viene de un
+webhook externo (Meta Flow, pasarela de pago) se persiste crudo en DB **antes** de cualquier lógica de
+negocio — si la lógica falla después, el dato sobrevive. Un log `warning` sin el contenido no es un
+respaldo, es una miga de pan. Ver [[project_migracion_pago]], [[reference_reserva_formulario_meta]].
+
+---
+
 ## 2026-07-25 — RC522/NFC: intentar "seguir la presencia real" de un tag (WakeupA/Select/Halt en loop) NO es confiable en este hardware — usar duración fija
 
 **⚠️ ACTUALIZADO el mismo día — la "regla" original de abajo quedó DESCARTADA.** Se probó en producción

@@ -530,3 +530,39 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 - `315e7f4` — fix(firmware): revertir WakeupA/Select a duracion fija — colgaba el lector con tags nuevos
 
 **Aprendizaje clave:** el mecanismo WUPA→Select→Halt en loop para "seguir la presencia real" de un tag NO es confiable en este hardware/librería (MFRC522 + ESP32) — se colgó 2 veces distintas (con NTAG213 Y con Mifare Classic), sin error visible. Registrado en `memory/errores-aprendidos.md` — NO reintentar ese enfoque sin resolver antes por qué se cuelga a bajo nivel.
+
+---
+
+## 2026-07-27 — el formulario de reserva perdía TODOS los datos del padre (bug real, fix completo)
+
+**Ivan:** `/endpoint 555981941407` — "este número el sábado pagó, completó formulario, pero en la tabla pagos no aparece. y tampoco puedo ver los datos del formulario así que no sé quién es el niño"
+**Fenix:** El teléfono tenía un typo (555 en vez de 595). Con el correcto: leí `/debug` y `/conversacion` de prod, después Airtable (LEADS/PAGOS/TUTORES/NIÑOS FENIX vía MCP) — el pago SÍ existía pero sin `NIÑOS FENIX`/`PAGA` linkeados (invisible en la vista filtrada); el niño sí se había creado pero, dije yo primero, "sin pasar por el formulario" — conclusión que resultó INCOMPLETA.
+
+**Ivan:** "en telegram yo tengo 'formulario de reserva completado' — ¿por qué decís que no completó?"
+**Fenix:** Corregido con evidencia: grepeé el código y confirmé que ESE mensaje sí implica que `procesar_formulario_reserva` corrió. Faltaba explicar por qué entonces no había datos.
+
+**Ivan:** "¿y dónde están los datos del formulario? aparte se creó el niño y el padre — ¿por qué no están vinculados?"
+**Fenix:** Fui a los logs de Railway (GraphQL directo a `backboard.railway.app`, filtrando por teléfono/`RESERVA-FORM`/`formulario`) y until encontré la secuencia exacta: el `[formulario]` SÍ llegó, pero `procesar_formulario_reserva` logueó `WARNING no encontré grupo a prueba — no completo datos` y descartó TODO el `flow_data` ahí mismo (nunca se guardó en DB, ni Airtable, ni ningún log con contenido). 5 minutos después, el detector legacy de texto recreó el niño con el nombre ADIVINADO del chat — por eso el niño "sí estaba" pero sin los datos reales del papá.
+
+**Ivan:** "qué mierda de forma de trabajar es esta... la primera cosa que vamos a hacer ahora: cuando llegue 'formulario completado', mandame TODOS los datos a Telegram y WhatsApp"
+**Fenix:** Corrí `/pre-cambio`, propuse el plan (espejo completo + persistencia en DB + procesar siempre sin depender del flag).
+
+**Ivan:** "primero tenemos que arreglar la creación del niño, no tiene sentido ese agujero"
+**Fenix:** Delegué un análisis profundo a un subagente (Fable, foreground) para no tirar un fix a ciegas sobre `main.py`/`pagos.py`. Devolvió la causa raíz completa (el sistema trata el dato adivinado como el eje y el dato real como decoración opcional) + un plan de 2 commits con riesgos identificados (interlock `prueba_creada` para desarmar el detector legacy, no pisar el CELL del tutor del WhatsApp, no duplicar niños con 2+ hermanos).
+
+**Ivan:** "me estás pasando 10.000 cosas... lo único que tiene que hacer el sistema es crear al niño después del formulario. no sé por qué me haces tanto quilombo"
+**Fenix:** Reduje al mínimo necesario y lo implementé directo: `procesar_formulario_reserva` ahora CREA el niño con los datos reales si no existe (reutilizando el tutor parcial sin duplicar), espeja TODO a Telegram+WhatsApp admin antes de tocar Airtable, guarda el `flow_data` crudo en DB siempre, y setea `prueba_creada=True` para desarmar el detector legacy. `import agent.main` OK + pytest 30/30 + prueba manual de `_resumen_formulario`. Commit `7541b7e`.
+
+**Ivan:** "¿y cómo se cargan los datos del pago, si normalmente paga primero y completa el formulario después?"
+**Fenix:** Agregué el back-fill: al procesar el formulario (que ya crea/completa al niño), se buscan los PAGOs `PRUEBA` del lead sin `NIÑOS FENIX` y se les cuelga el link — cierra el caso típico (paga → formulario después) sin tocar `registrar_pago_fenix`. Commit `1a8216d`.
+
+**Ivan:** "PUSH" → luego "SI" (para el segundo commit)
+**Fenix:** Pusheados uno por uno, cada uno verificado contra prod (`/debug/{tel}` responde normal) antes de seguir con el siguiente.
+
+**Commits de la sesión:**
+- `7541b7e` — fix(reserva): el formulario CREA al niño si no existe y sus datos se reportan siempre
+- `1a8216d` — fix(reserva): back-fill del PAGO huérfano al completar el formulario
+
+**Aprendizaje clave:** cuando un dato llega de una fuente verificada (formulario, comprobante) y el registro donde encaja todavía no existe, la respuesta es CREARLO, nunca descartar el dato. Todo webhook externo se persiste crudo en DB antes de cualquier lógica de negocio. Registrado en `memory/errores-aprendidos.md`.
+
+**Pendiente:** los datos reales de Blas Páez (595981941407) — CI, fecha de nacimiento, mamá — se perdieron por el bug ANTES del fix y no son recuperables del sistema; pedírselos de nuevo por WhatsApp (#291). El detector legacy de texto sigue vivo como fallback si el papá nunca completa el formulario — evaluar si conviene desarmarlo del todo (#292).
