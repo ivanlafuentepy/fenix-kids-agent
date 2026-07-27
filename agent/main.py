@@ -2547,19 +2547,28 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             return
 
         # ── Formulario de reserva completado por un LEAD (Meta Flow → nfm_reply) ──
-        # Llega como es_boton + btn_id="flow_completado". Solo si el lead está en el
-        # paso post-pago esperando el formulario (flag). Completa FAMILIA/NIÑO/TUTORES
-        # y dispara la agenda. Se distingue del alta admin por el flag, no por el payload.
+        # Llega como es_boton + btn_id="flow_completado". Se procesa SIEMPRE (el único
+        # Flow que reciben los leads es este); el flag esperando_formulario_reserva solo
+        # regula la agenda adentro del handler. Antes, con el flag apagado, el flow_data
+        # caía al pipeline como "[formulario]" y se perdía. El alta admin va por su rama.
         if (telefono != admin_phone and getattr(msg, "es_boton", False)
                 and (getattr(msg, "btn_id", "") or "") == "flow_completado"):
-            _flags_form = await obtener_estado_flags(telefono)
-            if _flags_form.get("esperando_formulario_reserva"):
-                _flow_data_r = getattr(msg, "flow_data", None) or {}
-                try:
-                    await procesar_formulario_reserva(telefono, _flow_data_r)
-                except Exception as e:
-                    logger.error(f"[RESERVA-FORM] Error procesando formulario de reserva: {e}")
-                return
+            _flow_data_r = getattr(msg, "flow_data", None) or {}
+            # El contenido del formulario SIEMPRE queda en DB — nunca más un
+            # formulario perdido sin rastro (595981941407, 25/07)
+            try:
+                import json as _json_form
+                await guardar_mensaje(
+                    telefono, "user",
+                    "[formulario reserva] " + _json_form.dumps(_flow_data_r, ensure_ascii=False),
+                )
+            except Exception as _e_ff:
+                logger.error(f"[RESERVA-FORM] no pude guardar el flow_data en DB: {_e_ff}")
+            try:
+                await procesar_formulario_reserva(telefono, _flow_data_r)
+            except Exception as e:
+                logger.error(f"[RESERVA-FORM] Error procesando formulario de reserva: {e}")
+            return
 
         # ── Botones del admin ──────────────────────────────────────────────
         if telefono == admin_phone and msg.es_boton:

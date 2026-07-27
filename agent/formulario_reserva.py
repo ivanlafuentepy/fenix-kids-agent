@@ -98,74 +98,176 @@ async def _guardar_tutor(
     return tid
 
 
+def _resumen_formulario(flow_data: dict) -> str:
+    """Texto con TODOS los datos del formulario, para el espejo a Telegram y al
+    admin. Nunca más un formulario invisible (caso 595981941407, 25/07)."""
+    def _persona(prefijo: str, etiqueta: str) -> str:
+        p = _tutor_desde_flow(flow_data, prefijo)
+        if not p:
+            return f"{etiqueta}: (sin datos)"
+        partes = [f"{p.get('nombre', '')} {p.get('apellido', '')}".strip()]
+        if p.get("ci"):
+            partes.append(f"CI {p['ci']}")
+        if p.get("telefono"):
+            partes.append(str(p["telefono"]))
+        if p.get("email"):
+            partes.append(p["email"])
+        if p.get("fecha_nacimiento"):
+            partes.append(f"nac. {p['fecha_nacimiento']}")
+        return f"{etiqueta}: " + " · ".join(x for x in partes if x)
+
+    nino = (f"{(flow_data.get('nino_nombre') or '').strip()} "
+            f"{(flow_data.get('nino_apellido') or '').strip()}").strip() or "(sin nombre)"
+    linea_nino = f"👶 {nino}"
+    if (flow_data.get("nino_ci") or "").strip():
+        linea_nino += f" — CI {flow_data['nino_ci'].strip()}"
+    lineas = [linea_nino]
+    _fn = _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", ""))
+    if _fn:
+        lineas.append(f"🎂 {_fn}")
+    lineas.append(_persona("padre", "👨 Papá"))
+    lineas.append(_persona("madre", "👩 Mamá"))
+    return "\n".join(lineas)
+
+
+async def _espejar_formulario(telefono: str, flow_data: dict) -> None:
+    """Manda el contenido completo del formulario a Telegram (topic del lead) y
+    al WhatsApp del admin. Best-effort: nunca rompe el flujo."""
+    resumen = (f"📋 FORMULARIO DE RESERVA COMPLETADO\n📱 {telefono}\n\n"
+               f"{_resumen_formulario(flow_data)}")
+    try:
+        from agent.telegram_bridge import (
+            obtener_o_crear_topic, enviar_a_topic, grupo_telegram_para,
+        )
+        _grp = await grupo_telegram_para(telefono)
+        _topic = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp)
+        if _topic:
+            await enviar_a_topic(_topic, resumen, telefono=telefono, group_override=_grp)
+    except Exception as e:
+        logger.error(f"[RESERVA-FORM] espejo Telegram del formulario falló: {e}")
+    admin_phone = os.getenv("ADMIN_PHONE", "")
+    if admin_phone:
+        try:
+            await proveedor.enviar_mensaje(admin_phone, resumen)
+        except Exception as e:
+            logger.error(f"[RESERVA-FORM] espejo WhatsApp admin del formulario falló: {e}")
+
+
 async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
-    """Completa FAMILIA/NIÑO/TUTORES a prueba con los datos del formulario y dispara la
-    agenda (sábados). NO crea inscripto ACTIVO — la familia ya existe (creada en el pago)."""
+    """Completa (o CREA) NIÑO + TUTORES a prueba con los datos del formulario y
+    dispara la agenda (sábados). El niño NACE del formulario si no existe — antes,
+    sin grupo previo, los datos se descartaban (caso 595981941407, 25/07).
+    NO crea inscripto ACTIVO."""
     from agent.airtable_client import (
         obtener_grupo_familiar, buscar_familia_por_telefono, actualizar_nino,
+        buscar_tutor_por_telefono, _tutor_a_dict, crear_nino, vincular_tutor_a_lead,
     )
-    from agent.ab_test import actualizar_estado_flags
+    from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
     from agent.afiches import _armar_mensaje_agenda_post_pago
     from agent.memory import guardar_mensaje
 
+    flags = await obtener_estado_flags(telefono)
+
+    # 0. Espejo con TODOS los datos — primero, antes de tocar Airtable
+    await _espejar_formulario(telefono, flow_data)
+
     grupo = await obtener_grupo_familiar(telefono)
-    if not grupo:
-        logger.warning(f"[RESERVA-FORM] {telefono}: no encontré grupo a prueba — no completo datos")
-    else:
-        hijos = grupo.get("hijos", [])
-        tutores = grupo.get("tutores", [])
-        # familia legacy solo para el link transitorio del tutor nuevo
-        _fam = await buscar_familia_por_telefono(telefono)
-        _fam_id = _fam["id"] if _fam else ""
+    hijos = (grupo or {}).get("hijos", [])
+    tutores = (grupo or {}).get("tutores", [])
+    # Tutor parcial del pago (todavía sin hijos → obtener_grupo_familiar da None):
+    # traerlo para que _guardar_tutor lo ACTUALICE en vez de duplicarlo.
+    if not tutores:
+        _t_parcial = await buscar_tutor_por_telefono(telefono)
+        if _t_parcial:
+            tutores = [_tutor_a_dict(_t_parcial["id"], _t_parcial.get("fields", {}) or {})]
 
-        # NIÑO — completar el hijo parcial (apellido, fecha nac, CI)
-        nino_nombre = (flow_data.get("nino_nombre") or "").strip()
-        nino_apellido = (flow_data.get("nino_apellido") or "").strip()
-        nino_ci = (flow_data.get("nino_ci") or "").strip()
-        nino_fecha = _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", ""))
+    # familia legacy solo para el link transitorio del tutor nuevo
+    _fam = await buscar_familia_por_telefono(telefono)
+    _fam_id = _fam["id"] if _fam else ""
+
+    # PADRE / MADRE primero — el niño nuevo necesita sus ids para los links
+    padre_id = madre_id = None
+    try:
+        padre = _tutor_desde_flow(flow_data, "padre")
+        madre = _tutor_desde_flow(flow_data, "madre")
+        if padre:
+            padre_id = await _guardar_tutor(tutores, hijos, padre, "Papá", familia_id=_fam_id)
+        if madre:
+            madre_id = await _guardar_tutor(tutores, hijos, madre, "Mamá", familia_id=_fam_id)
+    except Exception as e:
+        logger.error(f"[RESERVA-FORM] error actualizando tutores: {e}")
+    # El tutor parcial existente cubre el parentesco que el formulario no trajo
+    if not padre_id:
+        padre_id = next((t["id"] for t in tutores if t.get("parentesco") == "Papá" and t.get("id")), None)
+    if not madre_id:
+        madre_id = next((t["id"] for t in tutores if t.get("parentesco") == "Mamá" and t.get("id")), None)
+
+    # NIÑO — actualizar el existente, o CREARLO si no está
+    nino_nombre = (flow_data.get("nino_nombre") or "").strip()
+    nino_apellido = (flow_data.get("nino_apellido") or "").strip()
+    nino_ci = (flow_data.get("nino_ci") or "").strip()
+    nino_fecha = _fecha_desde_flow(flow_data.get("nino_fecha_nacimiento", ""))
+    try:
+        objetivo = None
+        if nino_nombre:
+            objetivo = next(
+                (n for n in hijos if (n.get("nombre") or "").strip().lower() == nino_nombre.lower()),
+                None,
+            )
+        if not objetivo and hijos:
+            objetivo = hijos[0]
+        if objetivo:
+            campos: dict = {}
+            if nino_apellido:
+                campos["APELLIDO"] = nino_apellido
+            if nino_ci:
+                campos["CI"] = nino_ci
+            if nino_fecha:
+                campos["FECHA NACIMIENTO"] = nino_fecha
+            if campos:
+                await actualizar_nino(objetivo["id"], campos)
+        elif nino_nombre:
+            nino_id = await crear_nino(
+                {"nombre": nino_nombre, "apellido": nino_apellido, "ci": nino_ci,
+                 "fecha_nacimiento": nino_fecha},
+                padre_id=padre_id or "", madre_id=madre_id or "", estado="A PRUEBA",
+            )
+            logger.info(f"[RESERVA-FORM] Niño CREADO desde el formulario: {nino_id} para {telefono}")
+    except Exception as e:
+        logger.error(f"[RESERVA-FORM] error con el niño del formulario: {e}")
+
+    # LEAD ↔ TUTOR (lo hacía crear_grupo_a_prueba; sin esto el lead queda sin link)
+    _sender_id = next(
+        (t["id"] for t in tutores if t.get("id")
+         and telefono in ((t.get("cell_limpio") or ""), (t.get("cell") or ""))),
+        None,
+    ) or padre_id or madre_id
+    if _sender_id:
         try:
-            objetivo = None
-            if nino_nombre:
-                objetivo = next(
-                    (n for n in hijos if (n.get("nombre") or "").strip().lower() == nino_nombre.lower()),
-                    None,
-                )
-            if not objetivo and hijos:
-                objetivo = hijos[0]
-            if objetivo:
-                campos: dict = {}
-                if nino_apellido:
-                    campos["APELLIDO"] = nino_apellido
-                if nino_ci:
-                    campos["CI"] = nino_ci
-                if nino_fecha:
-                    campos["FECHA NACIMIENTO"] = nino_fecha
-                if campos:
-                    await actualizar_nino(objetivo["id"], campos)
+            await actualizar_estado_flags(telefono, tutor_id=_sender_id)
+            await vincular_tutor_a_lead(telefono, _sender_id)
         except Exception as e:
-            logger.error(f"[RESERVA-FORM] error actualizando niño: {e}")
+            logger.warning(f"[RESERVA-FORM] no pude vincular tutor al lead: {e}")
 
-        # PADRE / MADRE — actualizar los tutores existentes sin duplicar
-        try:
-            padre = _tutor_desde_flow(flow_data, "padre")
-            madre = _tutor_desde_flow(flow_data, "madre")
-            if padre:
-                await _guardar_tutor(tutores, hijos, padre, "Papá", familia_id=_fam_id)
-            if madre:
-                await _guardar_tutor(tutores, hijos, madre, "Mamá", familia_id=_fam_id)
-        except Exception as e:
-            logger.error(f"[RESERVA-FORM] error actualizando tutores: {e}")
+    logger.info(f"[RESERVA-FORM] datos completados: grupo de {telefono} ({len(hijos)} hijos previos)")
 
-        logger.info(f"[RESERVA-FORM] datos completados: grupo de {telefono} ({len(hijos)} hijos)")
-
-    # Ahora sí: cerrar el paso del formulario y ofrecer las fechas (activar modo agenda)
-    await actualizar_estado_flags(telefono, esperando_formulario_reserva=False, modo_agenda=True)
+    # Cerrar el paso del formulario y activar modo agenda. prueba_creada=True
+    # desarma el detector legacy de main.py (_es_formulario_completo), que el
+    # 25/07 recreó al niño con datos adivinados ENCIMA de los del formulario.
+    await actualizar_estado_flags(
+        telefono, esperando_formulario_reserva=False, modo_agenda=True, prueba_creada=True,
+    )
     # Cancelar el rescate A7 (+2h/+24h) — el formulario ya se completó
     try:
         from agent.memory import cancelar_recordatorios_por_telefono
         await cancelar_recordatorios_por_telefono(telefono, tipo="form_rescate")
     except Exception as e:
         logger.warning(f"[RESERVA-FORM] no se pudo cancelar rescate: {e}")
+    # Agenda: no re-ofrecerla si ya estaba activa y el formulario llegó tarde
+    # (rescate +24h ya cayó a agenda por texto → evitar el mensaje duplicado)
+    if not flags.get("esperando_formulario_reserva") and flags.get("modo_agenda"):
+        logger.info(f"[RESERVA-FORM] {telefono}: agenda ya ofrecida — no la repito")
+        return
     try:
         msg_agenda = await _armar_mensaje_agenda_post_pago()
         await guardar_mensaje(telefono, "assistant", msg_agenda)
@@ -178,7 +280,6 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
             _grp = await grupo_telegram_para(telefono)
             _topic = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp)
             if _topic:
-                await enviar_a_topic(_topic, "📋 Formulario de reserva completado", telefono=telefono, group_override=_grp)
                 await enviar_a_topic(_topic, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=_grp)
         except Exception as e:
             logger.error(f"[RESERVA-FORM] espejo Telegram falló: {e}")
