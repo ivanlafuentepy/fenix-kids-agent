@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Header, HTTPException, Body
 from fastapi.responses import JSONResponse
-from sqlalchemy import String, Text, DateTime, Integer, Boolean, select
+from sqlalchemy import String, Text, DateTime, Integer, Boolean, Float, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from agent.memory import Base, async_session
@@ -52,6 +52,33 @@ class JuegoEvento(Base):
     guardian: Mapped[str | None] = mapped_column(String(30), nullable=True)  # mamba|aura|...
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)    # JSON extra (estacion_id, vueltas, sub...)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FotoWebTag(Base):
+    """Mapeo foto pública del catálogo web → niño que aparece en ella.
+    PRIVADO: solo se sirve tras validar el código de familia (link mágico).
+    Lo escribe scripts/taggear_fotos_web.py (Rekognition batch, local)."""
+    __tablename__ = "fotos_web_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    archivo: Mapped[str] = mapped_column(String(60), index=True)        # "foto-0123.jpg"
+    nino_id: Mapped[str] = mapped_column(String(30), index=True)        # record id Airtable — NUNCA nombre
+    confidence: Mapped[float] = mapped_column(Float)
+    fecha_foto: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "2026-03-21" (manifest EXIF)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("archivo", "nino_id", name="uq_fotoweb_archivo_nino"),)
+
+
+class FotoWebProcesada(Base):
+    """Fotos ya pasadas por Rekognition (incluye las sin match) — permite
+    corridas incrementales semanales sin re-procesar ni re-pagar."""
+    __tablename__ = "fotos_web_procesadas"
+
+    archivo: Mapped[str] = mapped_column(String(60), primary_key=True)
+    caras_detectadas: Mapped[int] = mapped_column(Integer, default=0)
+    matches: Mapped[int] = mapped_column(Integer, default=0)
+    procesado_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 def _auth(x_juego_key: str | None):
@@ -255,6 +282,64 @@ async def juego_familia(codigo: str):
         "ok": True, "codigo": _limpiar_codigo(codigo),
         "familia": f"Familia {_apellido_t}".strip() if _apellido_t else "Familia",
         "hijos": hijos,
+    }, headers=_CORS)
+
+
+# ═══════════════════ FOTOS POR FAMILIA — catálogo web filtrado por hijos ═══════════════════
+# Las fotos son públicas en fenixkidsacademy.com/fotos/; lo PRIVADO es el mapeo
+# foto→niño (fotos_web_tags). Solo se sirve tras validar el código del tutor.
+
+FOTOS_MIN_CONF = 80.0   # los tags se guardan desde 70 (auditables); se sirven desde 80
+FOTOS_BASE_URL = "https://fenixkidsacademy.com/fotos/assets"
+
+
+@router.get("/juego/fotos/{codigo}")
+async def juego_fotos_familia(codigo: str):
+    """Fotos del catálogo web donde aparecen los hijos del tutor. Público con
+    CORS — el código ES la auth (mismo modelo que /juego/familia). Response
+    mínimo: sin apellidos ni teléfonos, nombres solo de los propios hijos."""
+    tutor = await _tutor_por_codigo(codigo)
+    if not tutor:
+        return JSONResponse(content={"ok": False, "motivo": "codigo_invalido"}, status_code=404, headers=_CORS)
+
+    hijo_ids = _hijo_ids_de_tutor(tutor)
+    hijos = []
+    if hijo_ids:
+        from agent.airtable_client import _BASE_URL, _headers, _NINOS
+        import httpx
+        async with httpx.AsyncClient() as client:
+            for hid in hijo_ids:
+                try:
+                    r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
+                    if r.status_code != 200:
+                        continue
+                    f = r.json().get("fields", {})
+                    nombre = (f.get("APODO") or f.get("NOMBRE") or "").strip()
+                    if nombre:
+                        hijos.append({"nino_id": hid, "nombre": nombre})
+                except Exception as e:
+                    logger.warning(f"[JUEGO] fotos: no pude leer hijo {hid}: {e}")
+
+    fotos: dict[str, dict] = {}
+    if hijo_ids:
+        async with async_session() as session:
+            rows = (await session.execute(
+                select(FotoWebTag.archivo, FotoWebTag.fecha_foto, FotoWebTag.nino_id)
+                .where(FotoWebTag.nino_id.in_(hijo_ids))
+                .where(FotoWebTag.confidence >= FOTOS_MIN_CONF)
+            )).all()
+        for archivo, fecha_foto, nino_id in rows:
+            item = fotos.setdefault(archivo, {"archivo": archivo, "fecha": fecha_foto, "ninos": []})
+            if nino_id not in item["ninos"]:
+                item["ninos"].append(nino_id)
+
+    orden = sorted(fotos.values(), key=lambda x: (x["fecha"] or "", x["archivo"]), reverse=True)
+    return JSONResponse(content={
+        "ok": True,
+        "familia": "Familia",
+        "hijos": hijos,
+        "base_url": FOTOS_BASE_URL,
+        "fotos": orden,
     }, headers=_CORS)
 
 
