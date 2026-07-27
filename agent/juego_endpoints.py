@@ -290,7 +290,7 @@ async def juego_familia(codigo: str):
 # foto→niño (fotos_web_tags). Solo se sirve tras validar el código del tutor.
 
 FOTOS_MIN_CONF = 80.0   # los tags se guardan desde 70 (auditables); se sirven desde 80
-FOTOS_BASE_URL = "https://fenixkidsacademy.com/fotos/assets"
+FOTOS_BASE_URL = "https://cdn.fenixkidsacademy.com"   # bucket R2 fenix-fotos (thumb/ y full/)
 
 
 @router.get("/juego/fotos/{codigo}")
