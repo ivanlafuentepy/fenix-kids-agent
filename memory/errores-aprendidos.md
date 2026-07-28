@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-07-28 — Una memoria que enumera "los N lugares" NO es un inventario: casi quedan precios viejos en producción
+
+**Qué pasó:** al cambiar el precio (mensual 240k → pack de 350k), la memoria
+`reference_donde_viven_precios_aurora` decía "4 archivos vivos" y los listaba. Se tocaron esos 4
+y todo compilaba. Un grep de control (`240\.000|240mil|4 sábados` sobre `agent/` completo, DESPUÉS
+de editar) encontró **3 lugares más**: los dos fallbacks de texto de los interceptores en
+`main.py` (~3337 y ~3345, los que responden cuando el afiche YA se envió) y el mensaje de
+seguimiento A de `reminders.py`. Sin ese grep, un lead que pedía precios dos veces habría recibido
+el precio viejo en la segunda — y el follow-up automático habría seguido diciendo 240mil por
+tiempo indefinido.
+
+**Causa raíz:** la memoria se escribió el 24/06 y era correcta ESE día; después se agregaron
+fallbacks nuevos. Una lista curada envejece en silencio: nada avisa cuando alguien suma un lugar.
+El error no fue la memoria desactualizada — es tratar una lista como si fuera exhaustiva.
+
+**Cómo se resolvió:** grep del valor viejo en todo `agent/` + `config/` después de editar, y
+memoria actualizada a 7 lugares con la instrucción explícita de grepear igual.
+
+**Segundo hallazgo de la misma tanda:** los links de pago de la web llevan
+`sig = HMAC(LINK_SECRET, "fenix:{monto}")[:16]`. Cambiar el monto sin regenerar la firma deja el
+link **roto para el cliente** (la pasarela lo rechaza) sin que nada falle de este lado. Antes de
+generar las firmas nuevas se recalculó la vieja (240000 → `2567a029225be754`) y se comparó contra
+la que estaba en la web: si el algoritmo no reproduce la firma vigente, está mal y las nuevas
+también lo estarían.
+
+**Regla para la próxima:** ante un cambio de valor que vive en varios lugares (precios, horarios,
+teléfonos, URLs), **grepear el valor VIEJO en todo el repo después de editar** y no declarar
+"listo" hasta que el grep vuelva vacío. Las listas de la memoria son pistas para empezar a buscar,
+no la garantía de haber cubierto todo. Y si el valor viaja firmado, verificar la firma vieja antes
+de emitir las nuevas.
+
+---
+
 ## 2026-07-28 — WhatsApp borra/reescribe el EXIF de las fotos: la fecha "real" no siempre está en la foto
 
 **Qué pasó:** Iván subió 28 fotos que le habían pasado por WhatsApp a la bandeja del catálogo.

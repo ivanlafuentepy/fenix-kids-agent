@@ -599,3 +599,29 @@ Commits web: `a04f16a` catálogo 293 · `99b43c7` quitar 3 · `33ebab9` admin ·
 **Fenix:** Confirmado con `extraer_fecha`: 17/28 sin EXIF, 11/28 con fecha de reenvío (no la real) — WhatsApp comprime y borra/reescribe el EXIF. Se agregó `fecha_foto()` en `optimizar_fotos.py`: la carpeta contenedora (`YYYY-MM-DD Día`) manda sobre el EXIF; recalculada en cada corrida, así que mover una foto ya publicada a la carpeta correcta la corrige sola después. Publicadas las 28 (658 total), taggeadas (76 tags nuevos), verificado en vivo. Sugerido a Iván: pedir que le manden las fotos "como Documento" para conservar el EXIF real.
 
 Commit web: `17b896c` fecha_foto() + 28 fotos.
+
+## 2026-07-28 (sesión 30, madrugada — el PACK de 5 clases: precio nuevo, saldo por niño y aviso al padre)
+
+**Ivan:** cambiamos el precio: no va a ser 2.40 mensual, va a ser 3.50 y le vale por 5 sábados que NO vencen. Cambiar en la web, en el flujo de WhatsApp y el afiche. Y mandame ahora por WhatsApp los afiches que estamos usando (precios y horarios).
+**Fenix:** Afiches enviados a su WhatsApp por `/test-envio` (como link: el endpoint solo manda texto). Mapeados los lugares vivos del precio: aparecieron **7**, no los 4 que decía la memoria — los 2 fallbacks de `main.py` y `reminders.py` salieron por grep. Memoria de precios corregida.
+
+**Ivan:** el costo por hermano es 150mil + y le incluye 5 clases que no vencen, + 100 matrícula anual.
+**Fenix:** Confirmado el esquema con 3 preguntas (prueba sigue igual · matrícula por cada niño · nombre "Pack 5 clases"). Tabla final: prueba 100/150/200 · pack 350/500/650 · matrícula 100k por niño.
+
+**Ivan:** [manda un afiche nuevo hecho con ChatGPT] esta imagen para la web y WhatsApp.
+**Fenix:** Verificado contra el esquema (dice 350.000, +150.000 por hijo extra, 5 SÁBADOS, ejemplos 350/500/650) → copiado a `static/afiche_fenix.png` y convertido a JPG para la web. Precio actualizado en los 7 lugares + la web, con los links de pago **refirmados** (la `sig` es HMAC del monto; sin refirmar quedaban rotos). Deploys separados: código primero, prompt después.
+
+**Ivan:** tenemos que trabajar en el control: cada vez que el niño viene, el papá tiene que recibir un mensaje de que su hijo ingresó y cuántos sábados le quedan. Crear una plantilla para eso.
+**Fenix:** Diseño con 3 decisiones suyas — **las familias del mensual viejo siguen aparte**, aviso en cada visita, al número de la conversación. Campos `CLASES DISPONIBLES` + `ULTIMO DESCUENTO` en NIÑOS FENIX; `descontar_clase()`/`recargar_pack()` como única puerta (patrón `_acreditar`); enganchado en los 3 check-ins con gate diario. Probado contra Airtable con 7 casos y el registro restaurado.
+
+**Ivan:** cuando el papá paga el pack debería sumarle 5 automáticamente — si tiene 4 y compra otras 5, pasa a tener 9. ¿Cómo hacemos?
+**Fenix:** `CONCEPTO=PAQUETE5` (la opción **ya existía** en el select) + `recargar_pack` acumulativo. Bonus: la fórmula `VENCIMIENTO_FORMULA` no contempla PAQUETE5 → el pago queda sin vencimiento, justo lo que necesita un pack que no vence. Parser probado con positivos y negativos.
+
+**Ivan:** [dicta el texto de la plantilla] …y si es el mensual, decirle la fecha que vence. Y una pregunta final con botones: ¿te gustaría que te enviemos las fotos al terminar?
+**Fenix:** Plantilla `checkin_fenix` creada en el WABA propio de FENIX → **APROBADA**. Botones "Sí, mandame fotos" / "No, gracias" — con texto distinto de los "Sí/No" de `confirmacion_sabado_fenix` a propósito: la respuesta llega sin id, solo con el texto, y se confundirían.
+
+**Ivan:** cuando dice "sí, mandame las fotos" — ¿hacemos que el Python que sube las fotos también se encargue de enviarle?
+**Fenix:** Sí, paso 7 de `publicar_fotos.py` → `POST /fotos/avisar-familias` y el server manda el link (todas las fotos del día, como pidió). Solo recibe quien lo pidió y el pedido se limpia al enviar. El botón del padre abre la ventana de 24h → el aviso sale como mensaje libre, sin plantilla ni costo. Todo **apagado** por `AVISO_CHECKIN_ACTIVO`.
+
+Commits agent: `23580fc` precio en código+afiche · `e7f42e5` precio en prompt · `854347c` saldo de clases · `004d745` +5 al pagar · `1916701` aviso al padre + fotos.
+Commits web: `61217aa` precio + afiche + links refirmados · `23b82c3` paso 7 avisar familias.
