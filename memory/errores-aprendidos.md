@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-07-27 — `wrangler r2 object put` SIN `--remote` escribe en un storage local de simulación (la subida "exitosa" nunca llega al bucket)
+
+**Qué falló:** migración de las 1260 imágenes del catálogo de fotos al bucket R2 `fenix-fotos`.
+El loop de `wrangler r2 object put fenix-fotos/... --file ...` terminó con "991 subidos, 0 errores"
+— pero el CDN (`cdn.fenixkidsacademy.com`) devolvía 404 para TODO. Los archivos habían ido a
+`.wrangler/state/` (479MB de storage local de simulación tipo miniflare) dentro del repo web.
+
+**Causa raíz:** desde wrangler v3.33+, los comandos `r2 object put/get/delete` operan por defecto
+sobre el storage LOCAL de desarrollo. Para tocar el bucket real hay que pasar `--remote` explícito.
+No falla, no avisa fuerte: dice "Creating object..." igual.
+
+**Cómo se resolvió:** re-migración por la **API REST de Cloudflare** (`PUT /accounts/{acc}/r2/buckets/{bucket}/objects/{key}`
+con el oauth_token de wrangler leído de `AppData\Roaming\xdg.config\.wrangler\config\default.toml`) —
+además resultó MUCHO más rápida que 1260 spawns de node (minutos vs ~40min) y respeta los headers
+`Content-Type` y `Cache-Control` como metadata del objeto. Los scripts que quedaron con wrangler
+(`publicar_fotos.py`, `borrar_fotos.py`) llevan `--remote` explícito y un comentario que lo explica.
+
+**Regla para la próxima:** TODO comando `wrangler r2 object ...` lleva `--remote`, siempre. Tras
+cualquier subida a R2, verificar con un `curl -I` al dominio público ANTES de dar por migrado nada.
+Si aparece un directorio `.wrangler/` en un repo, es storage de simulación desperdiciado: borrarlo
+(ya está en el .gitignore del repo web). Bonus del mismo día: el primer 404 tras subir puede ser
+**cache negativo del edge** — verificar con `?nc=<random>` antes de asumir que el objeto no está.
+
+---
+
+## 2026-07-27 — Build de Cloudflare Pages colgado en `clone_repo` por repo pesado (y cómo cancelarlo por API)
+
+**Qué falló:** con el repo web en ~520MB (fotos commiteadas), el build de Pages del commit
+`adf039a` quedó **colgado en la etapa `clone_repo` 25+ minutos**, y los 2 pushes siguientes
+quedaron encolados detrás. `wrangler pages deployment list` mostraba "Active" (ambiguo — no
+distingue "en progreso" de "colgado"); el estado real se ve en la API:
+`GET /accounts/{acc}/pages/projects/{proyecto}/deployments` → `latest_stage: {name, status}`.
+
+**Causa raíz:** el clone del repo con ~500MB de blobs de fotos. Los builds anteriores pasaban
+de casualidad; el crecimiento semanal lo iba a hacer crónico.
+
+**Cómo se resolvió:** (1) cancelación del build colgado vía
+`POST /accounts/{acc}/pages/projects/{proyecto}/deployments/{id}/cancel` (wrangler NO tiene este
+comando) → la cola avanzó sola y el siguiente deployó en ~1 min. (2) Solución de fondo: migración
+de las imágenes a R2 + `cdn.fenixkidsacademy.com`, imágenes fuera de git (`git rm --cached` +
+.gitignore) — los commits semanales del botón quedaron en texto puro.
+
+**Regla para la próxima:** binarios que crecen sin límite NUNCA van al repo de un sitio de Pages —
+van a R2 con dominio custom. Si un build queda "Active" sospechosamente, mirar `latest_stage` por
+API y cancelar por API. OJO: la historia del repo web todavía carga ~600MB de blobs viejos (los
+clones frescos son pesados) — la limpieza con `git filter-repo` quedó como opcional CON OK de Iván.
+
+---
+
 ## 2026-07-27 — Formulario de reserva: el dato REAL del padre se descartaba si el registro donde apoyarlo no existía todavía
 
 **Qué falló:** primera prueba real en producción del formulario de reserva (25/07, lead 595981941407,

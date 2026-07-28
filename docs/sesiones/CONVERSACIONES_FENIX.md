@@ -566,3 +566,29 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 **Aprendizaje clave:** cuando un dato llega de una fuente verificada (formulario, comprobante) y el registro donde encaja todavía no existe, la respuesta es CREARLO, nunca descartar el dato. Todo webhook externo se persiste crudo en DB antes de cualquier lógica de negocio. Registrado en `memory/errores-aprendidos.md`.
 
 **Pendiente:** los datos reales de Blas Páez (595981941407) — CI, fecha de nacimiento, mamá — se perdieron por el bug ANTES del fix y no son recuperables del sistema; pedírselos de nuevo por WhatsApp (#291). El detector legacy de texto sigue vivo como fallback si el papá nunca completa el formulario — evaluar si conviene desarmarlo del todo (#292).
+
+## 2026-07-27 (sesión 28 — fotos web + caras por familia + R2 + botón)
+
+**Ivan:** ¿de dónde se alimenta fenixkidsacademy.com/catalogo/?
+**Fenix:** Detectado: `catalogo.json` estático en el repo web (216 videos, 19/05). De paso encontró la carpeta "perdida" de videos originales en `Downloads\FENIX KIDS ACADEMY\FENIX VIDEOS SAB 16-5-26` (9,2GB).
+
+**Ivan:** quiero una sección de fotos de los entrenamientos en la web.
+**Fenix:** Página `/fotos/` con grid por fecha + lightbox, `scripts/optimizar_fotos.py` (incremental por manifest, thumb+full, EXIF). Se publicaron 293 y luego 71 más (total tras limpiezas: 630). Se borraron 3 fotos ajenas (12/03) a pedido de Iván.
+
+**Ivan:** quiero poder borrar fotos yo solo, y carpetas por fecha también en mi Escritorio.
+**Fenix:** `fotos/admin.html` (tildar → genera comando de `borrar_fotos.py`) + `organizar_fotos_por_fecha.py` (fotos y videos por metadata, `--simular`, `--destino`, duplicados exactos auto-eliminados). Los 191 videos del Escritorio quedaron en carpetas por día.
+
+**Ivan:** menú por fecha en la web + usar nuestro reconocimiento facial para filtrar por niño.
+**Fenix:** Menú de fechas público (ok). Filtro por niño NO público (contradecía su propio commit de seguridad 1d7bb55): links privados por familia reusando el código mágico de TUTORES. Fix crítico de `_buscar_multiples_caras` (recorte real con Pillow — antes fotos grupales devolvían 1 niño), tablas + `GET /juego/fotos/{codigo}` + `familia.html` + batch `taggear_fotos_web.py`. Aplicado: 1062 tags/630 fotos/24 niños. Probado con su código (118 fotos de "Ivan TEST" linkeado como hijo de prueba).
+
+**Ivan:** un comando /fotosfenix… o mejor un botón python en mi Desktop.
+**Fenix:** `publicar_fotos.py` (pipeline entero: ordenar → publicar → taggear → WhatsApp) + acceso directo "FOTOS FENIX" con logo .ico + skill `/fotosfenix` que delega en el mismo script. Iván lo estrenó solo con 269 fotos y funcionó (menos el WhatsApp: faltaba `ADMIN_API_KEY` en `.env` local — arreglado y verificado).
+
+**Ivan:** ¿cómo movemos a R2? (el repo engordó y un build de Pages se colgó)
+**Fenix:** Bucket `fenix-fotos` + `cdn.fenixkidsacademy.com`, 1260 imágenes migradas por API REST (primer intento con wrangler fue a storage local por falta de `--remote`), páginas y endpoint apuntando al CDN, imágenes fuera de git, pipeline y borrado actualizados. Todo verificado en vivo.
+
+**Ivan:** el rollout a familias cuando tengamos más rostros.
+**Fenix:** Anotado: 70 niños sin FACE_ID. Antes del rollout: juntar FOTO en Airtable → `indexar_caras.py` → re-taggear (`--todas` no hace falta: basta borrar de `fotos_web_procesadas` o esperar fotos nuevas... correcto es re-correr tras indexar).
+
+Commits agent: `54f0612` fix recorte caras · `80a30b2` tablas+endpoint fotos · `ed45cef`+`bc8745e` script batch · `6f5522e` guard+skill · `1a822f9` base_url CDN.
+Commits web: `a04f16a` catálogo 293 · `99b43c7` quitar 3 · `33ebab9` admin · `9fdea27` +71 · `1ebff0d` videos · `8ea82f0` filtro fecha · `adf039a` familia.html · `11a2c3c` dups · `9540ad6` pipeline · `3e78a40` bat+ico · `b0c30a8` +269 (corrió Iván) · `ec31d91` CDN · `bda3216` fotos fuera de git.
