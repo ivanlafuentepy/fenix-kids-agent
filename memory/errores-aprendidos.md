@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-07-28 — WhatsApp borra/reescribe el EXIF de las fotos: la fecha "real" no siempre está en la foto
+
+**Qué pasó:** Iván subió 28 fotos que le habían pasado por WhatsApp a la bandeja del catálogo.
+17 no tenían EXIF de fecha y 11 tenían un EXIF con la fecha del REENVÍO (no la fecha real en que
+se sacó la foto) — la compresión de WhatsApp pisa o borra ese metadato.
+
+**Causa raíz:** el sistema (`scripts/optimizar_fotos.py`) confiaba ciegamente en el EXIF para
+fechar cada foto. Eso funciona perfecto para fotos que salen directo de la cámara/celular, pero
+se rompe en cualquier foto que haya pasado por WhatsApp (o cualquier app que recomprima).
+
+**Cómo se resolvió:** `fecha_foto()` — si la foto vive en una carpeta `YYYY-MM-DD Día` (las que
+arma `organizar_fotos_por_fecha.py`), ESA fecha manda sobre el EXIF; el EXIF solo aporta la HORA
+si coincide con el día de la carpeta (para ordenar dentro del día). La fecha se recalcula en
+TODAS las corridas, no solo al crear el registro — así que mover una foto ya publicada a la
+carpeta correcta la corrige sola, sin re-procesar la imagen.
+
+**Regla para la próxima:** si alguien manda fotos que "no tienen fecha correcta" o "dicen que son
+de hoy", sospechar EXIF pisado por WhatsApp/reenvío — no hay forma de recuperar la fecha real
+desde el archivo. Soluciones: (1) pedir que las reenvíen como "Documento" en WhatsApp (conserva
+el EXIF real); (2) si se sabe la fecha por el chat, mover la foto a mano a la carpeta
+`YYYY-MM-DD Día` correcta — el sistema la corrige solo en la próxima corrida del botón.
+
+---
+
 ## 2026-07-27 — `wrangler r2 object put` SIN `--remote` escribe en un storage local de simulación (la subida "exitosa" nunca llega al bucket)
 
 **Qué falló:** migración de las 1260 imágenes del catálogo de fotos al bucket R2 `fenix-fotos`.

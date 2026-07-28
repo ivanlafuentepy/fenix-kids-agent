@@ -592,3 +592,10 @@ Resultado: PRUEBA ya no es fuente de lectura de nada. Decisión técnica propia:
 
 Commits agent: `54f0612` fix recorte caras · `80a30b2` tablas+endpoint fotos · `ed45cef`+`bc8745e` script batch · `6f5522e` guard+skill · `1a822f9` base_url CDN.
 Commits web: `a04f16a` catálogo 293 · `99b43c7` quitar 3 · `33ebab9` admin · `9fdea27` +71 · `1ebff0d` videos · `8ea82f0` filtro fecha · `adf039a` familia.html · `11a2c3c` dups · `9540ad6` pipeline · `3e78a40` bat+ico · `b0c30a8` +269 (corrió Iván) · `ec31d91` CDN · `bda3216` fotos fuera de git.
+
+## 2026-07-28 (sesión 29, continuación corta — fotos de WhatsApp sin fecha real)
+
+**Ivan:** subí fotos que me pasaron por WhatsApp a la carpeta FOTOS — ¿van a tener fecha de hoy? No hay forma de recuperar la fecha real, son todas de días distintos.
+**Fenix:** Confirmado con `extraer_fecha`: 17/28 sin EXIF, 11/28 con fecha de reenvío (no la real) — WhatsApp comprime y borra/reescribe el EXIF. Se agregó `fecha_foto()` en `optimizar_fotos.py`: la carpeta contenedora (`YYYY-MM-DD Día`) manda sobre el EXIF; recalculada en cada corrida, así que mover una foto ya publicada a la carpeta correcta la corrige sola después. Publicadas las 28 (658 total), taggeadas (76 tags nuevos), verificado en vivo. Sugerido a Iván: pedir que le manden las fotos "como Documento" para conservar el EXIF real.
+
+Commit web: `17b896c` fecha_foto() + 28 fotos.
