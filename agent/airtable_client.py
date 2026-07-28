@@ -1651,6 +1651,105 @@ async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -
     return mapa
 
 
+# ── PACK DE CLASES (5 sábados que NO vencen — desde 28/07/2026) ──────────────
+# El saldo vive en NIÑOS FENIX.CLASES DISPONIBLES y se mueve SOLO por acá:
+# descontar_clase() cuando el niño entra, recargar_pack() cuando la familia paga.
+# Misma disciplina que _acreditar con el oro del juego: una única puerta.
+#
+# CLASES DISPONIBLES vacío = la familia sigue con el plan mensual viejo
+# (decisión de Ivan 28/07: los del mensual siguen aparte) → no se le toca nada
+# y las funciones devuelven None para que el llamador no le hable de saldo.
+
+_CAMPO_CLASES = "CLASES DISPONIBLES"
+_CAMPO_ULT_DESCUENTO = "ULTIMO DESCUENTO"
+
+
+async def _leer_nino(nino_id: str) -> dict | None:
+    """Lee un registro de NIÑOS FENIX por record_id. None si falla o no existe."""
+    if not AIRTABLE_API_KEY or not nino_id:
+        return None
+    url = f"{_BASE_URL}/{_NINOS}/{nino_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await _request_con_reintento_429(client, "GET", url, headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                return r.json()
+            logger.error(f"GET {_NINOS}/{nino_id} → {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"GET {_NINOS}/{nino_id} error: {e}")
+    return None
+
+
+async def obtener_saldo_clases(nino_id: str) -> int | None:
+    """Clases que le quedan del pack. None = el niño no está en el modelo pack."""
+    rec = await _leer_nino(nino_id)
+    if not rec:
+        return None
+    valor = rec.get("fields", {}).get(_CAMPO_CLASES)
+    return int(valor) if valor is not None else None
+
+
+async def descontar_clase(nino_id: str, fecha_iso: str = "") -> tuple[int, bool] | None:
+    """Descuenta UNA clase del pack. Retorna (saldo_que_queda, descontado).
+
+    Idempotente por día: si ULTIMO DESCUENTO ya es esa fecha, devuelve el saldo
+    sin volver a descontar. Hace falta porque hay TRES puntos que crean
+    asistencia (cara en el tótem, QR de reserva y marcado manual del HQ) y un
+    niño puede pasar por más de uno el mismo sábado.
+
+    Retorna None si el niño no tiene pack (familia del mensual viejo) o si el
+    PATCH falló — en ambos casos el llamador NO debe hablarle de saldo al padre.
+    Nunca baja de 0: si entró con 0, deja 0 y avisa por log. La entrada del niño
+    no se bloquea nunca por saldo — eso lo resuelve Ivan con la familia.
+    """
+    rec = await _leer_nino(nino_id)
+    if not rec:
+        return None
+    campos = rec.get("fields", {})
+    saldo = campos.get(_CAMPO_CLASES)
+    if saldo is None:
+        return None
+    saldo = int(saldo)
+
+    if not fecha_iso:
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo as _ZI
+        fecha_iso = _dt.now(_ZI("America/Asuncion")).date().isoformat()
+    hoy = fecha_iso
+    if (campos.get(_CAMPO_ULT_DESCUENTO) or "")[:10] == hoy:
+        logger.info(f"[PACK] {nino_id}: ya se descontó hoy ({hoy}) → quedan {saldo}")
+        return saldo, False
+
+    if saldo <= 0:
+        logger.warning(f"[PACK] {nino_id} entró con saldo 0 — no hay clase que descontar")
+        return 0, False
+
+    nuevo = saldo - 1
+    if not await _patch(_NINOS, nino_id, {_CAMPO_CLASES: nuevo, _CAMPO_ULT_DESCUENTO: hoy}):
+        return None
+    logger.info(f"[PACK] {nino_id}: clase descontada → quedan {nuevo}")
+    return nuevo, True
+
+
+async def recargar_pack(nino_id: str, clases: int = 5) -> int | None:
+    """Suma clases al pack cuando la familia paga. Retorna el saldo nuevo.
+
+    Si el niño todavía no tenía saldo arranca desde 0: así es como una familia
+    entra al modelo pack (deja de ser del mensual viejo).
+    """
+    if not nino_id or clases <= 0:
+        return None
+    rec = await _leer_nino(nino_id)
+    if not rec:
+        return None
+    saldo = rec.get("fields", {}).get(_CAMPO_CLASES)
+    nuevo = int(saldo or 0) + clases
+    if not await _patch(_NINOS, nino_id, {_CAMPO_CLASES: nuevo}):
+        return None
+    logger.info(f"[PACK] {nino_id}: +{clases} clases → saldo {nuevo}")
+    return nuevo
+
+
 # ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────
 
 async def obtener_contenido_no_notificado() -> list[dict]:

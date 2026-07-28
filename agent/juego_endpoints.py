@@ -1088,6 +1088,14 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     except Exception as e:
         logger.warning(f"[JUEGO] checkin-face: asistencia falló para {nombre}: {e}")
 
+    # Descontar una clase del pack (best-effort — nunca frena la entrada del niño).
+    # None = familia del plan mensual viejo: no tiene pack, no se le toca nada.
+    try:
+        from agent.airtable_client import descontar_clase
+        await descontar_clase(nino_id)
+    except Exception as e:
+        logger.warning(f"[JUEGO] checkin-face: descuento de clase falló para {nombre}: {e}")
+
     # +10 oro por venir (best-effort — nunca rompe el saludo)
     oro = 0
     try:

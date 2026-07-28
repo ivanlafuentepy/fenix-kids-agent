@@ -166,7 +166,16 @@ async def hq_asistencia(payload: dict = Body(...), x_hq_key: str | None = Header
         )
         if not rec_id:
             raise HTTPException(status_code=502, detail="no se pudo crear la asistencia")
-        return {"ok": True, "presente": True, "asistencia_id": rec_id}
+        # Descontar la clase del pack (idempotente por día; None = mensual viejo).
+        # Best-effort: marcar presente nunca falla por el saldo.
+        saldo = None
+        try:
+            from agent.airtable_client import descontar_clase
+            _r_pack = await descontar_clase(nino_id, fecha_iso)
+            saldo = _r_pack[0] if _r_pack else None
+        except Exception as e:
+            logger.warning(f"[HQ] descuento de clase falló para {nino_id}: {e}")
+        return {"ok": True, "presente": True, "asistencia_id": rec_id, "clases_restantes": saldo}
     else:
         if ya:
             await borrar_asistencia(ya)
