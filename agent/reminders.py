@@ -43,7 +43,7 @@ _MENSAJES_SEGUIMIENTO = {
         "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
             f"Te cuento los horarios para venir al parque con tu hijo:\n"
-            f"Sábados: {_HORARIOS_FENIX}\nPrueba 100mil, mensual 240mil + matrícula 100mil por niño. Padres entran gratis 🌳 ¿Te interesa?"
+            f"Sábados: {_HORARIOS_FENIX}\nPrueba 100mil, pack de 5 sábados 350mil (no vencen) + matrícula 100mil por niño. Padres entran gratis 🌳 ¿Te interesa?"
         ),
         "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
     ],

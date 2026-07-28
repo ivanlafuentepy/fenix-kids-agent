@@ -33,9 +33,10 @@ PRECIOS = {
     "prueba": {"cuota": 100_000, "matricula": 0, "total": 100_000, "label": "PRUEBA 100K (1 hijo)"},
     "prueba_2": {"cuota": 150_000, "matricula": 0, "total": 150_000, "label": "PRUEBA 150K (2 hermanos)"},
     "prueba_3": {"cuota": 200_000, "matricula": 0, "total": 200_000, "label": "PRUEBA 200K (3 hermanos)"},
-    "mensual": {"cuota": 240_000, "matricula": 100_000, "total": 340_000, "label": "MENSUAL 240K + MATRÍCULA 100K (1 hijo)"},
-    "mensual_2": {"cuota": 340_000, "matricula": 200_000, "total": 540_000, "label": "MENSUAL 340K + MATRÍCULA 200K (2 hermanos)"},
-    "mensual_3": {"cuota": 440_000, "matricula": 300_000, "total": 740_000, "label": "MENSUAL 440K + MATRÍCULA 300K (3 hermanos)"},
+    # Pack de 5 sábados que NO vencen (reemplaza al mensual de 4 sábados, 28/07/26)
+    "pack5": {"cuota": 350_000, "matricula": 100_000, "total": 450_000, "label": "PACK 5 CLASES 350K + MATRÍCULA 100K (1 hijo)"},
+    "pack5_2": {"cuota": 500_000, "matricula": 200_000, "total": 700_000, "label": "PACK 5 CLASES 500K + MATRÍCULA 200K (2 hermanos)"},
+    "pack5_3": {"cuota": 650_000, "matricula": 300_000, "total": 950_000, "label": "PACK 5 CLASES 650K + MATRÍCULA 300K (3 hermanos)"},
 }
 
 
