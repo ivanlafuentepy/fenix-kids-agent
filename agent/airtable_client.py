@@ -1567,6 +1567,8 @@ async def registrar_pago_fenix(
         "CONCEPTO": concepto,
         "ESTADO DE PAGO": "PAGADO",
         "FUENTE": "FENIX KIDS ACADEMY",
+        # NEGOCIO identifica el pago por unidad de negocio (migración 28/07).
+        "NEGOCIO": "FENIX KIDS ACADEMY",
         "EXCEL": True,
     }
     if nino_ids:
