@@ -1731,6 +1731,44 @@ async def descontar_clase(nino_id: str, fecha_iso: str = "") -> tuple[int, bool]
     return nuevo, True
 
 
+async def padre_de_nino(nino_id: str) -> tuple[str, str, str]:
+    """(nombre_padre, telefono, vence_el) del tutor del niño.
+
+    Para avisarle al padre cuando el hijo entra. Prioriza el tutor que paga
+    (ES QUIEN PAGA); si no hay, el primero con celular cargado. El teléfono
+    sale de CELL LIMPIO (fórmula ya normalizada a 595...), que es el mismo
+    número con el que la familia habla por WhatsApp.
+    Devuelve ("", "", "") si no se puede resolver — el llamador no avisa.
+    """
+    rec = await _leer_nino(nino_id)
+    if not rec:
+        return "", "", ""
+    campos = rec.get("fields", {})
+    vence = campos.get("VENCE EL") or ""
+    if isinstance(vence, list):
+        vence = vence[0] if vence else ""
+
+    tutor_ids = (campos.get("PADRE") or []) + (campos.get("MADRE") or [])
+    if not tutor_ids:
+        return "", "", str(vence)
+
+    candidatos = []
+    for tid in tutor_ids[:4]:
+        recs = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tid}'", max_records=1)
+        if not recs:
+            continue
+        tf = recs[0].get("fields", {})
+        tel = (tf.get("CELL LIMPIO") or "").strip()
+        if tel:
+            candidatos.append((bool(tf.get("ES QUIEN PAGA")), (tf.get("NOMBRE") or "").strip(), tel))
+    if not candidatos:
+        return "", "", str(vence)
+    # el que paga primero; si ninguno lo es, el primero con celular
+    candidatos.sort(key=lambda c: not c[0])
+    _, nombre, telefono = candidatos[0]
+    return nombre, telefono, str(vence)
+
+
 async def recargar_pack(nino_id: str, clases: int = 5) -> int | None:
     """Suma clases al pack cuando la familia paga. Retorna el saldo nuevo.
 

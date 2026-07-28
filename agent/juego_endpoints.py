@@ -1088,13 +1088,30 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     except Exception as e:
         logger.warning(f"[JUEGO] checkin-face: asistencia falló para {nombre}: {e}")
 
-    # Descontar una clase del pack (best-effort — nunca frena la entrada del niño).
-    # None = familia del plan mensual viejo: no tiene pack, no se le toca nada.
+    # Descontar una clase del pack y avisarle al padre que su hijo entró
+    # (best-effort — nunca frena la entrada del niño). saldo None = familia del
+    # plan mensual viejo: no tiene pack, no se le toca nada y el aviso le habla
+    # de su vencimiento en vez de clases. El aviso sale solo si Ivan lo prendió
+    # con AVISO_CHECKIN_ACTIVO.
     try:
-        from agent.airtable_client import descontar_clase
-        await descontar_clase(nino_id)
+        from agent.airtable_client import descontar_clase, padre_de_nino
+        from agent.checkin_aviso import aviso_activo, enviar_aviso_checkin, frase_estado
+
+        _pack = await descontar_clase(nino_id)
+        _saldo = _pack[0] if _pack else None
+
+        if aviso_activo():
+            _nombre_padre, _tel_padre, _vence = await padre_de_nino(nino_id)
+            if _tel_padre:
+                from agent.providers import obtener_proveedor
+                await enviar_aviso_checkin(
+                    _tel_padre, obtener_proveedor(), _nombre_padre, nombre,
+                    frase_estado(_saldo, _vence),
+                )
+            else:
+                logger.warning(f"[JUEGO] checkin-face: {nombre} sin teléfono de padre — no aviso")
     except Exception as e:
-        logger.warning(f"[JUEGO] checkin-face: descuento de clase falló para {nombre}: {e}")
+        logger.warning(f"[JUEGO] checkin-face: pack/aviso falló para {nombre}: {e}")
 
     # +10 oro por venir (best-effort — nunca rompe el saludo)
     oro = 0

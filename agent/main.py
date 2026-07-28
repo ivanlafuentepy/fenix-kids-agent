@@ -1061,6 +1061,23 @@ async def test_envio(telefono: str, msg: str = "Test desde Railway", _: bool = D
     return {"enviado": ok, "telefono": telefono, "mensaje": msg}
 
 
+@app.post("/fotos/avisar-familias")
+async def fotos_avisar_familias(
+    link: str = "https://fenixkidsacademy.com/fotos/",
+    fecha: str = "",
+    _: bool = Depends(_require_admin),
+):
+    """Le pasa el link de las fotos a las familias que las pidieron en el check-in.
+
+    Lo llama el paso final de scripts/publicar_fotos.py, cuando las fotos ya
+    están arriba. Solo le escribe a quien tocó "Sí, mandame fotos" (opt-in
+    explícito del padre) y limpia el pedido al enviarlo.
+    ?fecha=YYYY-MM-DD limita a los pedidos de ese día; vacío = todos.
+    """
+    from agent.checkin_aviso import avisar_fotos_listas
+    return await avisar_fotos_listas(proveedor, link, fecha)
+
+
 @app.get("/enviar-qr/{telefono}")
 async def enviar_qr_admin(telefono: str, destino: str = "", _: bool = Depends(_require_admin)):
     """
@@ -3184,6 +3201,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # elegido no deben caer en el flujo conversacional ni en el menú genérico.
                 from agent.confirmacion_sabado import manejar_respuesta as _manejar_conf_sab
                 _flags_sab = await obtener_estado_flags(telefono)
+
+                # ── Respuesta a la plantilla del check-in (¿querés las fotos?) ──
+                # Antes del menú por lo mismo: los botones traen solo el texto y
+                # el menú genérico se lo comería.
+                from agent.checkin_aviso import manejar_respuesta_fotos as _manejar_fotos
+                _resp_fotos = await _manejar_fotos(
+                    telefono, texto, _flags_sab, proveedor,
+                    topic_id=topic_id, tg_group=_tg_group,
+                )
+                if _resp_fotos is not None:
+                    logger.info(f"[CHECKIN-AVISO] {telefono}: {_resp_fotos}")
+                    return {"status": "ok"}
+
                 _resp_sab = await _manejar_conf_sab(
                     telefono, texto,
                     getattr(msg, "btn_id", None),
