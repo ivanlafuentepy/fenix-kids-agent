@@ -623,5 +623,9 @@ Commit web: `17b896c` fecha_foto() + 28 fotos.
 **Ivan:** cuando dice "sí, mandame las fotos" — ¿hacemos que el Python que sube las fotos también se encargue de enviarle?
 **Fenix:** Sí, paso 7 de `publicar_fotos.py` → `POST /fotos/avisar-familias` y el server manda el link (todas las fotos del día, como pidió). Solo recibe quien lo pidió y el pedido se limpia al enviar. El botón del padre abre la ventana de 24h → el aviso sale como mensaje libre, sin plantilla ni costo. Todo **apagado** por `AVISO_CHECKIN_ACTIVO`.
 
+**Ivan:** hacemos un comando /cambioprecio.
+**Fenix:** `/cambioprecio` (skill + comando espejo en `.claude/commands/`, que es lo que lo hace invocable — `fotosfenix` no lo tiene y por eso no aparece). 8 pasos: cerrar la tabla de precios con Ivan → `/pre-cambio` (con el aviso de que un monto de otra cantidad de dígitos rompe la regex que lee comprobantes) → los 7 lugares → **el grep del valor viejo** → afiche verificado contra la tabla → web en rama master con los links refirmados → Airtable solo si el plan es nuevo → dos pushes + Done. Corregido también el CLAUDE.md, que decía "4 lugares vivos".
+
 Commits agent: `23580fc` precio en código+afiche · `e7f42e5` precio en prompt · `854347c` saldo de clases · `004d745` +5 al pagar · `1916701` aviso al padre + fotos.
 Commits web: `61217aa` precio + afiche + links refirmados · `23b82c3` paso 7 avisar familias.
+Cierre: `0e0ca69` docs · `8d04b0e` skill /cambioprecio.

@@ -190,6 +190,12 @@ No hay excusas ni "es un cambio chico".
 Además: `docs/CHECKLIST.md` se ejecuta COMPLETO antes de cualquier cambio en
 prompts/flujo/deploy, mostrando los resultados a Ivan ANTES de implementar.
 
+**Cómo se registra un skill nuevo del proyecto** (dos archivos, no uno): el contenido va en
+`.claude/skills/<nombre>.md` y hace falta el espejo `.claude/commands/<nombre>.md` con una sola
+línea — `Leer y ejecutar las instrucciones de `.claude/skills/<nombre>.md`` — que es lo que lo
+hace invocable con `/`. Sin el segundo archivo el skill existe pero no aparece: le pasa a
+`fotosfenix`. Sumarlo también a la tabla de arriba y al router `using-fenix-skills/SKILL.md`.
+
 ---
 
 ## 7. Definition of Done
