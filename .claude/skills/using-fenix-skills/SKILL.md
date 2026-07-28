@@ -47,6 +47,17 @@ NUNCA asumir. NUNCA afirmar sin evidencia.
 
 Cuando detectes alguna de estas intenciones (del usuario o propia), SUGERÍ o INVOCÁ el skill correspondiente:
 
+### Cambio de PRECIO → `/cambioprecio`
+
+**Triggers:**
+- "cambiamos el precio", "sube la matrícula", "el pack pasa a X", "ahora la prueba sale Y"
+- Cualquier monto nuevo que un lead o una familia vaya a escuchar
+
+**Acción:** Invocar `/cambioprecio` ANTES de tocar nada. El precio vive en **7 lugares + la web**,
+los links de pago van **firmados por monto** (cambiar el monto sin refirmar los rompe) y el
+afiche es lo primero que ve el lead. El skill incluye el grep de control obligatorio: la lista
+de lugares es el punto de partida, no la garantía.
+
 ### Cambios en código crítico → `/pre-cambio`
 
 **Triggers:**

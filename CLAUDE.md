@@ -122,10 +122,14 @@ static/              ← Afiches PNG, profe.html, assets servidos.
 
 ### Dónde viven las cosas (para no buscar mal)
 
-- **Precios**: 4 lugares vivos → `config/prompts.yaml`, `agent/afiches.py`,
-  `agent/lead_menu.py`, `agent/pagos.py` (+ afiches PNG en `static/`). Si cambia un
-  precio, cambian LOS CUATRO. `business.yaml` y el `tools.py` del template original
-  son **código muerto** — no los uses de referencia.
+- **Precios**: **7 lugares vivos** → `config/prompts.yaml`, `agent/afiches.py`,
+  `agent/lead_menu.py`, **`agent/main.py` (× 2: los fallbacks de los interceptores)**,
+  `agent/reminders.py`, `agent/pagos.py` (+ afiches PNG en `static/` **y la web**, repo
+  `fenixkidsacademy-web`, rama master, con los links de pago firmados por monto).
+  Si cambia un precio → **`/cambioprecio`**, que incluye el grep de control: la lista
+  de arriba es el punto de partida, no la garantía (el 28/07 faltaban 3).
+  `business.yaml` y el `tools.py` del template original son **código muerto** — no los
+  uses de referencia.
 - **Estado del proyecto / pendientes / decisiones**: `docs/` del repo (sección 9)
   + la memoria persistente de Claude Code.
 - **Endpoints admin** (`/reset/{tel}`, `/conversacion/{tel}`, `/test-envio/{tel}`…):
@@ -169,6 +173,7 @@ No hay excusas ni "es un cambio chico".
 
 | Situación | Skill | Cuándo |
 |---|---|---|
+| Cambiar un PRECIO (prueba, pack, matrícula) | `/cambioprecio` | ANTES de tocar nada — el precio vive en 7 lugares + la web, y los links de pago van firmados por monto |
 | Tocar `prompts.yaml`, `main.py`, detectores, `pagos.py`, `afiches.py` o el flujo | `/pre-cambio` | ANTES de escribir una línea |
 | `git push` a main | `/pre-deploy` | ANTES del push |
 | Bug o error en producción | `/debug` | Parar features, preservar evidencia |
