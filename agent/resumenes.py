@@ -8,7 +8,7 @@ import logging
 from agent.airtable_client import (
     obtener_ninos_por_horario, _get_records, _patch, crear_reserva,
     obtener_o_crear_horario,
-    _LEADS, _RESERVAS, _HORARIOS, _NINOS, _FAMILIAS,
+    _LEADS, _RESERVAS, _HORARIOS, _NINOS,
     _BASE_URL, _headers,
 )
 from agent.telegram_bridge import obtener_topic
@@ -931,7 +931,7 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     offset = None
     base_id = os.getenv("AIRTABLE_BASE_ID")
     api_key = os.getenv("AIRTABLE_API_KEY")
-    _filtro_pagos = _up.quote("OR({NIÑOS FENIX}!='',{FAMILIA FENIX}!='')")
+    _filtro_pagos = _up.quote("OR({NIÑOS FENIX}!='',{PAGA}!='')")
     while True:
         params = f"pageSize=100&filterByFormula={_filtro_pagos}"
         if offset:

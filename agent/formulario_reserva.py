@@ -64,7 +64,6 @@ async def _guardar_tutor(
     hijos: list[dict],
     persona: dict,
     parentesco: str,
-    familia_id: str = "",
 ) -> str | None:
     """Actualiza el tutor de ese parentesco del grupo familiar (sin duplicar); si no
     existe, lo crea y lo linkea a los hijos (PADRE/MADRE del niño, niño-eje).
@@ -85,7 +84,7 @@ async def _guardar_tutor(
             logger.error(f"[RESERVA-FORM] error actualizando tutor {parentesco}: {e}")
             return None
 
-    tid = await crear_o_actualizar_tutor(persona, parentesco, familia_id=familia_id)
+    tid = await crear_o_actualizar_tutor(persona, parentesco)
     # Niño-eje: linkear el tutor nuevo a los hijos para que el grupo lo vea.
     if tid:
         campo = "MADRE" if parentesco == "Mamá" else "PADRE"
@@ -184,7 +183,7 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     sin grupo previo, los datos se descartaban (caso 595981941407, 25/07).
     NO crea inscripto ACTIVO."""
     from agent.airtable_client import (
-        obtener_grupo_familiar, buscar_familia_por_telefono, actualizar_nino,
+        obtener_grupo_familiar, actualizar_nino,
         buscar_tutor_por_telefono, _tutor_a_dict, crear_nino, vincular_tutor_a_lead,
     )
     from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
@@ -206,19 +205,15 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
         if _t_parcial:
             tutores = [_tutor_a_dict(_t_parcial["id"], _t_parcial.get("fields", {}) or {})]
 
-    # familia legacy solo para el link transitorio del tutor nuevo
-    _fam = await buscar_familia_por_telefono(telefono)
-    _fam_id = _fam["id"] if _fam else ""
-
     # PADRE / MADRE primero — el niño nuevo necesita sus ids para los links
     padre_id = madre_id = None
     try:
         padre = _tutor_desde_flow(flow_data, "padre")
         madre = _tutor_desde_flow(flow_data, "madre")
         if padre:
-            padre_id = await _guardar_tutor(tutores, hijos, padre, "Papá", familia_id=_fam_id)
+            padre_id = await _guardar_tutor(tutores, hijos, padre, "Papá")
         if madre:
-            madre_id = await _guardar_tutor(tutores, hijos, madre, "Mamá", familia_id=_fam_id)
+            madre_id = await _guardar_tutor(tutores, hijos, madre, "Mamá")
     except Exception as e:
         logger.error(f"[RESERVA-FORM] error actualizando tutores: {e}")
     # El tutor parcial existente cubre el parentesco que el formulario no trajo

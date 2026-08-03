@@ -9,7 +9,6 @@ from agent.memory import guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.ab_test import (
     obtener_estado_flags, actualizar_estado_flags,
-    obtener_familia_id,
 )
 from agent.telegram_bridge import (
     enviar_a_topic,
@@ -24,7 +23,7 @@ from agent.pagos import (
 )
 from agent.airtable_client import (
     actualizar_conversion_lead, crear_grupo_a_prueba,
-    buscar_familia_por_telefono, registrar_pago_fenix,
+    registrar_pago_fenix,
 )
 from agent.detectores_conv import (
     _extraer_nombre_del_historial, _extraer_nombre_hijo_historial,
@@ -124,41 +123,32 @@ async def _procesar_comprobante(
 
     # ── Registrar el PAGO por código (única fuente — reemplaza la automatización ──
     #    vieja de Airtable). Solo pruebas con monto; la inscripción
-    #    crea sus PAGOS en inscripcion.py. Garantiza la FAMILIA antes de colgar el pago.
+    #    crea sus PAGOS en inscripcion.py. Garantiza el grupo antes de colgar el pago.
     _pago_rid_factura = None
-    _fam_id_factura = None
     if tipo == "prueba" and monto > 0:
         try:
-            # Ficha legacy (si existe) — solo como pista de resolución del pago
-            _fam_id = await obtener_familia_id(telefono)
-            if not _fam_id:
-                _fam = await buscar_familia_por_telefono(telefono)
-                _fam_id = _fam["id"] if _fam else None
-            if not _fam_id:
-                # El lead no tiene ficha → alta niño-eje (F7.b): TUTOR + NIÑOS
-                # A PRUEBA, sin FAMILIAS. Idempotente.
-                _pn = (nombre_padre or "").split()
-                _ninos_pago = []
-                if nombre_hijo and nombre_hijo != "no mencionó":
-                    _ninos_pago = [{"nombre": nombre_hijo}]
-                _tutor_id_pago, _ = await crear_grupo_a_prueba(
-                    telefono=telefono,
-                    nombre_tutor=_pn[0] if _pn else (nombre_padre or ""),
-                    apellido_tutor=" ".join(_pn[1:]) if len(_pn) > 1 else "",
-                    ninos=_ninos_pago,
-                )
-                if not _tutor_id_pago:
-                    logger.warning(f"[PAGOS] Alta de grupo A PRUEBA falló para {telefono} — registro el pago igual")
-            # registrar_pago_fenix resuelve niños/pagador por el grupo
-            # familiar del teléfono (fallback legacy con _fam_id adentro)
+            # Alta niño-eje (F7.b): TUTOR + NIÑOS A PRUEBA. Idempotente — si el
+            # tutor ya existe con hijos, no crea nada.
+            _pn = (nombre_padre or "").split()
+            _ninos_pago = []
+            if nombre_hijo and nombre_hijo != "no mencionó":
+                _ninos_pago = [{"nombre": nombre_hijo}]
+            _tutor_id_pago, _ = await crear_grupo_a_prueba(
+                telefono=telefono,
+                nombre_tutor=_pn[0] if _pn else (nombre_padre or ""),
+                apellido_tutor=" ".join(_pn[1:]) if len(_pn) > 1 else "",
+                ninos=_ninos_pago,
+            )
+            if not _tutor_id_pago:
+                logger.warning(f"[PAGOS] Alta de grupo A PRUEBA falló para {telefono} — registro el pago igual")
+            # registrar_pago_fenix resuelve niños/pagador por el grupo familiar del teléfono
             from agent.airtable_client import _get_records, _LEADS
             _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
             _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
             _pago_rid_factura = await registrar_pago_fenix(
-                _fam_id or "", monto, concepto=concepto_pago, metodo=metodo_pago,
+                monto, concepto=concepto_pago, metodo=metodo_pago,
                 lead_id=_lead_id_pago, telefono=telefono,
             )
-            _fam_id_factura = _fam_id
         except Exception as e:
             logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
 
@@ -186,7 +176,6 @@ async def _procesar_comprobante(
                 pago_esperando_factura=True,
                 factura_esperando_datos=False,
                 factura_pago_rid=_pago_rid_factura,
-                factura_familia_id=_fam_id_factura or "",
                 factura_monto=monto,
                 factura_concepto=concepto_pago,
             )

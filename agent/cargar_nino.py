@@ -57,7 +57,7 @@ async def enviar_formulario_cargar_nino(admin_phone: str) -> None:
 
 
 def _tutor_desde_flow(d: dict, prefijo: str) -> dict:
-    """Arma el dict de padre/madre para crear_familia desde los campos del Flow."""
+    """Arma el dict de padre/madre para crear_o_actualizar_tutor desde los campos del Flow."""
     tutor = {
         "nombre": (d.get(f"{prefijo}_nombre") or "").strip(),
         "apellido": (d.get(f"{prefijo}_apellido") or "").strip(),

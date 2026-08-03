@@ -116,40 +116,35 @@ def _parsear_inscripcion(texto: str) -> dict:
 
 async def _candidatos_a_prueba() -> list[dict]:
     """Candidatos a inscribir (F7.b): NIÑOS con ESTADO='A PRUEBA' agrupados por
-    tutor (links PADRE/MADRE del niño) — FAMILIAS ya no se enumera. Cubre los
-    dos modelos: altas niño-eje nuevas y fichas legacy (C0 backfilleó el ESTADO
-    de todos los niños; si un niño no tiene tutor linkeado, se agrupa por su
-    FAMILIA legacy).
+    tutor (links PADRE/MADRE del niño). Pre-check 03/08: todo niño tiene
+    PADRE o MADRE linkeado — un niño sin tutor forma grupo propio sin teléfono.
 
     Cada candidato tiene el formato pseudo-PRUEBA que espera el resto del flujo:
     {"prueba": {"id": "", "fields": {TELEFONO, NOMBRE, APELLIDO}},
      "todas_pruebas": [{"id": "", "_nino_id", "fields": {NOMBRE HIJO, APELLIDO HIJO,
                         EDAD HIJO, FECHA NACIMIENTO, GENERO}}, ...],
-     "tutor_id": rec del tutor (si se resolvió), "familia_id": rec legacy o ""}
+     "tutor_id": rec del tutor (si se resolvió)}
     """
-    from agent.airtable_client import _get_records, _FAMILIAS, _NINOS, _TUTORES
+    from agent.airtable_client import _get_records, _NINOS, _TUTORES
 
     ninos = await _get_records(_NINOS, formula="{ESTADO}='A PRUEBA'", max_records=1000)
     if not ninos:
         return []
 
-    # Agrupar niños que comparten algún tutor; sin tutor → por familia legacy;
-    # sin nada → grupo propio.
+    # Agrupar niños que comparten algún tutor; sin tutor → grupo propio.
     grupos: list[dict] = []
     for n in ninos:
         nf = n.get("fields", {}) or {}
         if not (nf.get("NOMBRE") or "").strip():
             continue
         tutor_ids = (nf.get("PADRE") or []) + (nf.get("MADRE") or [])
-        familia_id = (nf.get("FAMILIA") or [""])[0]
         destino = None
         for g in grupos:
-            if (tutor_ids and set(tutor_ids) & set(g["tutor_ids"])) or \
-               (not tutor_ids and familia_id and familia_id == g["familia_id"]):
+            if tutor_ids and set(tutor_ids) & set(g["tutor_ids"]):
                 destino = g
                 break
         if not destino:
-            destino = {"tutor_ids": [], "familia_id": familia_id if not tutor_ids else "", "ninos": []}
+            destino = {"tutor_ids": [], "ninos": []}
             grupos.append(destino)
         destino["ninos"].append(n)
         for t in tutor_ids:
@@ -167,20 +162,6 @@ async def _candidatos_a_prueba() -> list[dict]:
                 nombre = (tf.get("NOMBRE") or "").strip()
                 apellido = (tf.get("APELLIDO") or "").strip()
                 tel = (tf.get("CELL LIMPIO") or "").strip()
-        elif g["familia_id"]:
-            frec = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{g['familia_id']}'", max_records=1)
-            if frec:
-                ff = frec[0].get("fields", {}) or {}
-                nombres_tut = ff.get("NOMBRES TUTORES", []) or []
-                if not isinstance(nombres_tut, list):
-                    nombres_tut = [nombres_tut]
-                cells_tut = ff.get("CELLS LIMPIOS TUTORES", []) or []
-                if not isinstance(cells_tut, list):
-                    cells_tut = [cells_tut]
-                _partes = (nombres_tut[0] if nombres_tut else "").strip().split()
-                nombre = _partes[0] if _partes else ""
-                apellido = " ".join(_partes[1:]) if len(_partes) > 1 else ""
-                tel = (cells_tut[0] if cells_tut else "").strip()
 
         hijos = []
         for n in g["ninos"]:
@@ -208,7 +189,6 @@ async def _candidatos_a_prueba() -> list[dict]:
             },
             "todas_pruebas": hijos,
             "tutor_id": tutor_id,
-            "familia_id": g["familia_id"],
         })
     return candidatos
 
@@ -600,7 +580,7 @@ async def _ejecutar_inscripcion(
 
     if matricula > 0 and _matri_concepto in _conceptos_hoy:
         pagos_creados.append("Matrícula ya registrada hoy — no dupliqué")
-        logger.info(f"[INSCRIPCION] PAGO MATRICULA ya existe hoy para familia {familia_id} → no duplico")
+        logger.info(f"[INSCRIPCION] PAGO MATRICULA ya existe hoy para {tel} → no duplico")
     elif matricula > 0:
         pago_matri = await _post(_pagos_tabla, {
             "MONTO": matricula,
@@ -608,6 +588,7 @@ async def _ejecutar_inscripcion(
             "CONCEPTO": _matri_concepto,
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
+            "NEGOCIO": "FENIX KIDS ACADEMY",
             "EXCEL": True,
             **_campos_nino_eje,
         })
@@ -617,7 +598,7 @@ async def _ejecutar_inscripcion(
     concepto_plan = _concepto_map.get(plan, "MENSUAL")
     if monto > 0 and concepto_plan in _conceptos_hoy:
         pagos_creados.append(f"Plan {concepto_plan} ya registrado hoy — no dupliqué")
-        logger.info(f"[INSCRIPCION] PAGO {concepto_plan} ya existe hoy para familia {familia_id} → no duplico")
+        logger.info(f"[INSCRIPCION] PAGO {concepto_plan} ya existe hoy para {tel} → no duplico")
     elif monto > 0:
         pago_plan = await _post(_pagos_tabla, {
             "MONTO": monto,
@@ -625,6 +606,7 @@ async def _ejecutar_inscripcion(
             "CONCEPTO": concepto_plan,
             "ESTADO DE PAGO": "PAGADO",
             "FUENTE": "FENIX KIDS ACADEMY",
+            "NEGOCIO": "FENIX KIDS ACADEMY",
             "EXCEL": True,
             **_campos_nino_eje,
         })

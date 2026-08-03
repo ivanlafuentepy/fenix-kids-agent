@@ -26,7 +26,6 @@ import os
 import asyncio
 import logging
 import unicodedata
-from difflib import SequenceMatcher
 import httpx
 from dotenv import load_dotenv
 
@@ -40,7 +39,6 @@ _BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}"
 
 # Nombres de tablas (en base Salsa Soul)
 _LEADS     = "LEADS FENIX"
-_FAMILIAS  = "FAMILIAS FENIX"
 _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
@@ -50,7 +48,7 @@ _CONTENIDO = "CONTENIDO FENIX"
 _ANUNCIOS  = "ANUNCIOS FENIX"
 _REDES     = "REDES FENIX"
 _ASISTENCIA = "ASISTENCIA FENIX"
-_FACTURAS  = "FACTURAS"  # compartida con Salsa — las de Fenix llevan link FAMILIA FENIX
+_FACTURAS  = "FACTURAS"  # compartida con Salsa — las de Fenix llevan link TUTOR
 
 
 # ── Deducción de género por nombre ────────────────────────────────────────────
@@ -388,14 +386,6 @@ async def marcar_formulario_lead(telefono: str) -> bool:
     return await _patch(_LEADS, record_id, {"FORMULARIO": True})
 
 
-async def vincular_familia_a_lead(telefono: str, familia_record_id: str) -> bool:
-    """Vincula el LEAD con el registro de FAMILIA creado."""
-    record_id = await obtener_lead_record_id(telefono)
-    if not record_id:
-        return False
-    return await _patch(_LEADS, record_id, {"FAMILIA": [familia_record_id]})
-
-
 async def vincular_tutor_a_lead(telefono: str, tutor_id: str) -> bool:
     """Vincula el LEAD con su TUTOR (niño-eje, F7.b — reemplaza el link FAMILIA)."""
     record_id = await obtener_lead_record_id(telefono)
@@ -414,13 +404,13 @@ async def eliminar_lead(telefono: str) -> bool:
 
 async def eliminar_todo_de_telefono(telefono: str) -> dict:
     """
-    Reset completo en Airtable para un teléfono (niño-eje + legacy):
+    Reset completo en Airtable para un teléfono (niño-eje):
       1. TUTOR por CELL LIMPIO → borra sus NIÑOS con las RESERVAS de cada uno
          (por los links RESERVAS FENIX del niño) y el TUTOR
-      2. FAMILIA legacy por teléfono → ídem niños/reservas + la FAMILIA
-      3. Borra el LEAD
+      2. Borra el LEAD
 
-    Retorna dict con contadores: {"familia", "ninos", "reservas", "lead", "tutor"}.
+    Retorna dict con contadores: {"familia", "ninos", "reservas", "lead", "tutor"}
+    ("familia" queda siempre 0 — la tabla FAMILIAS FENIX fue eliminada).
     """
     contador = {"familia": 0, "ninos": 0, "reservas": 0, "lead": 0, "tutor": 0}
 
@@ -451,16 +441,7 @@ async def eliminar_todo_de_telefono(telefono: str) -> dict:
         if await _delete(_TUTORES, tutor["id"]):
             contador["tutor"] += 1
 
-    # 2. Camino legacy: familia → niños → reservas (por si quedaba ficha vieja)
-    familia = await buscar_familia_por_telefono(telefono)
-    if familia:
-        familia_id = familia["id"]
-        for nino in await obtener_ninos_de_familia(familia_id):
-            await _borrar_nino_con_reservas(nino["id"], nino.get("reserva_ids") or [])
-        if await _delete(_FAMILIAS, familia_id):
-            contador["familia"] += 1
-
-    # 3. Borrar lead
+    # 2. Borrar lead
     lead_id = await obtener_lead_record_id(telefono)
     if lead_id and await _delete(_LEADS, lead_id):
         contador["lead"] += 1
@@ -500,89 +481,7 @@ async def asegurar_grupo_prueba_admin(telefono: str) -> str | None:
     return tutor_id
 
 
-# ── FAMILIAS ──────────────────────────────────────────────────────────────────
-
-def _sin_acentos(texto: str) -> str:
-    """Elimina acentos y convierte a minúsculas para comparación."""
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', texto.lower())
-        if unicodedata.category(c) != 'Mn'
-    )
-
-
-async def buscar_familia_por_nombre(nombre: str, apellido: str = "") -> dict | None:
-    """
-    Búsqueda fuzzy de FAMILIA por nombre (y opcionalmente apellido).
-    Ignora acentos, no requiere nombre completo exacto.
-    EJE B: busca sobre BUSCAR NOMBRES TUTORES (nombres completos de los
-    tutores de la familia, texto plano ya normalizado a minúsculas sin
-    acentos) en vez de NOMBRE/APELLIDO PADRE/MADRE.
-    Retorna el record con mejor match o None.
-    """
-    texto_busqueda = f"{nombre} {apellido}".strip()
-    palabras = [_sin_acentos(p) for p in texto_busqueda.replace("-", " ").replace(".", " ").split() if len(p) > 1]
-    if not palabras:
-        return None
-
-    # Búsqueda AND: todas las palabras deben matchear
-    condiciones_and = [f'SEARCH("{p}", {{BUSCAR NOMBRES TUTORES}})>0' for p in palabras]
-    formula_and = f"AND({','.join(condiciones_and)})"
-    records = await _get_records(_FAMILIAS, formula=formula_and, max_records=10)
-
-    # Fallback OR: cualquier palabra matchea
-    if not records:
-        condiciones_or = [f'SEARCH("{p}", {{BUSCAR NOMBRES TUTORES}})>0' for p in palabras]
-        formula_or = f"OR({','.join(condiciones_or)})"
-        records = await _get_records(_FAMILIAS, formula=formula_or, max_records=10)
-
-    if not records:
-        return None
-    if len(records) == 1:
-        return records[0]
-
-    # Scoring: elegir el mejor candidato
-    def _nombre_completo_familia(rec: dict) -> str:
-        f = rec.get("fields", {})
-        nombres = f.get("NOMBRES TUTORES", [])
-        if isinstance(nombres, list):
-            nombres = " ".join(nombres)
-        return _sin_acentos(nombres or "")
-
-    def _puntaje(rec: dict) -> tuple[int, float, float]:
-        candidato = _nombre_completo_familia(rec)
-        palabras_candidato = set(candidato.split())
-        palabras_candidato_lista = list(palabras_candidato)
-        palabras_set = set(palabras)
-        exactas = sum(1 for p in palabras_set if p in palabras_candidato)
-        fuzzy = sum(
-            max(
-                (SequenceMatcher(None, p, c).ratio() for c in palabras_candidato_lista),
-                default=0.0,
-            )
-            for p in palabras
-        )
-        ratio = exactas / len(palabras_candidato) if palabras_candidato else 0.0
-        return (exactas, round(fuzzy, 3), round(ratio, 3))
-
-    records.sort(key=_puntaje, reverse=True)
-    return records[0]
-
-
-async def buscar_familia_por_telefono(telefono: str) -> dict | None:
-    """Busca una FAMILIA por el teléfono de cualquiera de sus tutores.
-
-    EJE B: busca en el rollup BUSCAR CELLS TUTORES (cells limpios de los
-    tutores de la familia, texto plano de TUTORES FENIX) en vez de los campos
-    CELL PADRE/MADRE. El teléfono entrante de WhatsApp siempre llega
-    normalizado (595...), igual que el CELL LIMPIO de cada tutor.
-    """
-    # Guarda: FIND('', ...) matchearía cualquier familia → telefono vacío = None.
-    if not telefono:
-        return None
-    formula = f"FIND('{telefono}', {{BUSCAR CELLS TUTORES}})>0"
-    records = await _get_records(_FAMILIAS, formula=formula, max_records=1)
-    return records[0] if records else None
-
+# ── TUTORES (identidad niño-eje) ─────────────────────────────────────────────
 
 async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
     """Busca un TUTOR por su CELL LIMPIO (niño-eje).
@@ -600,15 +499,12 @@ async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
 async def es_cliente_activo_por_telefono(telefono: str) -> bool:
     """Router niño-eje: ¿este teléfono es de un cliente (Aurora) o un lead (Ivan)?
 
-    Camino nuevo: TUTOR por CELL LIMPIO → sus hijos (links HIJOS COMO PADRE/MADRE)
-    → cliente si al menos un hijo tiene ESTADO != 'A PRUEBA' (vacío = cliente,
-    misma semántica que familia_es_activa). Todos A PRUEBA → lead.
+    TUTOR por CELL LIMPIO → sus hijos (links HIJOS COMO PADRE/MADRE)
+    → cliente si al menos un hijo tiene ESTADO != 'A PRUEBA' (vacío = cliente).
+    Todos A PRUEBA, sin tutor o sin hijos → lead.
 
-    FALLBACK legacy: tutor sin registro o sin hijos linkeados (fichas viejas
-    incompletas, hoy 10) → decisión vieja por FAMILIAS (familia_es_activa),
-    hasta que esas fichas se completen. Verificado 13/07: 109 tutores, el único
-    cambio de ruteo vs el modelo viejo es un caso donde el viejo ruteaba MAL
-    (hijo A PRUEBA con familia sin ESTADO PLAN → iba a Aurora siendo prueba).
+    (El fallback legacy por FAMILIAS se eliminó con la tabla — pre-check 03/08:
+    cero tutores sin hijos linkeados, cero teléfonos solo-en-FAMILIAS.)
     """
     tutor = await buscar_tutor_por_telefono(telefono)
     if tutor:
@@ -626,111 +522,14 @@ async def es_cliente_activo_por_telefono(telefono: str) -> bool:
                     except Exception as e:
                         logger.error(f"[ROUTER] Error leyendo hijo {hid} de tutor {tutor.get('id')}: {e}")
             return False
-
-    # Fallback legacy (sin tutor o sin hijos linkeados): decidir por FAMILIAS.
-    familia = await buscar_familia_por_telefono(telefono)
-    return familia_es_activa(familia)
+    return False
 
 
-def familia_es_activa(familia: dict | None) -> bool:
-    """True si la familia es un cliente real (no un lead en prueba ni una ficha vacía).
-
-    ESTADO PLAN == "A PRUEBA" → lead que pagó la prueba pero todavía no se inscribió:
-    se lo atiende en modo leads, sujeto a las reglas de lead (nocturno, grupo).
-    Una ficha SIN datos reales (sin hijos ni nombres) NO es cliente: es un registro
-    fantasma (p.ej. creado por error) y se trata como lead.
-    ACTIVO / PAUSADO / BAJA / vacío, CON datos reales → cliente (Aurora modo alumno).
-    """
-    if not familia:
-        return False
-    fields = familia.get("fields", {})
-    estado = (fields.get("ESTADO PLAN") or "").strip().upper()
-    if estado == "A PRUEBA":
-        return False
-    # Datos reales: hijos registrados o al menos un tutor con nombre.
-    # EJE B: la señal de "tiene nombre" sale del rollup NOMBRES TUTORES
-    # (de TUTORES FENIX) en vez de los campos NOMBRE PADRE/MADRE.
-    tiene_hijos = bool(fields.get("NIÑOS FENIX"))
-    tiene_tutores = bool(fields.get("NOMBRES TUTORES"))
-    return tiene_hijos or tiene_tutores
-
-
-async def marcar_control_datos(familia_id: str) -> bool:
-    """Marca CONTROL DATOS = True en FAMILIAS FENIX."""
-    return await _patch(_FAMILIAS, familia_id, {"CONTROL DATOS": True})
-
-
-async def obtener_tutores_de_familia(familia_id: str) -> list[dict]:
-    """
-    EJE B (lectura) — Retorna los tutores de una familia desde TUTORES FENIX.
-
-    FALLBACK: si la familia todavía no tiene registros en TUTORES (no migrada o
-    creada antes del dual-write), deriva los tutores de los campos PADRE/MADRE
-    viejos de FAMILIAS. Así las lecturas que se migren a TUTORES siguen funcionando
-    en transición sin romperse para ninguna familia.
-
-    Formato uniforme por tutor:
-    {id, nombre, apellido, apodo, ci, cell, cell_limpio, email,
-     fecha_nacimiento, parentesco, es_quien_paga}
-    """
-    # Leer la familia: IDs de tutores (link inverso) + campos viejos para el fallback.
-    fam_fields: dict = {}
-    tutor_ids: list = []
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
-            if r.status_code == 200:
-                fam_fields = r.json().get("fields", {})
-                tutor_ids = fam_fields.get("TUTORES FENIX", []) or []
-        except Exception as e:
-            logger.error(f"Error obteniendo familia {familia_id}: {e}")
-
-    # Camino normal: leer cada tutor de TUTORES FENIX.
-    if tutor_ids:
-        resultado = []
-        async with httpx.AsyncClient() as client:
-            for tid in tutor_ids:
-                try:
-                    r = await client.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
-                    if r.status_code == 200:
-                        resultado.append(_tutor_a_dict(tid, r.json().get("fields", {})))
-                except Exception as e:
-                    logger.error(f"Error obteniendo tutor {tid}: {e}")
-        if resultado:
-            return resultado
-
-    # FALLBACK: derivar de los campos PADRE/MADRE viejos del registro de la familia.
-    fallback = []
-    for rol, suf in (("Papá", "PADRE"), ("Mamá", "MADRE")):
-        nombre = (fam_fields.get(f"NOMBRE {suf}") or "").strip()
-        if not nombre:
-            continue
-        fallback.append({
-            "id": "",
-            "nombre": nombre,
-            "apellido": (fam_fields.get(f"APELLIDO {suf}") or "").strip(),
-            "apodo": (fam_fields.get(f"APODO {suf}") or "").strip(),
-            "ci": (fam_fields.get(f"CI {suf}") or "").strip(),
-            "cell": (fam_fields.get(f"CELL {suf}") or "").strip(),
-            "cell_limpio": (fam_fields.get(f"CELL LIMPIO {suf}") or "").strip(),
-            "email": (fam_fields.get(f"EMAIL {suf}") or "").strip(),
-            "fecha_nacimiento": fam_fields.get(f"FECHA NACIMIENTO {suf}", ""),
-            "parentesco": rol,
-            "es_quien_paga": False,
-        })
-    return fallback
-
-
-async def crear_o_actualizar_tutor(persona: dict, parentesco: str, familia_id: str = "") -> str | None:
+async def crear_o_actualizar_tutor(persona: dict, parentesco: str) -> str | None:
     """
     Crea/actualiza un registro en TUTORES FENIX (niño-eje, F7.b).
     Idempotente por CELL LIMPIO + PARENTESCO: el tutor se identifica por su
-    teléfono, NO por la familia — una persona = un registro, aunque existan
-    fichas FAMILIAS duplicadas.
-
-    familia_id es opcional y solo mantiene el link legacy FAMILIA durante la
-    transición (si el tutor existe y no está linkeado, se agrega el link).
-    Las altas nuevas sin FAMILIAS lo omiten; el parámetro muere con la tabla.
+    teléfono — una persona = un registro.
 
     persona = {nombre, apellido, ci, telefono, email, fecha_nacimiento}
     parentesco = "Papá" | "Mamá" | "Tutor"
@@ -754,8 +553,7 @@ async def crear_o_actualizar_tutor(persona: dict, parentesco: str, familia_id: s
         campos["FECHA NACIMIENTO"] = persona["fecha_nacimiento"]
 
     # Idempotencia: buscar tutor existente por CELL LIMPIO (fórmula texto,
-    # server-side) y confirmar el PARENTESCO en Python. OJO: el link FAMILIA no
-    # se puede filtrar con FIND(id, ARRAYJOIN(...)) — devuelve nombres, no ids.
+    # server-side) y confirmar el PARENTESCO en Python.
     if tel:
         tel_norm = re.sub(r"[^0-9]", "", tel)
         if tel_norm.startswith("0"):
@@ -764,80 +562,13 @@ async def crear_o_actualizar_tutor(persona: dict, parentesco: str, familia_id: s
         for c in candidatos:
             cf = c.get("fields", {})
             if cf.get("PARENTESCO") == parentesco:
-                # Transición: si vino familia_id y el tutor no la tiene linkeada,
-                # sumar el link (merge, sin pisar familias previas).
-                if familia_id and familia_id not in (cf.get("FAMILIA") or []):
-                    campos["FAMILIA"] = (cf.get("FAMILIA") or []) + [familia_id]
                 await _patch(_TUTORES, c["id"], campos)
                 return c["id"]
 
-    if familia_id:
-        campos["FAMILIA"] = [familia_id]
     campos["PARENTESCO"] = parentesco
     resultado = await _post(_TUTORES, campos)
     if resultado:
-        logger.info(f"Tutor creado: {resultado['id']} ({parentesco}) familia={familia_id or 'sin familia (niño-eje)'}")
-        return resultado["id"]
-    return None
-
-
-async def crear_familia(datos: dict) -> str | None:
-    """
-    Crea un registro en FAMILIAS con los datos de padre y madre.
-
-    datos = {
-        "padre": {"nombre", "apellido", "ci", "telefono", "email", "fecha_nacimiento"},
-        "madre": {"nombre", "apellido", "ci", "telefono", "email", "fecha_nacimiento"},
-    }
-
-    Retorna el record_id de la FAMILIA creada.
-    """
-    campos: dict = {}
-
-    padre = datos.get("padre") or {}
-    if padre.get("nombre"):
-        campos["NOMBRE PADRE"] = padre["nombre"]
-    if padre.get("apellido"):
-        campos["APELLIDO PADRE"] = padre["apellido"]
-    if padre.get("ci"):
-        campos["CI PADRE"] = str(padre["ci"]).strip()
-    if padre.get("email"):
-        campos["EMAIL PADRE"] = padre["email"]
-    if padre.get("telefono"):
-        campos["CELL PADRE"] = str(padre["telefono"]).strip()
-    if padre.get("fecha_nacimiento"):
-        campos["FECHA NACIMIENTO PADRE"] = padre["fecha_nacimiento"]
-
-    madre = datos.get("madre") or {}
-    if madre.get("nombre"):
-        campos["NOMBRE MADRE"] = madre["nombre"]
-    if madre.get("apellido"):
-        campos["APELLIDO MADRE"] = madre["apellido"]
-    if madre.get("ci"):
-        campos["CI MADRE"] = str(madre["ci"]).strip()
-    if madre.get("email"):
-        campos["EMAIL MADRE"] = madre["email"]
-    if madre.get("telefono"):
-        campos["CELL MADRE"] = str(madre["telefono"]).strip()
-    if madre.get("fecha_nacimiento"):
-        campos["FECHA NACIMIENTO MADRE"] = madre["fecha_nacimiento"]
-
-    if not campos:
-        logger.warning("crear_familia: no hay datos suficientes")
-        return None
-
-    resultado = await _post(_FAMILIAS, campos)
-    if resultado:
-        logger.info(f"Familia creada: {resultado['id']}")
-        # Escritura dual (EJE B) — materializar padre/madre en TUTORES FENIX.
-        # Aislado: nunca rompe la creación de la familia si TUTORES falla.
-        try:
-            if padre.get("nombre"):
-                await crear_o_actualizar_tutor(padre, "Papá", familia_id=resultado["id"])
-            if madre.get("nombre"):
-                await crear_o_actualizar_tutor(madre, "Mamá", familia_id=resultado["id"])
-        except Exception as e:
-            logger.error(f"[TUTORES] dual-write en crear_familia falló: {e}")
+        logger.info(f"Tutor creado: {resultado['id']} ({parentesco})")
         return resultado["id"]
     return None
 
@@ -846,7 +577,6 @@ async def crear_familia(datos: dict) -> str | None:
 
 async def crear_nino(
     datos_nino: dict,
-    familia_id: str = "",
     *,
     padre_id: str = "",
     madre_id: str = "",
@@ -855,10 +585,10 @@ async def crear_nino(
     """
     Crea un registro en NIÑOS (niño-eje, F7.b).
 
-    - padre_id / madre_id: links directos a TUTORES FENIX (el modelo nuevo).
-    - estado: ESTADO explícito del niño (A PRUEBA / ACTIVO / ...). Si no viene
-      y hay familia_id, se espeja el ESTADO PLAN de la familia (transición).
-    - familia_id: link legacy a FAMILIAS, opcional — muere con la tabla.
+    - padre_id / madre_id: links directos a TUTORES FENIX.
+    - estado: ESTADO explícito del niño (A PRUEBA / ACTIVO / ...). SIEMPRE debe
+      venir del flujo que crea al niño — sin estado el niño queda vacío = cliente
+      y el router mandaría un lead a Aurora.
 
     datos_nino = {nombre, apellido, ci, fecha_nacimiento, sexo, talla_remera}
     Retorna el record_id del NIÑO creado.
@@ -905,28 +635,15 @@ async def crear_nino(
         campos["PADRE"] = [padre_id]
     if madre_id:
         campos["MADRE"] = [madre_id]
-    if familia_id:
-        campos["FAMILIA"] = [familia_id]
 
-    # ESTADO del niño: explícito si vino (modelo nuevo); si no, espeja el
-    # ESTADO PLAN de la familia (transición). Sin familia ni estado → vacío
-    # (= cliente, misma semántica que familia_es_activa).
     if estado:
         campos["ESTADO"] = estado.strip()
-    elif familia_id:
-        try:
-            async with httpx.AsyncClient() as _cl_est:
-                _r_est = await _cl_est.get(f"{_BASE_URL}/{_FAMILIAS}/{familia_id}", headers=_headers(), timeout=10)
-                if _r_est.status_code == 200:
-                    _estado_flia = (_r_est.json().get("fields", {}).get("ESTADO PLAN") or "").strip()
-                    if _estado_flia:
-                        campos["ESTADO"] = _estado_flia
-        except Exception as e:
-            logger.warning(f"[NIÑO] No pude espejar ESTADO de la familia {familia_id}: {e}")
+    else:
+        logger.warning(f"[NIÑO] crear_nino sin ESTADO explícito ({datos_nino.get('nombre')}) — queda vacío (= cliente)")
 
     resultado = await _post(_NINOS, campos)
     if resultado:
-        logger.info(f"Niño creado: {resultado['id']} familia={familia_id or '-'} padre={padre_id or '-'} madre={madre_id or '-'} estado={campos.get('ESTADO', '-')}")
+        logger.info(f"Niño creado: {resultado['id']} padre={padre_id or '-'} madre={madre_id or '-'} estado={campos.get('ESTADO', '-')}")
         if datos_nino.get("nombre"):
             from agent.concurrencia import _fire_and_forget
             from agent.voces_alumnos import generar_audios_nino
@@ -976,18 +693,13 @@ def _tutor_a_dict(tutor_id: str, f: dict) -> dict:
     }
 
 
-async def obtener_grupo_familiar(telefono: str, familia_id: str = "") -> dict | None:
+async def obtener_grupo_familiar(telefono: str) -> dict | None:
     """Grupo familiar por teléfono (niño-eje): tutor por CELL LIMPIO → sus hijos
     (links HIJOS COMO PADRE/MADRE) → todos los tutores de esos hijos (papá y
     mamá aunque escriba uno solo).
 
-    Retorna {"tutores": [...], "hijos": [...]} en los formatos uniformes de
-    obtener_tutores_de_familia / obtener_ninos_de_familia, o None si el
-    teléfono no es de nadie conocido.
-
-    FALLBACK legacy: si el tutor no existe o no tiene hijos linkeados (fichas
-    viejas incompletas) — o si se pasa familia_id (modo padre del admin) y el
-    teléfono no matchea ningún tutor — deriva de FAMILIAS como siempre.
+    Retorna {"tutores": [...], "hijos": [...]} en formato uniforme
+    (_tutor_a_dict / _nino_a_dict), o None si el teléfono no es de nadie conocido.
     """
     tutor = await buscar_tutor_por_telefono(telefono)
     if tutor:
@@ -1018,52 +730,7 @@ async def obtener_grupo_familiar(telefono: str, familia_id: str = "") -> dict | 
                         logger.error(f"[GRUPO] Error leyendo tutor {tid}: {e}")
             if hijos:
                 return {"tutores": tutores, "hijos": hijos}
-
-    # Fallback legacy: derivar de FAMILIAS (ficha incompleta o familia_id guardado).
-    fid = familia_id
-    if not fid:
-        familia = await buscar_familia_por_telefono(telefono)
-        fid = familia["id"] if familia else ""
-    if not fid:
-        return None
-    tutores = await obtener_tutores_de_familia(fid)
-    hijos = await obtener_ninos_de_familia(fid)
-    if not tutores and not hijos:
-        return None
-    return {"tutores": tutores, "hijos": hijos}
-
-
-async def obtener_ninos_de_familia(familia_id: str) -> list[dict]:
-    """
-    Retorna la lista de NIÑOS vinculados a una FAMILIA con todos sus datos.
-    Lee los IDs de niños del registro de la familia y los fetchea uno por uno.
-    """
-    # Leer el registro de la familia para obtener los IDs de NIÑOS FENIX
-    url = f"{_BASE_URL}/{_FAMILIAS}/{familia_id}"
-    nino_ids = []
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.get(url, headers=_headers(), timeout=10)
-            if r.status_code == 200:
-                nino_ids = r.json().get("fields", {}).get("NIÑOS FENIX", [])
-        except Exception as e:
-            logger.error(f"Error obteniendo familia {familia_id}: {e}")
-
-    if not nino_ids:
-        return []
-
-    # Fetchear cada niño por ID
-    resultado = []
-    async with httpx.AsyncClient() as client:
-        for nino_id in nino_ids:
-            try:
-                url_nino = f"{_BASE_URL}/{_NINOS}/{nino_id}"
-                r = await client.get(url_nino, headers=_headers(), timeout=10)
-                if r.status_code == 200:
-                    resultado.append(_nino_a_dict(nino_id, r.json().get("fields", {})))
-            except Exception as e:
-                logger.error(f"Error obteniendo niño {nino_id}: {e}")
-    return resultado
+    return None
 
 
 async def obtener_ninos_al_dia() -> list[dict]:
@@ -1265,14 +932,9 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                                     edad = f"{_anios},{_meses}"
                                 except ValueError:
                                     pass
-                        familia_ids = res_fields.get("FAMILIAS", []) or nf.get("FAMILIA", [])
                         # es_prueba (niño-eje, F7.b): el ESTADO vive en el NIÑO
-                        # (backfilleado C0, se setea al crear). Respaldo durante
-                        # la transición: lookup ESTADO PLAN de la familia (lista)
-                        # — las reservas nuevas sin link FAMILIAS no lo traen.
+                        # (backfilleado C0, se setea al crear).
                         _estado_nino = (nf.get("ESTADO") or "").strip()
-                        _estado_plan = res_fields.get("ESTADO PLAN") or [""]
-                        _estado_plan = _estado_plan[0] if isinstance(_estado_plan, list) else _estado_plan
                         ninos.append({
                             "id": nino_id,
                             "reserva_id": res_id,
@@ -1280,10 +942,12 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                             "apellido": nf.get("APELLIDO", ""),
                             "edad": edad,
                             "apodo": nf.get("APODO", ""),
-                            "familia_id": familia_ids[0] if familia_ids else "",
+                            # clave conservada por compat con consumidores (HQ):
+                            # FAMILIAS FENIX ya no existe, siempre vacío
+                            "familia_id": "",
                             "presente": res_fields.get("PRESENTE", False),
                             "ausente": res_fields.get("AUSENTE", False),
-                            "es_prueba": _estado_nino == "A PRUEBA" or _estado_plan == "A PRUEBA",
+                            "es_prueba": _estado_nino == "A PRUEBA",
                         })
             except Exception as e:
                 logger.error(f"Error obteniendo reserva/niño: {e}")
@@ -1360,50 +1024,6 @@ async def eliminar_reserva(reserva_id: str) -> bool:
     return await _delete(_RESERVAS, reserva_id)
 
 
-# ── Flujo completo: crear familia + niños desde datos del formulario ──────────
-
-async def crear_familia_completa(
-    telefono: str,
-    datos_formulario: dict,
-) -> tuple[str | None, list[str]]:
-    """
-    Crea FAMILIA + NIÑOS a partir de los datos extraídos por Haiku.
-    Vincula la FAMILIA al LEAD.
-
-    Retorna (familia_id, [nino_ids])
-    """
-    from agent.ab_test import guardar_familia_id
-
-    # Crear FAMILIA
-    familia_id = await crear_familia({
-        "padre": datos_formulario.get("padre"),
-        "madre": datos_formulario.get("madre"),
-    })
-
-    if not familia_id:
-        logger.error(f"No se pudo crear FAMILIA para {telefono}")
-        return None, []
-
-    # Guardar familia_id en estado local
-    await guardar_familia_id(telefono, familia_id)
-
-    # Vincular LEAD → FAMILIA
-    await vincular_familia_a_lead(telefono, familia_id)
-
-    # Crear NIÑOS
-    nino_ids = []
-    for nino_data in datos_formulario.get("ninos", []):
-        nino_id = await crear_nino(nino_data, familia_id)
-        if nino_id:
-            nino_ids.append(nino_id)
-
-    # Marcar formulario completo en LEADS
-    await marcar_formulario_lead(telefono)
-
-    logger.info(f"Familia completa creada para {telefono}: familia={familia_id}, niños={nino_ids}")
-    return familia_id, nino_ids
-
-
 async def crear_grupo_a_prueba(
     telefono: str,
     nombre_tutor: str,
@@ -1451,12 +1071,6 @@ async def crear_grupo_a_prueba(
                 _campos_upd["APELLIDO"] = apellido_tutor
             await _patch(_TUTORES, tutor_id, _campos_upd)
     else:
-        # Guard legacy: familia vieja con hijos y sin registro de tutor para este
-        # cel → no duplicar niños; el fallback de lecturas la sigue resolviendo.
-        familia_legacy = await buscar_familia_por_telefono(telefono)
-        if familia_legacy and (familia_legacy.get("fields", {}) or {}).get("NIÑOS FENIX"):
-            logger.info(f"[A PRUEBA] Familia legacy con hijos para {telefono}: {familia_legacy['id']} — no creo grupo nuevo")
-            return None, []
         genero = deducir_genero(nombre_tutor)
         parentesco = "Mamá" if genero == "MUJER" else "Papá"
         tutor_id = await crear_o_actualizar_tutor(
@@ -1485,7 +1099,6 @@ async def crear_grupo_a_prueba(
 
 
 async def registrar_pago_fenix(
-    familia_id: str,
     monto: int,
     concepto: str = "PRUEBA",
     metodo: str = "TRANSFER",
@@ -1495,30 +1108,24 @@ async def registrar_pago_fenix(
     """Crea un registro de PAGO en la tabla PAGOS (niño-eje, corte F7): linkea
     a NIÑOS FENIX (los hermanos que cubre — un pago, un monto, N hermanos;
     NUNCA se parte), a PAGA (el tutor que puso la plata) y al LEAD FENIX si se
-    pasa lead_id. FAMILIA FENIX ya NO se escribe (2026-07-13); familia_id queda
-    como fallback de resolución para fichas legacy.
+    pasa lead_id.
 
     El código es la ÚNICA fuente del pago. Idempotente: si ya hay un PAGO de
-    prueba registrado HOY (visto por los niños o la familia legacy), no lo duplica.
+    prueba registrado HOY (visto por los PAGOS de los niños), no lo duplica.
 
     Retorna el record_id del PAGO (nuevo o el existente) o None si falla.
     """
-    if monto <= 0 or not (telefono or familia_id):
-        logger.warning(f"[PAGO] registrar_pago_fenix sin destinatario o monto<=0: familia={familia_id} tel={telefono} monto={monto}")
+    if monto <= 0 or not telefono:
+        logger.warning(f"[PAGO] registrar_pago_fenix sin teléfono o monto<=0: tel={telefono} monto={monto}")
         return None
 
-    # Niños que cubre el pago: grupo familiar (tutor → hijos), con fallback
-    # legacy a FAMILIAS adentro de obtener_grupo_familiar
-    grupo = await obtener_grupo_familiar(telefono, familia_id=familia_id or "")
+    # Niños que cubre el pago: grupo familiar (tutor → hijos)
+    grupo = await obtener_grupo_familiar(telefono)
     nino_ids = [h["id"] for h in (grupo or {}).get("hijos", []) if h.get("id")]
 
-    # Guard anti-duplicado: ¿ya hay un PAGO de prueba creado hoy? Unión de los
-    # PAGOS de los niños (link inverso, modelo nuevo) y de la familia legacy.
+    # Guard anti-duplicado: ¿ya hay un PAGO de prueba creado hoy? (unión de los
+    # PAGOS de los niños, link inverso)
     pago_ids: list[str] = []
-    if familia_id:
-        fam = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-        if fam:
-            pago_ids = list((fam[0].get("fields", {}) or {}).get("PAGOS", []) or [])
     if nino_ids:
         async with httpx.AsyncClient() as client:
             for nid in nino_ids:
@@ -1542,7 +1149,7 @@ async def registrar_pago_fenix(
             pconc = (pf.get("CONCEPTO") or "")
             pfecha = (pf.get("FECHA") or "")[:10]
             if pconc.startswith("PRUEBA") and pfecha == hoy:
-                logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para familia {familia_id} → no duplico ({p['id']})")
+                logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para {telefono} → no duplico ({p['id']})")
                 return p["id"]
 
     # Tutor pagador (PAGA): el tutor cuyo cel coincide con quien mandó el
@@ -1580,9 +1187,9 @@ async def registrar_pago_fenix(
     record = await _post(_PAGOS, campos_pago)
     if record:
         rid = record.get("id")
-        logger.info(f"[PAGO] Creado PAGO {concepto} {monto} para familia {familia_id} → {rid}")
+        logger.info(f"[PAGO] Creado PAGO {concepto} {monto} para {telefono} → {rid}")
         return rid
-    logger.error(f"[PAGO] No se pudo crear PAGO para familia {familia_id}")
+    logger.error(f"[PAGO] No se pudo crear PAGO para {telefono}")
     return None
 
 
@@ -1979,11 +1586,11 @@ async def obtener_nombre_nino(nino_id: str) -> dict | None:
 
 async def listar_facturas_fenix_para_enviar() -> list[dict]:
     """Facturas de FENIX emitidas por el robot facturador (FACTURADO=True +
-    COMPROBANTE SET + PDF cargado) que todavía no se enviaron a la familia.
-    Niño-eje (F6): la fila de Fenix se detecta por el link TUTOR (o el legacy
-    FAMILIA FENIX); las de Salsa (link ALUMNO) las reparte Dorita."""
+    COMPROBANTE SET + PDF cargado) que todavía no se enviaron.
+    Niño-eje: la fila de Fenix se detecta por el link TUTOR; las de Salsa
+    (link ALUMNO) las reparte Dorita."""
     formula = ("AND({FACTURADO}=TRUE(), {ENVIADO}=FALSE(), {COMPROBANTE SET}!='', "
-               "OR({TUTOR}!='', {FAMILIA FENIX}!=''))")
+               "{TUTOR}!='')")
     records = await _get_records(_FACTURAS, formula=formula, max_records=20)
     out = []
     for r in records:
@@ -1992,7 +1599,6 @@ async def listar_facturas_fenix_para_enviar() -> list[dict]:
         out.append({
             "record_id": r["id"],
             "tutor_ids": f.get("TUTOR") or [],
-            "familia_ids": f.get("FAMILIA FENIX") or [],
             "pdf_url": adj[0].get("url", "") if adj else "",
             "pdf_filename": (adj[0].get("filename") or "factura.pdf") if adj else "factura.pdf",
         })
@@ -2012,22 +1618,6 @@ async def obtener_contacto_tutor(tutor_id: str) -> tuple[str, str]:
     nombre = (f.get("APODO") or f.get("NOMBRE") or "").strip()
     return tel, nombre
 
-
-async def obtener_contacto_familia(familia_id: str) -> tuple[str, str]:
-    """(telefono, nombre) del responsable de la familia — LEGACY (facturas viejas
-    sin link TUTOR). Usa las fórmulas CELL LIMPIO con fallback al crudo."""
-    if not familia_id:
-        return "", ""
-    recs = await _get_records(_FAMILIAS, formula=f"RECORD_ID()='{familia_id}'", max_records=1)
-    if not recs:
-        return "", ""
-    f = recs[0].get("fields", {})
-    tel = (f.get("CELL LIMPIO PADRE") or f.get("CELL LIMPIO MADRE")
-           or f.get("CELL PADRE") or f.get("CELL MADRE") or "")
-    tel = "".join(c for c in str(tel) if c.isdigit())
-    nombre = (f.get("APODO PADRE") or f.get("NOMBRE PADRE")
-              or f.get("APODO MADRE") or f.get("NOMBRE MADRE") or "").strip()
-    return tel, nombre
 
 
 async def marcar_factura_fenix_enviada(record_id: str) -> bool:

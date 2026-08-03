@@ -192,11 +192,11 @@ def _guardian_publico(g: dict) -> dict:
 @router.post("/juego/familia-codigo")
 async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | None = Header(default=None)):
     """Genera (o devuelve) el link mágico de un tutor (F5: código por tutor).
-    Body: {telefono | tutor_id | familia_id (legacy: resuelve al tutor pagador)}."""
+    Body: {telefono | tutor_id}."""
     _auth(x_juego_key)
     from agent.airtable_client import (
         _patch, _TUTORES, _BASE_URL, _headers,
-        buscar_tutor_por_telefono, obtener_tutores_de_familia,
+        buscar_tutor_por_telefono,
     )
     import httpx, secrets
 
@@ -208,17 +208,6 @@ async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | Non
                 tutor = r.json()
     elif payload.get("telefono"):
         tutor = await buscar_tutor_por_telefono(str(payload["telefono"]))
-    elif payload.get("familia_id"):
-        # Compat legacy: familia_id → tutor pagador (o el primero con cel)
-        _tuts = [t for t in await obtener_tutores_de_familia(str(payload["familia_id"])) if t.get("id")]
-        _eleg = next((t for t in _tuts if t.get("es_quien_paga")), None) \
-            or next((t for t in _tuts if (t.get("cell_limpio") or "").strip()), None) \
-            or (_tuts[0] if _tuts else None)
-        if _eleg:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(f"{_BASE_URL}/{_TUTORES}/{_eleg['id']}", headers=_headers(), timeout=10)
-                if r.status_code == 200:
-                    tutor = r.json()
     if not tutor:
         raise HTTPException(status_code=404, detail="tutor no encontrado")
 

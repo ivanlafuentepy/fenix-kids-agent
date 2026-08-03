@@ -40,15 +40,14 @@ from agent.voces_alumnos import GUIONES, generar_audios_nino
 
 
 async def alumnos_activos() -> list[str]:
-    """Nombres de NIÑOS de familias ACTIVAS (no A PRUEBA) — para no quemar quota."""
-    from agent.airtable_client import _get_records, _FAMILIAS, obtener_ninos_de_familia
-    # misma definición que familia_es_activa: todo lo que NO esté A PRUEBA
-    familias = await _get_records(_FAMILIAS, formula="NOT({ESTADO PLAN}='A PRUEBA')", max_records=300)
+    """Nombres de NIÑOS activos (no A PRUEBA) — para no quemar quota (niño-eje)."""
+    from agent.airtable_client import _get_records, _NINOS
+    ninos = await _get_records(_NINOS, formula="NOT({ESTADO}='A PRUEBA')", max_records=1000)
     nombres = []
-    for fam in familias:
-        for nino in await obtener_ninos_de_familia(fam["id"]):
-            if nino.get("nombre"):
-                nombres.append(nino["nombre"].strip())
+    for n in ninos:
+        nombre = (n.get("fields", {}) or {}).get("NOMBRE", "")
+        if nombre.strip():
+            nombres.append(nombre.strip())
     return sorted(set(nombres))
 
 

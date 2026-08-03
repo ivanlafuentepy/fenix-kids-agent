@@ -37,7 +37,7 @@ from agent.ab_test import (
     marcar_conversion, esta_convertido,
     guardar_airtable_record_id, obtener_airtable_record_id,
     obtener_agent_actual, actualizar_agent_actual,
-    obtener_familia_id, guardar_familia_id,
+    obtener_familia_id,
     marcar_noche_pendiente, tiene_noche_pendiente,
     obtener_estado_flags, actualizar_estado_flags,
 )
@@ -80,14 +80,12 @@ from agent.pagos import (
 from agent.airtable_client import (
     crear_lead, obtener_lead_record_id,
     actualizar_conversion_lead, actualizar_agent_lead,
-    marcar_formulario_lead, crear_familia_completa, crear_familia, crear_nino,
-    obtener_ninos_de_familia, obtener_tutores_de_familia, crear_reserva,
-    buscar_familia_por_telefono, buscar_familia_por_nombre, familia_es_activa,
+    marcar_formulario_lead, crear_nino, crear_reserva,
     es_cliente_activo_por_telefono, obtener_grupo_familiar, buscar_tutor_por_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario,
     actualizar_datos_lead, actualizar_diagnostico_lead,
-    actualizar_reserva_lead, marcar_control_datos,
+    actualizar_reserva_lead,
     obtener_ninos_por_horario, formatear_lista_ninos,
     obtener_horarios_disponibles, obtener_redes,
 )
@@ -1188,16 +1186,14 @@ async def reset_total_admin(telefono: str, _: bool = Depends(_require_admin)):
 @app.post("/restaurar-aurora/{telefono}")
 async def restaurar_aurora(telefono: str, _: bool = Depends(_require_admin)):
     """Restaura un número a Aurora sin borrar historial."""
-    familia = await buscar_familia_por_telefono(telefono)
-    if familia:
-        await guardar_familia_id(telefono, familia["id"])
+    tutor = await buscar_tutor_por_telefono(telefono)
     await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
     await reactivar_dorita(telefono)
     return {
         "status": "ok",
         "telefono": telefono,
         "agent": "aurora",
-        "familia_id": familia["id"] if familia else None,
+        "tutor_id": tutor["id"] if tutor else None,
     }
 
 
@@ -3187,10 +3183,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         _reservas_airtable = None
         if agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
             # Grupo familiar niño-eje: tutor por teléfono → hijos → tutores.
-            # El familia_id guardado (modo padre admin) alimenta el fallback
-            # legacy por FAMILIAS dentro de obtener_grupo_familiar.
-            fam_id = await obtener_familia_id(telefono)
-            grupo = await obtener_grupo_familiar(telefono, familia_id=fam_id or "")
+            grupo = await obtener_grupo_familiar(telefono)
 
             # ── Menú de botones para inscriptos (Aurora) ──────────────────
             # Si el menú maneja el turno (saludo+botones o una acción como QR),
@@ -3607,9 +3600,6 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if not respuesta:
                 respuesta = "Contame en qué te puedo ayudar 😊"
                 logger.warning(f"[ANTI-REP] Respuesta quedó vacía tras limpieza para {telefono} — fallback")
-
-        # ── Nota: FAMILIAS FENIX solo se crea en inscripción directa,
-        #    no en clase de prueba (los leads tienen su propio flujo). ──
 
         # ── Actualizar datos del lead en Airtable (nombre, hijo, edad) ────
         if agent_actual == "ivan":
@@ -4339,9 +4329,9 @@ async def _procesar_confirmacion_reserva(
             logger.error(f"Error calculando fecha: {e}")
 
     # ── Obtener niños del grupo familiar (para nombre real + RESERVAS) ────────
-    # F7.b: tutor → hijos (fallback legacy FAMILIAS adentro de obtener_grupo_familiar)
+    # F7.b: tutor → hijos
     from agent.airtable_client import obtener_grupo_familiar as _ogf_res
-    _grupo_res = await _ogf_res(telefono, familia_id=(await obtener_familia_id(telefono)) or "")
+    _grupo_res = await _ogf_res(telefono)
     ninos = (_grupo_res or {}).get("hijos", [])
 
     # Nombre display para el evento: "Mateo González" | "Mateo y Sofía González" | fallback

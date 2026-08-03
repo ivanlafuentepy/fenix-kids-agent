@@ -20,7 +20,7 @@ async def gestionar_reserva(
     accion: str,
     fecha: str | None = None,
     hora: str | None = None,
-    familia_id: str | None = None,
+    familia_id: str | None = None,  # ignorado — compat con schemas de tool viejos
 ) -> dict:
     """
     Tool unificada para agendar, reagendar y cancelar reservas (niño-eje, F7.b).
@@ -28,9 +28,7 @@ async def gestionar_reserva(
     - reagendar: busca reservas futuras por los links del niño, cancela, crea nueva
     - cancelar: cancela reservas de la fecha/hora indicada
 
-    El grupo se resuelve por teléfono (tutor → hijos; fallback legacy FAMILIAS
-    adentro de obtener_grupo_familiar). familia_id solo se usa como pista para
-    el fallback y para el link transitorio RESERVAS→FAMILIAS.
+    El grupo se resuelve por teléfono (tutor → hijos).
     """
     accion = accion.lower().strip()
 
@@ -42,7 +40,7 @@ async def gestionar_reserva(
             "message": f"Acción '{accion}' no válida. Usar: agendar, reagendar, cancelar.",
         }
 
-    grupo = await obtener_grupo_familiar(telefono, familia_id=familia_id or "")
+    grupo = await obtener_grupo_familiar(telefono)
     ninos = (grupo or {}).get("hijos", [])
     if not ninos:
         return {

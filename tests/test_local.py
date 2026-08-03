@@ -30,9 +30,8 @@ from agent.ab_test import (
 )
 from agent.airtable_client import (
     crear_lead, actualizar_conversion_lead, actualizar_agent_lead,
-    crear_familia_completa, eliminar_lead,
-    buscar_familia_por_telefono, buscar_familia_por_nombre,
-    obtener_ninos_de_familia,
+    eliminar_lead,
+    obtener_grupo_familiar, _get_records, _TUTORES,
 )
 # Importar las funciones de detección (sin levantar el server).
 # Nixie ya no existe (el router decide ivan/aurora por familia en DB) y
@@ -42,7 +41,7 @@ from agent.main import _build_contexto_aurora
 from agent.detectores_conv import _detectar_confirmacion_aurora
 
 TELEFONO_TEST = "595900000001"  # número de prueba — fácil de identificar y borrar
-_MODO_PADRE = None  # familia simulada (record de Airtable)
+_MODO_PADRE = None  # grupo familiar simulado ({"tutores": [...], "hijos": [...]})
 
 
 async def mostrar_estado():
@@ -74,21 +73,29 @@ async def reset_completo():
 
 
 async def activar_modo_padre(nombre_apellido: str):
-    """Busca familia por nombre (fuzzy) y activa modo Aurora simulando ser ese padre."""
+    """Busca un TUTOR por nombre y activa modo Aurora simulando ser ese padre (niño-eje)."""
     global _MODO_PADRE
     texto = nombre_apellido.strip()
     if not texto:
         print("[padre] Usá: padre Nombre (o Nombre Apellido)")
         return
-    familia = await buscar_familia_por_nombre(texto)
-    if not familia:
-        print(f"[padre] No encontré familia con '{nombre} {apellido}' en FAMILIAS FENIX")
+    palabras = [p for p in texto.split() if len(p) > 1]
+    formula = "AND(" + ",".join(
+        f"SEARCH(LOWER('{p}'), LOWER({{NOMBRE}} & ' ' & {{APELLIDO}}))>0" for p in palabras
+    ) + ")"
+    tutores = await _get_records(_TUTORES, formula=formula, max_records=1)
+    if not tutores:
+        print(f"[padre] No encontré tutor con '{texto}' en TUTORES FENIX")
         return
-    _MODO_PADRE = familia
-    campos = familia.get("fields", {})
-    hijos = await obtener_ninos_de_familia(familia["id"])
-    nombres_hijos = [h.get("apodo") or h.get("nombre") for h in hijos]
-    nombre_display = campos.get("APODO PADRE", "") or campos.get("NOMBRE PADRE", "") or campos.get("APODO MADRE", "") or campos.get("NOMBRE MADRE", "")
+    tf = tutores[0].get("fields", {}) or {}
+    cell = (tf.get("CELL LIMPIO") or "").strip()
+    grupo = await obtener_grupo_familiar(cell) if cell else None
+    if not grupo:
+        print(f"[padre] El tutor '{texto}' no tiene grupo familiar resoluble (cell={cell or '-'})")
+        return
+    _MODO_PADRE = grupo
+    nombres_hijos = [h.get("apodo") or h.get("nombre") for h in grupo.get("hijos", [])]
+    nombre_display = tf.get("APODO") or tf.get("NOMBRE") or texto
     print(f"[padre] Modo padre activado: {nombre_display}")
     print(f"[padre] Hijos: {', '.join(nombres_hijos) if nombres_hijos else 'ninguno'}")
     print(f"[padre] Aurora te va a saludar como si fueras este padre. Escribí 'hola' para empezar.")
@@ -128,19 +135,19 @@ async def procesar_mensaje(texto: str):
     contexto_extra = None
     if _MODO_PADRE and agent_actual == "aurora":
         try:
-            # En modo test: forzar CONTROL_DATOS pendiente para probar onboarding
             # (_build_contexto_aurora retorna tupla (contexto, reservas_texto))
-            contexto_extra, _ = await _build_contexto_aurora(_MODO_PADRE)
-            # NO hacemos check en CONTROL DATOS en modo test
+            contexto_extra, _ = await _build_contexto_aurora(
+                _MODO_PADRE["tutores"], _MODO_PADRE["hijos"])
         except Exception as e:
-            print(f"[airtable] Error cargando familia simulada: {e}")
+            print(f"[airtable] Error cargando grupo simulado: {e}")
     elif agent_actual == "aurora" and modo_nixie == "cliente_inscripto":
         try:
-            familia = await buscar_familia_por_telefono(telefono)
-            if familia:
-                contexto_extra, _ = await _build_contexto_aurora(familia, telefono)
+            grupo = await obtener_grupo_familiar(telefono)
+            if grupo:
+                contexto_extra, _ = await _build_contexto_aurora(
+                    grupo["tutores"], grupo["hijos"], telefono)
         except Exception as e:
-            print(f"[airtable] Error buscando familia: {e}")
+            print(f"[airtable] Error buscando grupo familiar: {e}")
 
     # Generar respuesta
     respuesta = await generar_respuesta(

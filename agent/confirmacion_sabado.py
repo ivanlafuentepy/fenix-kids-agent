@@ -72,7 +72,6 @@ async def recolectar_envios() -> list[dict]:
     """
     from agent.airtable_client import (
         obtener_ninos_al_dia,
-        obtener_tutores_de_familia,
         _get_records,
         _TUTORES,
     )
@@ -94,25 +93,12 @@ async def recolectar_envios() -> list[dict]:
             continue
 
         # Candidatos a pagador: PADRE + MADRE del niño (niño-eje).
+        # Pre-check 03/08: todo niño tiene PADRE o MADRE linkeado.
         candidatos = [
             (tid, tutor_por_id[tid])
             for tid in (f.get("PADRE") or []) + (f.get("MADRE") or [])
             if tid in tutor_por_id
         ]
-        # Fallback (niño viejo sin PADRE/MADRE): tutores de su FAMILIA.
-        if not candidatos and f.get("FAMILIA"):
-            try:
-                _de_flia = await obtener_tutores_de_familia(f["FAMILIA"][0])
-                candidatos = [
-                    (t["id"], {
-                        "NOMBRE": t.get("nombre", ""),
-                        "CELL LIMPIO": t.get("cell_limpio", ""),
-                        "ES QUIEN PAGA": t.get("es_quien_paga", False),
-                    })
-                    for t in _de_flia if t.get("id")
-                ]
-            except Exception as e:
-                logger.warning(f"[CONF-SAB] Fallback tutores de familia falló para niño {n.get('id')}: {e}")
         # Pagador: el marcado ES QUIEN PAGA; si no, el primero con teléfono.
         con_tel = [(tid, tf) for tid, tf in candidatos if (tf.get("CELL LIMPIO") or "").strip()]
         pagador = next(

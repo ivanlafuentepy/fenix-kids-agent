@@ -1016,15 +1016,15 @@ async def _followup_video_oneshot():
 
 async def _envio_facturas_fenix_loop():
     """Cada 90s: factura de FENIX emitida por el robot facturador (FACTURADO +
-    COMPROBANTE SET + PDF en FACTURA PDF) que aún NO se envió a la familia →
+    COMPROBANTE SET + PDF en FACTURA PDF) que aún NO se envió al tutor →
     manda el PDF (LIBRE si la ventana 24h está abierta, plantilla
     factura_electronica_fenix con header documento si está cerrada) → ENVIADO.
 
-    Espejo del loop de Dorita. Solo toma facturas con link FAMILIA FENIX;
+    Espejo del loop de Dorita. Solo toma facturas con link TUTOR;
     las de Salsa (link ALUMNO) las reparte Dorita."""
     from agent.memory import ventana_abierta
     from agent.airtable_client import (
-        listar_facturas_fenix_para_enviar, obtener_contacto_familia,
+        listar_facturas_fenix_para_enviar, obtener_contacto_tutor,
         marcar_factura_fenix_enviada,
     )
     from agent.telegram_bridge import grupo_telegram_para
@@ -1040,21 +1040,15 @@ async def _envio_facturas_fenix_loop():
             pendientes = await listar_facturas_fenix_para_enviar()
             for fac in pendientes:
                 try:
-                    if not (fac.get("tutor_ids") or fac.get("familia_ids")) or not fac.get("pdf_url"):
+                    if not fac.get("tutor_ids") or not fac.get("pdf_url"):
                         continue
                     if fac["record_id"] in _enviadas_sin_marcar:
                         # Ya se envió — solo reintentar el marcado, no el PDF
                         await marcar_factura_fenix_enviada(fac["record_id"])
                         _enviadas_sin_marcar.discard(fac["record_id"])
                         continue
-                    # Niño-eje (F6): contacto por el TUTOR de la factura; las
-                    # filas viejas sin link TUTOR caen al camino legacy por familia.
-                    tel, nombre = "", ""
-                    if fac.get("tutor_ids"):
-                        from agent.airtable_client import obtener_contacto_tutor
-                        tel, nombre = await obtener_contacto_tutor(fac["tutor_ids"][0])
-                    if not tel and fac.get("familia_ids"):
-                        tel, nombre = await obtener_contacto_familia(fac["familia_ids"][0])
+                    # Niño-eje: contacto por el TUTOR de la factura.
+                    tel, nombre = await obtener_contacto_tutor(fac["tutor_ids"][0])
                     if not tel:
                         logger.info(f"[FACTURA-ENVIO] rec {fac['record_id']} sin teléfono, salteo")
                         continue

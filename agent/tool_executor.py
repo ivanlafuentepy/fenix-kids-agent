@@ -27,9 +27,6 @@ _TOOLS = {
 # Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
 _TOOLS_CON_TELEFONO = {*_TOOLS.keys()}  # todas necesitan teléfono
 
-# Tools que necesitan familia_id (Aurora: operaciones sobre familias inscriptas)
-_TOOLS_CON_FAMILIA = {"gestionar_reserva"}
-
 
 async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:
     """
@@ -58,21 +55,6 @@ async def ejecutar_tool(nombre: str, params: dict, telefono: str) -> dict:
 
     if nombre in _TOOLS_CON_TELEFONO:
         params["telefono"] = telefono
-
-    # Resolver familia_id para tools de Aurora que lo necesitan
-    if nombre in _TOOLS_CON_FAMILIA and "familia_id" not in params:
-        try:
-            from agent.ab_test import obtener_familia_id
-            from agent.airtable_client import buscar_familia_por_telefono
-            fam_id = await obtener_familia_id(telefono)
-            if not fam_id:
-                fam = await buscar_familia_por_telefono(telefono)
-                if fam:
-                    fam_id = fam["id"]
-            params["familia_id"] = fam_id  # puede ser None, la tool maneja el error
-        except Exception as e:
-            logger.warning(f"[TOOL] Error resolviendo familia_id para {nombre}: {e}")
-            params["familia_id"] = None
 
     try:
         resultado = await fn(**params)
