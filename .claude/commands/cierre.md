@@ -1,6 +1,16 @@
 Ritual de cierre de sesión de FENIX KIDS AGENT.
 
+**PRINCIPIO RECTOR: el handoff es la ÚNICA redacción larga de la sesión. Todo lo demás
+(FENIX_RESUMEN.md, CONVERSACIONES_FENIX.md, memoria) son filas cortas o punteros hacia él.
+NUNCA volver a contar la historia completa en más de un lugar.**
+
 Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
+
+0. **Pedir nombre de sesion (SIEMPRE con 3 opciones marcables):**
+   - ANTES de hacer cualquier otra cosa, ofrecer el nombre con la herramienta **AskUserQuestion** — NUNCA preguntar abierto pidiendo que Iván escriba.
+   - Generar **3 propuestas de nombre** basadas en lo que se hizo en la sesión (descriptivas, no genéricas). Iván solo marca una (o usa "Other" si ninguna le cierra).
+   - Reglas: una sola pregunta, header "Nombre sesión", 3 opciones, la más representativa primera.
+   - Esperar la selección. Usar ese nombre en el handoff, resumen y commit.
 
 1. **Revisar qué cambió en esta sesión:**
    - `git log` desde el último commit que tocó docs/FENIX_RESUMEN.md
@@ -10,21 +20,53 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
 2. **Actualizar `docs/FENIX_RESUMEN.md`:**
    - **Sección 10 (Variables de entorno):** marcar como ✅ las que ya están listas, ⏳ solo las que de verdad faltan
    - **Sección 11 (Pendientes para deploy):** tachar lo hecho, agregar pendientes nuevos descubiertos
-   - **Sección 12 (Historial de cambios):** agregar UNA fila nueva con fecha de hoy y un resumen claro de lo que se hizo en esta sesión
+   - **Sección 12 (Historial de cambios):** agregar UNA fila **corta**: fecha, commits con hash, una frase de qué se hizo, y el puntero al handoff archivado (`.claude/handoffs/handoff_XXXX.md`) — **PROHIBIDO el párrafo largo**, el detalle ya vive en el handoff
+   - El historial mantiene **máximo ~15 filas**: si al agregar la nueva quedan más, mover las más viejas a `docs/FENIX_RESUMEN_archivo.md`
    - Si descubriste cosas estructurales nuevas (campos de Airtable, flows, archivos), actualizar la sección correspondiente
    - NO reescribas todo el documento — solo lo que cambió
 
+2b. **Generar handoff** en `.claude/handoff.md` — LA redacción canónica y completa de la
+    sesión (la única larga). Crear/sobreescribir con esta estructura exacta:
+
+    ```
+    # HANDOFF — [fecha Paraguay DD/MM/YYYY] — [nombre sesion]
+
+    ## Completado en esta sesion
+    [lista especifica de todo lo que hicimos, con commits]
+
+    ## En progreso (quedo a medias)
+    [que quedo incompleto y en que punto exacto]
+
+    ## Proxima sesion — arrancar por aca
+    [PRIMER paso exacto, sin ambiguedad]
+    [resto en orden de prioridad]
+
+    ## Errores encontrados hoy
+    [errores con causa y solucion — o "Ninguno"]
+
+    ## Decisiones tomadas
+    [decisiones importantes y por que]
+
+    ## Archivos modificados
+    [lista de archivos tocados hoy]
+    ```
+
+2c. **Archivar el handoff con timestamp** (NO depender de ningún hook):
+    - Ejecutar: `mkdir -p .claude/handoffs && cp .claude/handoff.md ".claude/handoffs/handoff_$(date +%Y%m%d_%H%M).md"`
+    - Guardar el nombre del archivo generado: es el **puntero** que usan los pasos siguientes.
+
 3. **Actualizar `docs/sesiones/CONVERSACIONES_FENIX.md`** (en este repo — Obsidian ya no se usa, decisión 2026-07-07; si el archivo no existe, crearlo):
-   - Agregar una sección con la fecha de hoy (`## YYYY-MM-DD`)
-   - Por cada intercambio relevante de la sesión, escribir:
-     - **Ivan:** lo que pidió (textual o parafraseado, en sus palabras)
-     - **Fenix:** resumen corto de lo que se hizo (qué archivo, qué fix, qué comando)
-   - Al final de la sección, listar los commits de la sesión con hash + mensaje
+   - Agregar **una entrada corta** con la fecha de hoy: `## YYYY-MM-DD — [nombre sesion]` +
+     2-3 líneas (qué se hizo y por qué, commits referenciados) + el puntero al handoff archivado
+   - **PROHIBIDO volver a redactar el intercambio turno por turno (Ivan:/Fenix:)** — esa
+     redacción completa ya vive en el handoff; acá va solo el resumen corto + puntero
    - NO borrar sesiones anteriores — solo agregar al final
    - Mantener el tono directo y conciso, no florear
 
 4. **Actualizar memorias persistentes** en `C:/Users/IVAN LAFUENTE/.claude/projects/C--Users-IVAN-LAFUENTE-Projects-fenix-kids-agent/memory/`:
-   - Actualizar `project_state.md` con el estado actual
+   - `project_state.md` es un **SNAPSHOT, no un historial**: agregar la nota de esta sesión
+     (unas líneas + puntero al handoff) y **mantener SOLO las últimas 5 notas** — al agregar la
+     nueva, borrar la más vieja (su contenido ya vive en FENIX_RESUMEN/CONVERSACIONES/handoffs del repo)
    - Si surgió feedback nuevo del usuario, guardarlo
    - Si surgió un pendiente importante para la próxima sesión, anotarlo en `project_next_session.md`
 
@@ -33,23 +75,23 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
    - NO incluir Co-Authored-By
    - Hacer `git push` automático después del commit — así docs/FENIX_RESUMEN.md siempre queda al día en el repo
 
-6. **Nombrar la sesión:**
-   - Preguntar: "¿Cómo le ponemos a esta sesión?"
-   - Sugerir 3 nombres cortos basados en lo que se trabajó (ej: "monitor + guardian", "fix conversacional", "precios invierno")
-   - Esperar que Ivan elija o proponga otro
-   - Registrar la sesión en el índice `memory/sesiones.md` (la extensión VS Code NO deja renombrar el panel: cachea los nombres y no relee archivos; `/rename` de la CLI tampoco se sincroniza). En vez de pelear con eso, llevamos un índice propio. Obtené el código de la sesión activa (el `.jsonl` más reciente del proyecto) y agregá una fila:
-     ```bash
-     DIR=$(ls -dt ~/.claude/projects/*fenix-kids-agent*/ | head -1)
-     SID=$(basename "$(ls -t "$DIR"*.jsonl | head -1)" .jsonl)
-     echo "$SID"
-     ```
-     Agregá a `memory/sesiones.md` una fila con: `Nombre elegido | código (SID) | fecha | resumen de 1 línea`. Si el archivo no existe, crealo con el encabezado. NUNCA edites `~/.claude/sessions/` (no funciona). Para retomar después: `claude --resume <SID>`.
+6. **Índice de sesiones** — registrar esta sesión en `memory/sesiones.md` (la extensión VS Code NO deja renombrar el panel: cachea los nombres y no relee archivos; `/rename` de la CLI tampoco se sincroniza). En vez de pelear con eso, llevamos un índice propio. Usá el nombre elegido en el paso 0. Obtené el código de la sesión activa (el `.jsonl` más reciente del proyecto):
+   ```bash
+   DIR=$(ls -dt ~/.claude/projects/*fenix-kids-agent*/ | head -1)
+   SID=$(basename "$(ls -t "$DIR"*.jsonl | head -1)" .jsonl)
+   echo "$SID"
+   ```
+   Agregá a `memory/sesiones.md` una fila con: `Nombre elegido | código (SID) | fecha | resumen de 1 línea`. Si el archivo no existe, crealo con el encabezado. NUNCA edites `~/.claude/sessions/` (no funciona). Para retomar después: `claude --resume <SID>`.
 
 7. **Avisar al usuario** con este formato exacto:
    ```
    ═══ Cierre de sesión ═══
 
-   Resumen actualizado. Cambios:
+   Handoff generado: .claude/handoff.md
+   Resumen actualizado: docs/FENIX_RESUMEN.md
+   Conversaciones actualizadas: docs/sesiones/CONVERSACIONES_FENIX.md
+
+   Cambios:
    - [punto 1]
    - [punto 2]
    - [punto 3]
@@ -60,6 +102,7 @@ Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
 
    Pendiente para próxima sesión: [lo más importante a recordar]
 
+   Handoff archivado en: .claude/handoffs/handoff_YYYYMMDD_HHMM.md
    Listo. Hasta la próxima.
    ```
 
@@ -67,6 +110,8 @@ REGLAS:
 - Si no hay nada que actualizar en el resumen (sesión sin cambios reales), avisarlo y no commitear vacío
 - Push automático al cerrar — el usuario ya lo aprobó (2026-05-25)
 - Si hay cambios sin commitear que NO son del resumen, avisar al usuario antes de tocar nada
+- **Una sola redacción larga por cierre (el handoff). Si estás escribiendo el mismo párrafo
+  por segunda vez en otro archivo, estás haciendo el cierre viejo — pará y poné el puntero.**
 
 ---
 
