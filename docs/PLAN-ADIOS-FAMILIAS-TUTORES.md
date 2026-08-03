@@ -25,24 +25,23 @@ Por eso el plan tiene DOS etapas independientes. La 1 se hace; la 2 se decide de
 ## ETAPA 1 — FAMILIAS FENIX desaparece (~2 sesiones, riesgo medio-bajo)
 
 ### 1.0 Pre-check de datos (solo lectura, antes de tocar código)
-- [ ] ¿Quedan fichas "solo-FAMILIAS"? — tutores sin `HIJOS (COMO PADRE/MADRE)`, niños sin
-      `PADRE`/`MADRE`, y teléfonos en `CELLS LIMPIOS TUTORES` de FAMILIAS que no existan
-      en `TUTORES.CELL LIMPIO` (el comentario del código habla de ~10 fichas viejas).
-      Migrarlas a mano ANTES de borrar fallbacks, o esos números caen a "lead".
+- [x] ✅ 03/08: cero fichas "solo-FAMILIAS" — la única familia sin link a TUTORES tiene a su
+      padre (Rosa Duarte) ya en TUTORES; cero teléfonos solo-en-FAMILIAS; cero niños sin
+      PADRE/MADRE; cero tutores sin hijos. Los 2 pagos FAMILIA-sin-PAGA tienen NIÑOS+NEGOCIO.
 - [ ] ¿Quién lee los lookups `RESERVAS FENIX.FAMILIA` / `.ESTADO PLAN`? (código no los usa —
       verificar vistas/interfaces de Airtable con Iván).
 
-### 1.1 Aurora — un push (código)
-- [ ] Borrar código muerto verificado: `crear_familia_completa`, `crear_familia`,
+### 1.1 Aurora — un push (código) — ✅ HECHO 03/08 (commit 6ebaf1f, deploy SUCCESS, prod HTTP 200, loop de facturas corriendo con la fórmula nueva)
+- [x] Borrar código muerto verificado: `crear_familia_completa`, `crear_familia`,
       `vincular_familia_a_lead`, `buscar_familia_por_nombre`, `marcar_control_datos`,
       `_asegurar_datos_fiscales` (facturas.py:97) + imports muertos en `main.py:83-90`
       y `resumenes.py:11`.
-- [ ] Dejar de ESCRIBIR legacy: merge de `TUTORES.FAMILIA` en `crear_o_actualizar_tutor`
+- [x] Dejar de ESCRIBIR legacy: merge de `TUTORES.FAMILIA` en `crear_o_actualizar_tutor`
       (769-775), `NIÑOS.FAMILIA` en `crear_nino` (905-909).
-- [ ] ⚠️ `crear_nino` 919-923 lee `FAMILIAS.ESTADO PLAN` para espejar `NIÑOS.ESTADO` —
+- [x] ⚠️ `crear_nino` 919-923 lee `FAMILIAS.ESTADO PLAN` para espejar `NIÑOS.ESTADO` —
       si falla en silencio el niño queda "cliente" y un lead se rutea a Aurora. Reemplazar:
       el ESTADO viene del flujo (A PRUEBA en alta, ACTIVO en inscripción), nunca de FAMILIAS.
-- [ ] Borrar fallbacks legacy: `buscar_familia_por_telefono`, `familia_es_activa`,
+- [x] Borrar fallbacks legacy: `buscar_familia_por_telefono`, `familia_es_activa`,
       `obtener_ninos_de_familia`, rama fallback de `obtener_tutores_de_familia` (702-721),
       `obtener_contacto_familia` + su uso en `loops.py:1057`, fallback de
       `obtener_grupo_familiar` (1022-1033), compat de `juego_familia_codigo` (213-221),
@@ -50,20 +49,20 @@ Por eso el plan tiene DOS etapas independientes. La 1 se hace; la 2 se decide de
       (171-183), pista de `flujo_pagos` (133-149), `tool_executor` (63-72), camino
       FAMILIAS de `eliminar_todo_de_telefono` (455-460), `manejar_respuesta_factura:190`,
       `_asegurar_datos_fiscales:117-119`, `restaurar_aurora` (main:1191).
-- [ ] SQLite: dejar de usar `familia_id` de `ab_test` (155-172) como pista.
-- [ ] Fórmulas en código que referencian el link: `listar_facturas_fenix_para_enviar:1983`
+- [x] SQLite: dejar de usar `familia_id` de `ab_test` (155-172) como pista.
+- [x] Fórmulas en código que referencian el link: `listar_facturas_fenix_para_enviar:1983`
       (`OR({TUTOR}!='',{FAMILIA FENIX}!='')` → `{TUTOR}!=''`) y `resumenes.py:934`
       (`OR({NIÑOS FENIX}!='',{FAMILIA FENIX}!='')` → `OR({NIÑOS FENIX}!='',{PAGA}!='')`).
       **Fórmulas primero en el código, campo después en Airtable** — al revés rompe el loop.
-- [ ] Bonus: fix `NameError` latente `inscripcion.py:603` y `:620` (`familia_id` no definido).
-- [ ] `scripts/generar_voces_alumnos.py` usa FAMILIAS — reescribir o marcar obsoleto.
+- [x] Bonus: fix `NameError` latente `inscripcion.py:603` y `:620` (`familia_id` no definido).
+- [x] `scripts/generar_voces_alumnos.py` usa FAMILIAS — reescribir o marcar obsoleto.
 
-### 1.2 facturador-set (la otra máquina) — ANTES de tocar Airtable
-- [ ] `.env` (a mano, está gitignored) + `.env.example:30`: sacar `{FLIA FENIX RUC}` del
+### 1.2 facturador-set — ✅ código y .env de ESTA máquina hechos 03/08 (commit f64f90b). ⚠️ Si el robot corre en OTRA máquina: git pull + editar su .env (sacar {FLIA FENIX RUC} del NEG1_FILTRO) ANTES de la 1.3
+- [x] `.env` (a mano, está gitignored) + `.env.example:30`: sacar `{FLIA FENIX RUC}` del
       `NEG1_FILTRO`. Si el lookup muere antes que el filtro → **422 y NEG1 entero deja de
       facturar, Salsa incluida** (raise_for_status sin try/except).
-- [ ] `airtable.py:133-135`: borrar `fenix_txt` / `FLIA FENIX RUC` de la cadena de RUC.
-- [ ] `airtable.py:149`: flag `fenix` pasa a `FUENTE == "FENIX KIDS ACADEMY"` (los links
+- [x] `airtable.py:133-135`: borrar `fenix_txt` / `FLIA FENIX RUC` de la cadena de RUC.
+- [x] `airtable.py:149`: flag `fenix` pasa a `FUENTE == "FENIX KIDS ACADEMY"` (los links
       no crashean al desaparecer — `f.get()` da None — pero el flag quedaría siempre False).
 
 ### 1.3 Airtable — automation + campos (después de 1.1 y 1.2 deployados)
