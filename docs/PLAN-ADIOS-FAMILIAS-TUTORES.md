@@ -65,24 +65,29 @@ Por eso el plan tiene DOS etapas independientes. La 1 se hace; la 2 se decide de
 - [x] `airtable.py:149`: flag `fenix` pasa a `FUENTE == "FENIX KIDS ACADEMY"` (los links
       no crashean al desaparecer — `f.get()` da None — pero el flag quedaría siempre False).
 
-### 1.3 Airtable — automation + campos (después de 1.1 y 1.2 deployados)
-- [ ] Automation `CREAR FACTURA` (wflC685NYFZiNkXH5): hoy lee `PAGOS.FAMILIA FENIX` y si
-      no hay ALUMNO linkea la factura a la familia. Cambiar a: sin ALUMNO → usar `PAGA`→
-      link TUTOR de la factura (o tirar error claro). Editar el script en la UI (la API
-      no edita customScript).
-- [ ] Borrar campos link a FAMILIAS (los lookups dependientes mueren con ellos):
-      `PAGOS.FAMILIA FENIX` (+`FAMILIA NOMBRE`), `FACTURAS.FAMILIA FENIX` (+`FLIA FENIX RUC`),
-      `NIÑOS.FAMILIA`, `TUTORES.FAMILIA`, `RESERVAS FENIX.FAMILIAS` (+2 lookups),
-      `LEADS FENIX.FAMILIA`, `SEGUIMIENTO FENIX.FAMILIA`, `ASISTENCIA FENIX.FAMILIA`,
-      `PRUEBA FENIX LEGACY.FAMILIA`.
-      Nota: los 64 pagos históricos de Fenix no pierden su marca — ya tienen `NEGOCIO`.
-- [ ] Backup JSON completo de FAMILIAS FENIX a `knowledge/` → borrar la tabla.
+### 1.3 Airtable — ✅ HECHO 03/08
+- [x] Automation `CREAR FACTURA` con script nuevo (Iván lo pegó y publicó; verificado por
+      API: draft = deployed, valida ALUMNO o PAGA y linkea TUTOR para pagos Fenix).
+- [x] Tabla FAMILIAS FENIX **ELIMINADA** (actionId revert: actVlFKI0ZkLwvYi8). Backup previo:
+      `whatsapp-agentkit/knowledge/backup_familias_fenix_2026-08-03.json` (79 registros +
+      schema de 48 campos). Airtable convirtió los 9 links entrantes en **singleLineText**
+      (conservan los nombres como rastro) y dejó 3 lookups rotos inertes.
+- [ ] Limpieza cosmética (a mano en la UI, sin apuro): borrar los campos huérfanos
+      `PAGOS.FAMILIA FENIX`+`FAMILIA NOMBRE`, `FACTURAS.FAMILIA FENIX`+`FLIA FENIX RUC`,
+      `NIÑOS/TUTORES/LEADS/SEGUIMIENTO/ASISTENCIA/PRUEBA LEGACY.FAMILIA`,
+      `RESERVAS FENIX.FAMILIAS`+`FAMILIA` (la API no borra campos).
 
 ### 1.4 Verificación end-to-end
+- [x] Robot: `pendientes()` con el filtro nuevo contra la base real → OK sin 422, resolvió
+      una factura Fenix por TUTOR RUC (RUC 1953350, ₲740k, fenix=True). 03/08.
+- [x] Aurora post-borrado: HTTP 200, loop de facturas polleando sin errores en logs.
 - [ ] Mensaje real de un padre → Aurora lo reconoce (identidad va por TUTORES, intacta).
 - [ ] Alta de prueba completa (lead → pago → grupo creado sin FAMILIA).
-- [ ] Factura de Fenix emitida y enviada (robot + loop de Aurora).
-- [ ] `resumen anuncios` y confirmación del sábado corren sin error.
+- [ ] `resumen anuncios` y confirmación del sábado (jueves 06/08) corren sin error.
+
+⚠️ Hallazgo lateral 03/08 (NO causado por la migración): 3 facturas en "EMITIENDO 13:40-13:43"
+de una corrida del robot que murió — revisar en Marangatú y marcar FACTURADO o limpiar:
+rec2UDvotloW13tqa, recAOnmj3dVuF1pW0, recyguE0SoC4NlmSm.
 
 ---
 
