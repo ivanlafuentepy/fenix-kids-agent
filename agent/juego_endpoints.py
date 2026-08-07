@@ -148,10 +148,24 @@ async def _tutor_por_codigo(codigo: str) -> dict | None:
     return recs[0] if recs else None
 
 
-def _hijo_ids_de_tutor(tutor: dict) -> list[str]:
-    """IDs de los hijos del tutor (links HIJOS COMO PADRE/MADRE, niño-eje)."""
+async def _hijo_ids_de_tutor(tutor: dict) -> list[str]:
+    """IDs de los hijos del tutor. El CODIGO vive en la fila LEGACY de TUTORES,
+    pero los hijos viven linkeados a la fila del padre en ALUMNOS (migración
+    08/26) → se resuelve por teléfono: TUTORES.CELL LIMPIO → ALUMNOS →
+    HIJOS FENIX (PADRE)/(MADRE)."""
+    from agent.airtable_client import buscar_tutor_por_telefono, _hijos_de_tutor
     tf = tutor.get("fields", {}) or {}
-    return (tf.get("HIJOS (COMO PADRE)") or []) + (tf.get("HIJOS (COMO MADRE)") or [])
+    # Si ya es una fila de ALUMNOS (tiene los links), directo:
+    hijos = _hijos_de_tutor(tf)
+    if hijos:
+        return hijos
+    tel = (tf.get("CELL LIMPIO") or tf.get("TELEFONO LIMPIO") or "").strip()
+    if not tel:
+        return []
+    alumno = await buscar_tutor_por_telefono(tel)
+    if not alumno:
+        return []
+    return _hijos_de_tutor(alumno.get("fields", {}) or {})
 
 
 async def _guardian_de_nino(nino_id: str, nombre: str) -> dict | None:
@@ -195,11 +209,14 @@ async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | Non
     Body: {telefono | tutor_id}."""
     _auth(x_juego_key)
     from agent.airtable_client import (
-        _patch, _TUTORES, _BASE_URL, _headers,
-        buscar_tutor_por_telefono,
+        _patch, _post, _TUTORES, _BASE_URL, _headers,
+        buscar_tutor_por_telefono, buscar_tutor_legacy_por_telefono,
     )
     import httpx, secrets
 
+    # El CODIGO vive en la fila LEGACY de TUTORES (los links repartidos apuntan
+    # ahí). Si la familia es nueva (post-migración, solo existe en ALUMNOS),
+    # se crea un stub en TUTORES para colgarle el código.
     tutor = None
     if payload.get("tutor_id"):
         async with httpx.AsyncClient() as client:
@@ -207,7 +224,17 @@ async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | Non
             if r.status_code == 200:
                 tutor = r.json()
     elif payload.get("telefono"):
-        tutor = await buscar_tutor_por_telefono(str(payload["telefono"]))
+        _tel = str(payload["telefono"])
+        tutor = await buscar_tutor_legacy_por_telefono(_tel)
+        if not tutor:
+            alumno = await buscar_tutor_por_telefono(_tel)
+            if alumno:
+                af = alumno.get("fields", {}) or {}
+                tutor = await _post(_TUTORES, {
+                    "NOMBRE": af.get("NOMBRE") or "Tutor",
+                    "APELLIDO": af.get("APELLIDO") or "",
+                    "CELL": af.get("TELEFONO LIMPIO") or _tel,
+                })
     if not tutor:
         raise HTTPException(status_code=404, detail="tutor no encontrado")
 
@@ -242,7 +269,7 @@ async def juego_familia(codigo: str):
     hoy = datetime.now(ZoneInfo("America/Asuncion")).date()
     hijos = []
     async with httpx.AsyncClient() as client:
-        for hid in _hijo_ids_de_tutor(tutor):
+        for hid in await _hijo_ids_de_tutor(tutor):
             try:
                 r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
                 if r.status_code != 200:
@@ -291,7 +318,7 @@ async def juego_fotos_familia(codigo: str):
     if not tutor:
         return JSONResponse(content={"ok": False, "motivo": "codigo_invalido"}, status_code=404, headers=_CORS)
 
-    hijo_ids = _hijo_ids_de_tutor(tutor)
+    hijo_ids = await _hijo_ids_de_tutor(tutor)
     hijos = []
     if hijo_ids:
         from agent.airtable_client import _BASE_URL, _headers, _NINOS
@@ -371,7 +398,7 @@ async def _validar_nino_de_familia(codigo: str, nino_id: str):
     tutor = await _tutor_por_codigo(codigo)
     if not tutor:
         raise HTTPException(status_code=404, detail="codigo_invalido")
-    if nino_id not in _hijo_ids_de_tutor(tutor):
+    if nino_id not in await _hijo_ids_de_tutor(tutor):
         raise HTTPException(status_code=403, detail="nino_no_es_de_esta_familia")
     from agent.airtable_client import _get_records
     recs = await _get_records(_T_GUARDIANES, formula=f"{{NINO ID}}='{nino_id}'", max_records=1)
