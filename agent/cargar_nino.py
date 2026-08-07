@@ -83,7 +83,8 @@ async def procesar_formulario_cargar_nino(admin_phone: str, flow_data: dict) -> 
     padre = _tutor_desde_flow(flow_data, "padre")
     madre = _tutor_desde_flow(flow_data, "madre")
 
-    # TUTORES — idempotentes por CELL LIMPIO; el niño los linkea PADRE/MADRE.
+    # Tutores (filas ALUMNOS) — idempotentes por TELEFONO LIMPIO; el niño los
+    # linkea PADRE/MADRE (ALUMNOS).
     # Sin datos de tutores el niño se crea igual (ficha incompleta, se completa después).
     padre_id = await crear_o_actualizar_tutor(padre, "Papá") if padre.get("nombre") else None
     madre_id = await crear_o_actualizar_tutor(madre, "Mamá") if madre.get("nombre") else None

@@ -125,7 +125,7 @@ async def _candidatos_a_prueba() -> list[dict]:
                         EDAD HIJO, FECHA NACIMIENTO, GENERO}}, ...],
      "tutor_id": rec del tutor (si se resolvió)}
     """
-    from agent.airtable_client import _get_records, _NINOS, _TUTORES
+    from agent.airtable_client import _get_records, _NINOS, _ALUMNOS
 
     ninos = await _get_records(_NINOS, formula="{ESTADO}='A PRUEBA'", max_records=1000)
     if not ninos:
@@ -137,7 +137,7 @@ async def _candidatos_a_prueba() -> list[dict]:
         nf = n.get("fields", {}) or {}
         if not (nf.get("NOMBRE") or "").strip():
             continue
-        tutor_ids = (nf.get("PADRE") or []) + (nf.get("MADRE") or [])
+        tutor_ids = (nf.get("PADRE (ALUMNOS)") or []) + (nf.get("MADRE (ALUMNOS)") or [])
         destino = None
         for g in grupos:
             if tutor_ids and set(tutor_ids) & set(g["tutor_ids"]):
@@ -156,12 +156,12 @@ async def _candidatos_a_prueba() -> list[dict]:
         tel, nombre, apellido, tutor_id = "", "", "", ""
         if g["tutor_ids"]:
             tutor_id = g["tutor_ids"][0]
-            trec = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
+            trec = await _get_records(_ALUMNOS, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
             if trec:
                 tf = trec[0].get("fields", {}) or {}
                 nombre = (tf.get("NOMBRE") or "").strip()
                 apellido = (tf.get("APELLIDO") or "").strip()
-                tel = (tf.get("CELL LIMPIO") or "").strip()
+                tel = (tf.get("TELEFONO LIMPIO") or "").strip()
 
         hijos = []
         for n in g["ninos"]:

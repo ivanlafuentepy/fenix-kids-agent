@@ -573,23 +573,26 @@ async def api_reservas(fecha: str = "", _: bool = Depends(_require_admin_o_key))
     resultado = {"fecha": fecha_iso, "fecha_label": f"Sábado {sabado.day}/{sabado.month}", "turnos": []}
 
     # Cargar niños + tutores para fotos, nombres y teléfonos (niño-eje:
-    # PADRE/MADRE del niño → TUTORES; FAMILIAS ya no se consulta)
-    from agent.airtable_client import _get_records, _NINOS, _TUTORES
+    # PADRE/MADRE (ALUMNOS) del niño → filas de ALUMNOS; TUTORES quedó legacy)
+    from agent.airtable_client import _get_records, _NINOS, _ALUMNOS, _NEGOCIO_FENIX
     _ninos_recs = await _get_records(_NINOS, max_records=1000)
     _ninos_map = {}
     for _nr in _ninos_recs:
         _nf = _nr.get("fields", {})
         _ninos_map[_nr["id"]] = {
             "foto": (_nf.get("FOTO") or [{}])[0].get("url", "") if _nf.get("FOTO") else "",
-            "tutor_ids": (_nf.get("PADRE") or []) + (_nf.get("MADRE") or []),
+            "tutor_ids": (_nf.get("PADRE (ALUMNOS)") or []) + (_nf.get("MADRE (ALUMNOS)") or []),
         }
-    _tut_recs = await _get_records(_TUTORES, max_records=1000)
+    # Solo las filas Fenix de ALUMNOS — la tabla es compartida con Salsa y es enorme
+    _f_tut = (f"OR(FIND('{_NEGOCIO_FENIX}', ARRAYJOIN({{NEGOCIO}}))>0, "
+              "{HIJOS FENIX (PADRE)}!='', {HIJOS FENIX (MADRE)}!='')")
+    _tut_recs = await _get_records(_ALUMNOS, formula=_f_tut, max_records=1000)
     _tut_map = {}
     for _tr in _tut_recs:
         _tf = _tr.get("fields", {})
         _tut_map[_tr["id"]] = {
             "nombre": _tf.get("NOMBRE", ""),
-            "cell": _tf.get("CELL", ""),
+            "cell": _tf.get("TELEFONO LIMPIO") or _tf.get("TELEFONO", ""),
         }
 
     # Fuente única: RESERVAS FENIX — inscriptos y pruebas split por es_prueba
@@ -629,22 +632,24 @@ async def estadisticas(_: bool = Depends(_require_admin)):
 @app.get("/api/alumnos")
 async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
     """Devuelve todos los alumnos (NIÑOS FENIX). Protegido: X-ADMIN-KEY o ?k=."""
-    from agent.airtable_client import _get_records, _NINOS, _TUTORES
+    from agent.airtable_client import _get_records, _NINOS, _ALUMNOS, _NEGOCIO_FENIX
     from datetime import date
     import unicodedata
     import re
 
     records = await _get_records(_NINOS, max_records=1000)
 
-    # Cargar tutores para nombres y teléfonos (niño-eje: PADRE/MADRE del niño;
-    # FAMILIAS ya no se consulta — el estado sale de NIÑOS.ESTADO)
+    # Cargar tutores (filas Fenix de ALUMNOS) para nombres y teléfonos
+    # (niño-eje: PADRE/MADRE (ALUMNOS) del niño; TUTORES quedó legacy)
     tutores_cache = {}
-    tutores_recs = await _get_records(_TUTORES, max_records=1000)
+    _f_tut = (f"OR(FIND('{_NEGOCIO_FENIX}', ARRAYJOIN({{NEGOCIO}}))>0, "
+              "{HIJOS FENIX (PADRE)}!='', {HIJOS FENIX (MADRE)}!='')")
+    tutores_recs = await _get_records(_ALUMNOS, formula=_f_tut, max_records=1000)
     for tut in tutores_recs:
         tf = tut.get("fields", {})
         tutores_cache[tut["id"]] = {
             "nombre": tf.get("NOMBRE", ""),
-            "cell": tf.get("CELL", ""),
+            "cell": tf.get("TELEFONO LIMPIO") or tf.get("TELEFONO", ""),
         }
 
     alumnos = []
@@ -677,9 +682,9 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
         # Reservas count
         reservas = f.get("RESERVAS FENIX", [])
         n_reservas = len(reservas) if isinstance(reservas, list) else 0
-        # Tutores del niño (niño-eje): PADRE/MADRE son links a TUTORES
-        _padre_t = tutores_cache.get((f.get("PADRE") or [None])[0] or "", {})
-        _madre_t = tutores_cache.get((f.get("MADRE") or [None])[0] or "", {})
+        # Tutores del niño (niño-eje): PADRE/MADRE (ALUMNOS) son links a ALUMNOS
+        _padre_t = tutores_cache.get((f.get("PADRE (ALUMNOS)") or [None])[0] or "", {})
+        _madre_t = tutores_cache.get((f.get("MADRE (ALUMNOS)") or [None])[0] or "", {})
 
         # es_prueba: el ESTADO vive en el niño (migración niño-eje — antes se
         # miraba el ESTADO PLAN de su familia)

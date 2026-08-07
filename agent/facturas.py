@@ -68,10 +68,28 @@ async def crear_factura_fenix(
 
 
 async def _tutor_fiscal(telefono: str) -> dict | None:
-    """Registro CRUDO del tutor que pide la factura (niño-eje):
-    el tutor del teléfono que escribe (es quien pide la factura)."""
-    from agent.airtable_client import buscar_tutor_por_telefono
-    return await buscar_tutor_por_telefono(telefono) if telefono else None
+    """Registro CRUDO del tutor fiscal — la fila LEGACY de TUTORES FENIX:
+    ahí viven el campo FACTURA (texto) y el link FACTURAS.TUTOR que lee el
+    robot facturador. Si la familia es nueva (solo existe en ALUMNOS), se crea
+    un stub en TUTORES para colgarle los datos fiscales."""
+    if not telefono:
+        return None
+    from agent.airtable_client import (
+        buscar_tutor_legacy_por_telefono, buscar_tutor_por_telefono, _post,
+    )
+    tutor = await buscar_tutor_legacy_por_telefono(telefono)
+    if tutor:
+        return tutor
+    alumno = await buscar_tutor_por_telefono(telefono)
+    if not alumno:
+        return None
+    af = alumno.get("fields", {}) or {}
+    return await _post(_TUTORES, {
+        "NOMBRE": af.get("NOMBRE") or "Tutor",
+        "APELLIDO": af.get("APELLIDO") or "",
+        "CI": str(af.get("CI") or ""),
+        "CELL": af.get("TELEFONO LIMPIO") or telefono,
+    })
 
 
 async def _asegurar_datos_fiscales(telefono: str) -> str:

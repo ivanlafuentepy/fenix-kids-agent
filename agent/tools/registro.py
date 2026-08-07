@@ -9,7 +9,7 @@ from agent.airtable_client import (
     crear_nino,
     deducir_genero,
     _patch,
-    _TUTORES,
+    _ALUMNOS,
 )
 from agent.ab_test import actualizar_estado_flags
 
@@ -23,8 +23,8 @@ async def registrar_familia(
     familia_id: str | None = None,
 ) -> dict:
     """
-    Registra o actualiza el nombre del tutor de este teléfono en TUTORES FENIX
-    (F7.b: FAMILIAS ya no se escribe). deducir_genero() decide Mamá/Papá.
+    Registra o actualiza el nombre del tutor de este teléfono (fila de ALUMNOS
+    con NEGOCIO=FENIX; F7.b: FAMILIAS ya no se escribe). deducir_genero() decide Mamá/Papá.
     familia_id queda en la firma por compatibilidad de la tool — se ignora.
     """
     nombre = nombre.strip().title()
@@ -41,7 +41,7 @@ async def registrar_familia(
         campos = {"NOMBRE": nombre}
         if apellido:
             campos["APELLIDO"] = apellido
-        ok = await _patch(_TUTORES, tutor["id"], campos)
+        ok = await _patch(_ALUMNOS, tutor["id"], campos)
         tutor_id = tutor["id"] if ok else None
         actualizado = True
     else:

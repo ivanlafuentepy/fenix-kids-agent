@@ -73,15 +73,19 @@ async def recolectar_envios() -> list[dict]:
     from agent.airtable_client import (
         obtener_ninos_al_dia,
         _get_records,
-        _TUTORES,
+        _ALUMNOS,
+        _NEGOCIO_FENIX,
     )
 
     ninos = await obtener_ninos_al_dia()
     if not ninos:
         return []
 
-    # Todos los tutores de una vez (110 hoy, paginado) — evita un GET por niño.
-    tutores_raw = await _get_records(_TUTORES, max_records=2000)
+    # Todos los tutores Fenix de una vez (filas de ALUMNOS con marca Fenix,
+    # paginado) — evita un GET por niño y no trae la tabla compartida entera.
+    _f_tut = (f"OR(FIND('{_NEGOCIO_FENIX}', ARRAYJOIN({{NEGOCIO}}))>0, "
+              "{HIJOS FENIX (PADRE)}!='', {HIJOS FENIX (MADRE)}!='')")
+    tutores_raw = await _get_records(_ALUMNOS, formula=_f_tut, max_records=2000)
     tutor_por_id = {t["id"]: (t.get("fields", {}) or {}) for t in tutores_raw}
 
     # Agrupar hijos al día por tutor pagador.
@@ -92,15 +96,15 @@ async def recolectar_envios() -> list[dict]:
         if not nombre_hijo:
             continue
 
-        # Candidatos a pagador: PADRE + MADRE del niño (niño-eje).
-        # Pre-check 03/08: todo niño tiene PADRE o MADRE linkeado.
+        # Candidatos a pagador: PADRE + MADRE (ALUMNOS) del niño (niño-eje).
         candidatos = [
             (tid, tutor_por_id[tid])
-            for tid in (f.get("PADRE") or []) + (f.get("MADRE") or [])
+            for tid in (f.get("PADRE (ALUMNOS)") or []) + (f.get("MADRE (ALUMNOS)") or [])
             if tid in tutor_por_id
         ]
-        # Pagador: el marcado ES QUIEN PAGA; si no, el primero con teléfono.
-        con_tel = [(tid, tf) for tid, tf in candidatos if (tf.get("CELL LIMPIO") or "").strip()]
+        # Pagador: el marcado ES QUIEN PAGA (no existe en ALUMNOS → cae al
+        # primero con teléfono).
+        con_tel = [(tid, tf) for tid, tf in candidatos if (tf.get("TELEFONO LIMPIO") or "").strip()]
         pagador = next(
             ((tid, tf) for tid, tf in con_tel if tf.get("ES QUIEN PAGA")),
             con_tel[0] if con_tel else None,
@@ -112,7 +116,7 @@ async def recolectar_envios() -> list[dict]:
         if tid not in grupos:
             _nom = (tf.get("NOMBRE") or "").strip()
             grupos[tid] = {
-                "telefono": (tf.get("CELL LIMPIO") or "").strip(),
+                "telefono": (tf.get("TELEFONO LIMPIO") or "").strip(),
                 "nombre_padre": _nom.split(" ")[0] if _nom else "",
                 "hijos": [],
                 "tutor_id": tid,

@@ -44,14 +44,14 @@ async def enviar_formulario_reserva(telefono: str) -> bool:
 
 
 def _campos_tutor(persona: dict) -> dict:
-    """persona → campos de TUTORES FENIX (mismo criterio que crear_o_actualizar_tutor)."""
+    """persona → campos del tutor en ALUMNOS (mismo criterio que crear_o_actualizar_tutor)."""
     campos: dict = {"NOMBRE": persona["nombre"]}
     if persona.get("apellido"):
         campos["APELLIDO"] = persona["apellido"]
     if persona.get("ci"):
         campos["CI"] = str(persona["ci"]).strip()
     if persona.get("telefono"):
-        campos["CELL"] = str(persona["telefono"]).strip()
+        campos["TELEFONO"] = str(persona["telefono"]).strip()
     if persona.get("email"):
         campos["EMAIL"] = persona["email"]
     if persona.get("fecha_nacimiento"):
@@ -69,7 +69,7 @@ async def _guardar_tutor(
     existe, lo crea y lo linkea a los hijos (PADRE/MADRE del niño, niño-eje).
     Se matchea por parentesco (no por CELL) porque el tutor parcial se creó en el
     pago con el CELL del WhatsApp y el formulario puede traer OTRO teléfono."""
-    from agent.airtable_client import crear_o_actualizar_tutor, _patch, _TUTORES, _NINOS
+    from agent.airtable_client import crear_o_actualizar_tutor, _patch, _ALUMNOS, _NINOS
     if not persona.get("nombre"):
         return None
     existente = next(
@@ -78,16 +78,16 @@ async def _guardar_tutor(
     )
     if existente:
         try:
-            await _patch(_TUTORES, existente["id"], _campos_tutor(persona))
+            await _patch(_ALUMNOS, existente["id"], _campos_tutor(persona))
             return existente["id"]
         except Exception as e:
             logger.error(f"[RESERVA-FORM] error actualizando tutor {parentesco}: {e}")
             return None
 
     tid = await crear_o_actualizar_tutor(persona, parentesco)
-    # Niño-eje: linkear el tutor nuevo a los hijos para que el grupo lo vea.
+    # Niño-eje: linkear el tutor nuevo (fila ALUMNOS) a los hijos.
     if tid:
-        campo = "MADRE" if parentesco == "Mamá" else "PADRE"
+        campo = "MADRE (ALUMNOS)" if parentesco == "Mamá" else "PADRE (ALUMNOS)"
         for h in hijos:
             if h.get("id"):
                 try:
@@ -171,8 +171,10 @@ async def _completar_pago_huerfano(telefono: str, nino_ids: list[str], tutor_id:
         pf = p.get("fields", {}) or {}
         if (pf.get("CONCEPTO") or "").startswith("PRUEBA") and not pf.get("NIÑOS FENIX"):
             campos: dict = {"NIÑOS FENIX": nino_ids}
-            if tutor_id and not pf.get("PAGA"):
-                campos["PAGA"] = [tutor_id]
+            # El tutor es una fila de ALUMNOS → link PAGA (ALUMNOS); el viejo
+            # PAGA (→TUTORES) quedó legacy.
+            if tutor_id and not pf.get("PAGA (ALUMNOS)"):
+                campos["PAGA (ALUMNOS)"] = [tutor_id]
             await _patch(_PAGOS, p["id"], campos)
             logger.info(f"[RESERVA-FORM] PAGO huérfano {p['id']} linkeado a niños {nino_ids}")
 

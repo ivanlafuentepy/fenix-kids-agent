@@ -94,19 +94,19 @@ async def _tutor_de_nino(nino_id: str) -> tuple[str, str]:
     if not nino_id:
         return "", ""
     try:
-        from agent.airtable_client import _BASE_URL, _headers, _NINOS, _TUTORES
+        from agent.airtable_client import _BASE_URL, _headers, _NINOS, _ALUMNOS
         import httpx
         async with httpx.AsyncClient() as _cl:
             _r = await _cl.get(f"{_BASE_URL}/{_NINOS}/{nino_id}", headers=_headers(), timeout=10)
             if _r.status_code != 200:
                 return "", ""
             _nf = _r.json().get("fields", {})
-            for tid in (_nf.get("MADRE") or []) + (_nf.get("PADRE") or []):
-                _rt = await _cl.get(f"{_BASE_URL}/{_TUTORES}/{tid}", headers=_headers(), timeout=10)
+            for tid in (_nf.get("MADRE (ALUMNOS)") or []) + (_nf.get("PADRE (ALUMNOS)") or []):
+                _rt = await _cl.get(f"{_BASE_URL}/{_ALUMNOS}/{tid}", headers=_headers(), timeout=10)
                 if _rt.status_code != 200:
                     continue
                 _tf = _rt.json().get("fields", {})
-                _tel = (_tf.get("CELL LIMPIO") or _tf.get("CELL") or "").strip()
+                _tel = (_tf.get("TELEFONO LIMPIO") or _tf.get("TELEFONO") or "").strip()
                 if _tel:
                     return f"{_tf.get('NOMBRE', '')} {_tf.get('APELLIDO', '')}".strip(), _tel
     except Exception:
