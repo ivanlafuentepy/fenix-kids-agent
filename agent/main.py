@@ -290,7 +290,20 @@ async def lifespan(app: FastAPI):
         _t.cancel()
 
 
-app = FastAPI(title="FENIX KIDS ACADEMY — Agente WhatsApp", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="FENIX KIDS ACADEMY — Agente WhatsApp",
+    version="1.0.0",
+    lifespan=lifespan,
+    # En producción NO se publica el mapa de la API. FastAPI sirve por defecto
+    # /openapi.json, /docs y /redoc: ahí está TODO — incluidos los endpoints de
+    # admin con sus parámetros y el nombre exacto de los headers de auth.
+    # Encontrado el 2026-08-06 mirando los escáneres que le entran a Genesis: de
+    # ~1000 requests de bots, el ÚNICO que se llevaba un 200 era /openapi.json.
+    # Los cuatro agentes de la flota lo tenían abierto. En desarrollo siguen andando.
+    docs_url="/docs" if ENVIRONMENT == "development" else None,
+    redoc_url="/redoc" if ENVIRONMENT == "development" else None,
+    openapi_url="/openapi.json" if ENVIRONMENT == "development" else None,
+)
 
 # Router aislado /hq para el Centro de Comando (enviar, media, silencio, asistencia)
 from agent.hq_endpoints import router as hq_router
