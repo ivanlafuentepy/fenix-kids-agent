@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-08-07 — El schema de Airtable se movió abajo del código: `str + list` dejó a Aurora muda
+
+**Qué pasó:** Ivan escribía a Aurora desde su número y no recibía nada. Tampoco respondían
+`modo padre` ni `modo alumno`. El webhook procesaba el mensaje y explotaba:
+`[WEBHOOK] Error procesando 595982790407: can only concatenate str (not "list") to str`
+(`airtable_client.py:430` y `:465`). Como el crash pasaba ANTES de `_admin_modo_padre.add()`,
+el modo nunca se activaba y todo lo siguiente caía en el `return` silencioso del modo secre:
+un solo bug se veía como dos problemas distintos.
+
+**Causa raíz:** los padres/madres se habían mudado a la tabla **ALUMNOS** (marcados con
+`NEGOCIO = FENIX KIDS ACADEMY`), pero el refactor del 03/08 (`6ebaf1f`) seguía leyendo
+`TUTORES FENIX`. Los campos `HIJOS (COMO PADRE)` / `(COMO MADRE)` que quedaron en TUTORES son
+**singleLineText** — el código los sumaba como listas (`(f.get(...) or []) + (f.get(...) or [])`)
+y con un string a la izquierda eso es un TypeError. Los 101 tutores tenían ese campo con texto.
+El docstring del router decía "pre-check 03/08: cero tutores sin hijos linkeados" — era cierto
+cuando se escribió y falso cuatro días después.
+
+**Cómo se resolvió:** dos deploys incrementales. `95cb067` movió la identidad
+(`buscar_tutor_por_telefono` → ALUMNOS por `TELEFONO LIMPIO`, hijos por `HIJOS FENIX (…)`,
+niño→tutor por `PADRE/MADRE (ALUMNOS)`) y `3fafa06` los callers. Verificado en prod con
+0 errores y `/api/alumnos` devolviendo tutores reales donde antes venía vacío.
+
+**Reglas para la próxima:**
+1. **Un refactor que asume la FORMA de un dato de Airtable verifica el schema real
+   (Metadata API) antes de deployar.** La doc del repo y el pre-check de una sesión anterior
+   describen el pasado, no el presente. `type` del campo, no el nombre.
+2. **El traceback ya está en los logs de Railway** (`exc_info=True`): filtrar `deploymentLogs`
+   por el teléfono afectado, después por `"line"` → archivo + línea exacta en dos consultas.
+   No adivinar leyendo código.
+3. **Un campo link que devuelve `str` significa que dejó de ser link.** Si `x or []` puede
+   recibir un string, sumar listas revienta — pero el fix no es tolerar el string: es preguntar
+   por qué cambió el tipo.
+4. **ALUMNOS es una tabla COMPARTIDA** (Salsa/Impulso/Fenix): nunca borrarle una fila en un
+   reset de Fenix (se le quita la marca `NEGOCIO`), nunca pisarle campos con datos (solo
+   completar vacíos), y nunca traerla entera (filtrar por marca Fenix).
+5. **Un mismo teléfono tiene varias filas en ALUMNOS** — el de Ivan matchea 3. Elegir por
+   hijos-FENIX-linkeados > `NEGOCIO=FENIX`, nunca "el primero que aparece".
+
+---
+
 ## 2026-07-28 — Una memoria que enumera "los N lugares" NO es un inventario: casi quedan precios viejos en producción
 
 **Qué pasó:** al cambiar el precio (mensual 240k → pack de 350k), la memoria

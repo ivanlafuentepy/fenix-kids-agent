@@ -629,3 +629,21 @@ Commit web: `17b896c` fecha_foto() + 28 fotos.
 Commits agent: `23580fc` precio en código+afiche · `e7f42e5` precio en prompt · `854347c` saldo de clases · `004d745` +5 al pagar · `1916701` aviso al padre + fotos.
 Commits web: `61217aa` precio + afiche + links refirmados · `23b82c3` paso 7 avisar familias.
 Cierre: `0e0ca69` docs · `8d04b0e` skill /cambioprecio.
+
+---
+
+## 2026-08-07 — Tutores mudados a ALUMNOS
+
+Aurora no le respondía a Ivan desde su propio número. El webhook crasheaba con
+`can only concatenate str (not "list") to str`: el refactor del 03/08 seguía leyendo
+`TUTORES FENIX`, pero los padres/madres se habían mudado a la tabla **ALUMNOS**
+(`NEGOCIO = FENIX KIDS ACADEMY`) y los campos `HIJOS (COMO PADRE/MADRE)` que quedaron
+en TUTORES son **texto**, no links — sumarlos como listas reventaba para los 101 tutores.
+El crash ocurría antes de activar el modo padre, así que el silencio del modo secre
+tapaba el error: los dos síntomas eran el mismo bug.
+
+Fix en dos deploys incrementales: `95cb067` (identidad tutor → ALUMNOS) y `3fafa06`
+(los callers). Verificado en prod: cero errores y `/api/alumnos` devolviendo 88 niños
+con madre y 52 con padre, donde antes venía vacío.
+
+Detalle completo → `.claude/handoffs/handoff_20260807_1253.md`
