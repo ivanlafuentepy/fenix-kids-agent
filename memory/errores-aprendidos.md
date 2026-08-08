@@ -5,6 +5,56 @@
 
 ---
 
+## 2026-08-07 — Aurora saludó a una mamá con el nombre de su marido y le inventó una reserva
+
+**Qué pasó:** Ivan preguntó por qué el 17/07 Aurora había saludado a Ilse Estigarribia con
+**"¡Hola Raul!"** (su marido). Al mirarlo apareció un segundo problema, más grave y vivo:
+ese mismo día (07/08, ya con la migración a ALUMNOS deployada) Aurora la atendió **sin
+nombre** y le afirmó *"tenés reserva para el sábado 8 de agosto a las 11:00h"*. Esa reserva
+**no existía** — las de sus hijas eran 9/5, 30/5 y 18/7.
+
+**Causa raíz — son dos, encadenadas:**
+1. **Identidad**: la fila de Ilse en ALUMNOS tenía cargado un teléfono **fijo**
+   (`59521390969`), no su WhatsApp. Como `buscar_tutor_por_telefono` mira `TELEFONO LIMPIO`,
+   su número no resolvía: sin tutor → sin grupo familiar → Aurora sin contexto. Y sin
+   contexto real, el LLM rellena: de ahí la reserva inventada.
+2. **El fallback que adivina**: `_build_contexto_aurora` (y el saludo de `/registro`), cuando
+   no identificaban el teléfono, agarraban *"el primer tutor de la lista con nombre"* — el
+   papá. Eso produjo el "Hola Raul" del 17/07. La huella que lo delata en el texto: el
+   saludo sale con **género genérico** ("¡Qué alegría tenerte!" en vez de "sos una mamá
+   espectacular"), porque esa rama también pierde el parentesco.
+
+**El control que hubo que hacer** (y que conviene repetir): sacar de la DB de prod los
+teléfonos con `agent_actual='aurora'` y correr `buscar_tutor_por_telefono` sobre cada uno.
+Resultado: **7 de 24 no resolvían**. Dos eran familias reales activas (Ilse y Gaudi); las
+otras 5, leads viejos mal marcados y una ficha que Ivan confirmó abandonada. Comparar
+tabla-contra-tabla NO alcanza: si el nombre está escrito distinto entre ALUMNOS y TUTORES,
+no detecta nada — el cruce bueno es contra los números que **realmente escribieron**.
+
+**Cómo se resolvió:** dos deploys incrementales, más el arreglo de datos.
+- Datos: el WhatsApp de Ilse pasó a `TELEFONO` (el fijo se preservó en `TELEFONO2`).
+- `3c0a3d7` — campo fórmula **`TELEFONO2 LIMPIO`** en ALUMNOS + `buscar_tutor_por_telefono`
+  busca en los dos números. Hacía falta para Gaudi: su fila es compartida con Salsa e
+  Impulso y pisarle el `TELEFONO` les rompía el suyo.
+- `13ef71e` — el nombre del saludo sale del número y nada más; sin match, `quien_escribe`
+  queda vacío y el prompt lo pide. Los 4 call sites que comparaban teléfono↔tutor a mano
+  pasan por el helper único `tutor_tiene_telefono()`.
+
+**Reglas para la próxima:**
+1. **Un fallback que adivina identidad no es tolerancia a fallos** — es un dato inventado
+   con cara de dato real. Preferir el vacío y que el agente pregunte.
+2. **Cuando Aurora se queda sin contexto, no se calla: alucina.** Un grupo familiar que
+   resuelve `None` no es un caso benigno — hay que tratarlo como error, no como default.
+3. **La fila de ALUMNOS es compartida**: si su `TELEFONO` es de otro negocio, el WhatsApp
+   de Fenix va en `TELEFONO2`. Nunca pisar el principal para "arreglar" Fenix.
+4. **Un criterio repetido en N lugares se rompe en N lugares.** "¿Este número es de este
+   tutor?" estaba escrito 4 veces y las 4 quedaron ciegas al segundo número. Helper único.
+5. **Migrar identidad exige el control de vuelta**: después de mover la búsqueda de tabla,
+   correr el router sobre TODOS los números vivos. La migración del 07/08 al mediodía dejó
+   2 familias mudas y nadie se enteró hasta la noche.
+
+---
+
 ## 2026-08-07 (noche) — El RC522 mudo: "Lector OK" y cero detecciones durante 2 horas
 
 **Qué pasó:** armando la estación `basket`, el RC522 leyó perfecto varias veces y de golpe dejó
