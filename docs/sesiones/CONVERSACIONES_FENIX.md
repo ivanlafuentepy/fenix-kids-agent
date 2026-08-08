@@ -668,3 +668,22 @@ al lector. Sin cambios en los sketches: se probó una versión con POST asíncro
 la fila, rompió la detección y se revirtió entera con `git checkout`.
 
 Detalle completo → `.claude/handoffs/handoff_20260807_2318.md`
+
+---
+
+## 2026-08-08 — Aurora saluda por el número
+
+Iván preguntó por qué el 17/07 Aurora saludó a Ilse Estigarribia con **"¡Hola Raul!"** (su
+marido). La causa: cuando el teléfono no identificaba a nadie, el saludo se rellenaba con
+"el primer tutor de la lista" — eliminado. Mirándolo apareció algo peor y vivo: tras la
+migración a ALUMNOS del mediodía, el WhatsApp de Ilse **no resolvía** (su fila tenía cargado
+un teléfono fijo) y Aurora, sin contexto, **le inventó una reserva del sábado 8 que no
+existía**.
+
+Control de identidad sobre los 24 números en modo Aurora contra el router real: **7 no
+resolvían**, 2 eran familias activas (Ilse y Gaudi). Se corrigió el teléfono de Ilse, se creó
+el campo fórmula `TELEFONO2 LIMPIO` y la identidad ahora busca en los dos números — Gaudi
+comparte fila con Salsa e Impulso y no se le podía pisar el principal. Commits `3c0a3d7`,
+`13ef71e`, `bd7d88a`.
+
+Detalle completo → `.claude/handoffs/handoff_20260808_0040.md`
