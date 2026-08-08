@@ -84,7 +84,7 @@ def main():
     for n in ninos:
         f = n["fields"]
         etiqueta = f.get("NOMBRE COMPLETO") or n["id"]
-        if f.get("ESTADO"):
+        if f.get("ESTADO2"):
             stats["ya tenían ESTADO"] += 1
             continue
         fams = f.get("FAMILIA") or []
@@ -95,7 +95,7 @@ def main():
         if not estado:
             stats["familia sin ESTADO PLAN (queda vacío)"] += 1
             continue
-        cambios.append({"id": n["id"], "fields": {"ESTADO": estado}, "_etiqueta": etiqueta})
+        cambios.append({"id": n["id"], "fields": {"ESTADO2": estado}, "_etiqueta": etiqueta})
         stats[f"ESTADO={estado}"] += 1
 
     print(f"\n{'=' * 60}")

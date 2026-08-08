@@ -43,6 +43,11 @@ _NINOS     = "NIÑOS FENIX"
 _HORARIOS  = "HORARIOS FENIX"
 _RESERVAS  = "RESERVAS FENIX"
 _PAGOS     = "PAGOS"
+# El select de estado del niño se llama ESTADO2 desde el cambio de schema del
+# 2026-08-08: "ESTADO" pasó a ser una FORMULA (✅ AL DÍA / ❌ VENCIDO) y Airtable
+# rechaza con 422 cualquier escritura sobre ella. Una sola constante para que el
+# proximo renombre sea un solo lugar.
+_CAMPO_ESTADO_NINO = "ESTADO2"
 _TUTORES   = "TUTORES FENIX"  # LEGACY: solo CODIGO del juego y datos de factura viven acá
 _ALUMNOS   = "ALUMNOS"        # compartida con Salsa — los tutores de Fenix viven acá
 _NEGOCIO_FENIX = "FENIX KIDS ACADEMY"  # opción del multi-select NEGOCIO que marca al tutor
@@ -584,13 +589,41 @@ async def es_cliente_activo_por_telefono(telefono: str) -> bool:
                     try:
                         r = await client.get(f"{_BASE_URL}/{_NINOS}/{hid}", headers=_headers(), timeout=10)
                         if r.status_code == 200:
-                            estado = (r.json().get("fields", {}).get("ESTADO") or "").strip().upper()
+                            estado = (r.json().get("fields", {}).get(_CAMPO_ESTADO_NINO) or "").strip().upper()
                             if estado != "A PRUEBA":
                                 return True
                     except Exception as e:
                         logger.error(f"[ROUTER] Error leyendo hijo {hid} de tutor {tutor.get('id')}: {e}")
             return False
     return False
+
+
+# Planes reales que acepta el select NIÑOS FENIX.PLAN. Hoy solo se venden el
+# pack de 5 y la clase de prueba (Iván, 2026-08-08); los mensual/trimestral
+# quedan porque el select todavia los tiene y hay niños viejos con ese plan.
+# Si el texto no se reconoce se devuelve "" y el llamador NO manda el campo:
+# un valor invalido hace que Airtable rechace el PATCH ENTERO con 422, y ahi
+# se pierde tambien el ESTADO2 que iba en el mismo request.
+_PLANES_NINO = ("Suscripcion", "Mensual", "Paquete5", "Trimestral", "Una clase")
+
+
+def plan_a_airtable(plan: str) -> str:
+    """Traduce el plan que sale del parser de inscripcion al select real."""
+    p = (plan or "").strip().upper()
+    if not p:
+        return ""
+    if "PACK" in p or "PAQUETE" in p:
+        return "Paquete5"
+    if "PRUEBA" in p or "UNA CLASE" in p:
+        return "Una clase"
+    if "MENSUAL" in p:
+        return "Mensual"
+    if "TRIMESTRAL" in p:
+        return "Trimestral"
+    if "SUSCRIP" in p:
+        return "Suscripcion"
+    logger.warning(f"[PLAN] '{plan}' no matchea ningun plan del select — no se manda")
+    return ""
 
 
 async def crear_o_actualizar_tutor(persona: dict, parentesco: str) -> str | None:
@@ -733,13 +766,13 @@ async def crear_nino(
         campos["MADRE (ALUMNOS)"] = [madre_id]
 
     if estado:
-        campos["ESTADO"] = estado.strip()
+        campos[_CAMPO_ESTADO_NINO] = estado.strip()
     else:
         logger.warning(f"[NIÑO] crear_nino sin ESTADO explícito ({datos_nino.get('nombre')}) — queda vacío (= cliente)")
 
     resultado = await _post(_NINOS, campos)
     if resultado:
-        logger.info(f"Niño creado: {resultado['id']} padre={padre_id or '-'} madre={madre_id or '-'} estado={campos.get('ESTADO', '-')}")
+        logger.info(f"Niño creado: {resultado['id']} padre={padre_id or '-'} madre={madre_id or '-'} estado={campos.get(_CAMPO_ESTADO_NINO, '-')}")
         if datos_nino.get("nombre"):
             from agent.concurrencia import _fire_and_forget
             from agent.voces_alumnos import generar_audios_nino
@@ -768,7 +801,7 @@ def _nino_a_dict(nino_id: str, f: dict) -> dict:
         # Niño-eje: links directos del niño (reservas por link,
         # no por FIND del nombre de la familia — bug A8)
         "reserva_ids": f.get("RESERVAS FENIX", []) or [],
-        "estado": f.get("ESTADO", ""),
+        "estado": f.get(_CAMPO_ESTADO_NINO, ""),
     }
 
 
@@ -1035,7 +1068,7 @@ async def obtener_ninos_por_horario(fecha_iso: str, hora: str) -> list[dict]:
                                     pass
                         # es_prueba (niño-eje, F7.b): el ESTADO vive en el NIÑO
                         # (backfilleado C0, se setea al crear).
-                        _estado_nino = (nf.get("ESTADO") or "").strip()
+                        _estado_nino = (nf.get(_CAMPO_ESTADO_NINO) or "").strip()
                         ninos.append({
                             "id": nino_id,
                             "reserva_id": res_id,
@@ -1627,7 +1660,7 @@ async def obtener_familias_inscriptas() -> list[dict]:
     grupos: dict[str, dict] = {}
     for n in ninos:
         f = n.get("fields", {}) or {}
-        if (f.get("ESTADO") or "").strip().upper() == "A PRUEBA":
+        if (f.get(_CAMPO_ESTADO_NINO) or "").strip().upper() == "A PRUEBA":
             continue
         tutor_ids = _tutores_de_nino(f)
         telefono = next((t for t in (_tel_de(tid) for tid in tutor_ids) if t), "")

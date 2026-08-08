@@ -689,7 +689,7 @@ async def api_alumnos(_: bool = Depends(_require_admin_o_key)):
 
         # es_prueba: el ESTADO vive en el niño (migración niño-eje — antes se
         # miraba el ESTADO PLAN de su familia)
-        _es_prueba_al = (f.get("ESTADO") or "") == "A PRUEBA"
+        _es_prueba_al = (f.get("ESTADO2") or "") == "A PRUEBA"
         alumnos.append({
             "id": rec["id"],
             "nombre": nombre,

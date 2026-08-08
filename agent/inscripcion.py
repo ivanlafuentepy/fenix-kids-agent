@@ -115,7 +115,7 @@ def _parsear_inscripcion(texto: str) -> dict:
 
 
 async def _candidatos_a_prueba() -> list[dict]:
-    """Candidatos a inscribir (F7.b): NIÑOS con ESTADO='A PRUEBA' agrupados por
+    """Candidatos a inscribir (F7.b): NIÑOS con ESTADO2='A PRUEBA' agrupados por
     tutor (links PADRE/MADRE del niño). Pre-check 03/08: todo niño tiene
     PADRE o MADRE linkeado — un niño sin tutor forma grupo propio sin teléfono.
 
@@ -127,7 +127,7 @@ async def _candidatos_a_prueba() -> list[dict]:
     """
     from agent.airtable_client import _get_records, _NINOS, _ALUMNOS
 
-    ninos = await _get_records(_NINOS, formula="{ESTADO}='A PRUEBA'", max_records=1000)
+    ninos = await _get_records(_NINOS, formula="{ESTADO2}='A PRUEBA'", max_records=1000)
     if not ninos:
         return []
 
@@ -452,7 +452,7 @@ async def _ejecutar_inscripcion(
     from agent.airtable_client import (
         _get_records, _post, _patch, _LEADS, _NINOS, _TUTORES,
         buscar_tutor_por_telefono, crear_o_actualizar_tutor, crear_nino,
-        deducir_genero,
+        deducir_genero, plan_a_airtable,
     )
 
     fp = prueba.get("fields", {})
@@ -509,8 +509,14 @@ async def _ejecutar_inscripcion(
     # el niño — decidido 13/07; soporta hermanos con planes distintos) ──
     for _nid_p in _nino_ids_pago:
         try:
-            await _patch(_NINOS, _nid_p, {"ESTADO": "ACTIVO", "PLAN": plan})
-            logger.info(f"[INSCRIPCION] NIÑO {_nid_p} → ESTADO=ACTIVO, PLAN={plan}")
+            # PLAN solo si el parser dio un valor del select: uno invalido
+            # tumba el PATCH entero (422) y el niño se queda sin ESTADO2.
+            _campos_p = {"ESTADO2": "ACTIVO"}
+            _plan_at = plan_a_airtable(plan)
+            if _plan_at:
+                _campos_p["PLAN"] = _plan_at
+            await _patch(_NINOS, _nid_p, _campos_p)
+            logger.info(f"[INSCRIPCION] NIÑO {_nid_p} → ESTADO2=ACTIVO, PLAN={_plan_at or '(sin plan)'}")
         except Exception as _e_p:
             logger.warning(f"[INSCRIPCION] No pude promover el niño {_nid_p}: {_e_p}")
 

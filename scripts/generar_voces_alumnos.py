@@ -42,7 +42,7 @@ from agent.voces_alumnos import GUIONES, generar_audios_nino
 async def alumnos_activos() -> list[str]:
     """Nombres de NIÑOS activos (no A PRUEBA) — para no quemar quota (niño-eje)."""
     from agent.airtable_client import _get_records, _NINOS
-    ninos = await _get_records(_NINOS, formula="NOT({ESTADO}='A PRUEBA')", max_records=1000)
+    ninos = await _get_records(_NINOS, formula="NOT({ESTADO2}='A PRUEBA')", max_records=1000)
     nombres = []
     for n in ninos:
         nombre = (n.get("fields", {}) or {}).get("NOMBRE", "")
