@@ -187,6 +187,7 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     from agent.airtable_client import (
         obtener_grupo_familiar, actualizar_nino,
         buscar_tutor_por_telefono, _tutor_a_dict, crear_nino, vincular_tutor_a_lead,
+        tutor_tiene_telefono,
     )
     from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
     from agent.afiches import _armar_mensaje_agenda_post_pago
@@ -263,8 +264,7 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
 
     # LEAD ↔ TUTOR (lo hacía crear_grupo_a_prueba; sin esto el lead queda sin link)
     _sender_id = next(
-        (t["id"] for t in tutores if t.get("id")
-         and telefono in ((t.get("cell_limpio") or ""), (t.get("cell") or ""))),
+        (t["id"] for t in tutores if t.get("id") and tutor_tiene_telefono(t, telefono)),
         None,
     ) or padre_id or madre_id
     if _sender_id:

@@ -82,6 +82,7 @@ from agent.airtable_client import (
     actualizar_conversion_lead, actualizar_agent_lead,
     marcar_formulario_lead, crear_nino, crear_reserva,
     es_cliente_activo_por_telefono, obtener_grupo_familiar, buscar_tutor_por_telefono,
+    tutor_tiene_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario,
     actualizar_datos_lead, actualizar_diagnostico_lead,
@@ -1826,23 +1827,19 @@ async def _build_contexto_aurora(tutores: list[dict], hijos_raw: list[dict], tel
     def _genero_de(parentesco: str) -> str:
         return {"Papá": "papá", "Mamá": "mamá"}.get(parentesco, "padre/madre")
 
-    # Detectar quién escribe por teléfono — apodo primero, sino solo primer nombre
+    # Detectar quién escribe por teléfono — apodo primero, sino solo primer nombre.
+    # El nombre SIEMPRE sale del número: si no se identifica, no se usa el de otro
+    # tutor de la familia. Ese fallback hacía que Aurora saludara a la mamá con el
+    # nombre del papá (caso Ilse → "Hola Raul", 17/07); ahora cae en
+    # nombre_desconocido y el prompt le pide el nombre en vez de inventarlo.
     _quien = None
     if telefono:
-        _quien = next(
-            (t for t in tutores if telefono in (t.get("cell"), t.get("cell_limpio"))),
-            None,
-        )
+        _quien = next((t for t in tutores if tutor_tiene_telefono(t, telefono)), None)
     if _quien:
         quien_escribe = (_quien.get("apodo") or "").strip() or _primer_nombre(_quien.get("nombre", ""))
         es_genero = _genero_de(_quien.get("parentesco", ""))
     else:
-        # No identificado por teléfono: usar el primer tutor que tenga nombre
-        _primero = next((t for t in tutores if (t.get("nombre") or "").strip()), None)
-        quien_escribe = (
-            (_primero.get("apodo") or "").strip() or _primer_nombre(_primero.get("nombre", ""))
-            if _primero else ""
-        )
+        quien_escribe = ""
         es_genero = "padre/madre"
 
     # Datos de quien escribe
@@ -4619,12 +4616,14 @@ async def telegram_webhook(request: Request):
             await reactivar_dorita(telefono)
 
             if grupo_reg:
-                # Nombre para saludar (apodo o primer nombre) — desde TUTORES FENIX
+                # Nombre para saludar (apodo o primer nombre) — sale del número que
+                # escribe; si no se lo identifica se saluda sin nombre, nunca con el
+                # de otro tutor de la familia.
                 _tutores_wa = grupo_reg.get("tutores", [])
                 _t_wa = next(
-                    (t for t in _tutores_wa if telefono in (t.get("cell"), t.get("cell_limpio"))),
+                    (t for t in _tutores_wa if tutor_tiene_telefono(t, telefono)),
                     None,
-                ) or next((t for t in _tutores_wa if (t.get("nombre") or "").strip()), None)
+                )
                 if _t_wa:
                     _ap_wa = (_t_wa.get("apodo") or "").strip()
                     _no_wa = (_t_wa.get("nombre") or "").strip()
