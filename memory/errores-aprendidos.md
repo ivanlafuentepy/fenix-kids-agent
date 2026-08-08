@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-08-07 (noche) — El RC522 mudo: "Lector OK" y cero detecciones durante 2 horas
+
+**Qué pasó:** armando la estación `basket`, el RC522 leyó perfecto varias veces y de golpe dejó
+de detectar cualquier tag. El diagnóstico engañaba porque el lector **seguía respondiendo**
+`VersionReg = 0x92` → "Lector OK" en cada arranque, pero no leía ni la tarjeta S50 ni el
+llavero. Se perdieron ~2 horas.
+
+**Lo que se probó sin éxito (todo descartado):** cambiar el firmware; revertir al binario
+exacto de quincho con `git checkout`; aislar con `banco_lector` (sin WiFi, sin buzzer, sin
+LED) — 90 segundos de taps sin una sola lectura; desconectar el buzzer; y acusar a la
+soldadura del header, **que estaba perfecta** (Iván lo sostuvo y tenía razón).
+
+**Causa raíz:** estado interno trabado del módulo RC522. El punto clave es que **el botón
+`EN`/`RST` reinicia el ESP32 pero NO le corta la alimentación al lector**, así que el estado
+sobrevive a reinicios, reflasheos y hasta cambios completos de firmware. Por eso aguantó todo
+lo que le hicimos.
+
+**Cómo se resolvió:** desenchufar el USB 10 segundos y volver a enchufar. Volvió a leer el UID
+en el primer intento.
+
+**Regla para la próxima:** ante una estación muda con "Lector OK", el orden es
+**(1) power cycle completo — desenchufar el USB, es gratis; (2) aislar con `banco_lector`;
+(3) recién ahí sospechar del cableado o cambiar el módulo.** Nunca al revés.
+
+**Nota abierta:** es muy probablemente el mismo modo de falla sin explicar del 2026-07-25 con
+quincho ("silencio total 50+ segundos tras un tap exitoso, sin detectar NINGÚN tag nuevo").
+Allá se le atribuyó al ciclo `WakeupA/Select/Halt` y se resolvió sacándolo; ahora sabemos que
+se traba igual **sin ese código**, así que la causa raíz sigue abierta — el remedio no.
+
+**Bonus de la misma sesión (2 trampas menores):**
+- **HW-508: el pin del MEDIO es GND, no VCC** (al revés que los módulos KY). Cablearlo como si
+  el medio fuera `+` da un zumbido continuo de interferencia desde el arranque. El pinout
+  correcto quedó en `firmware/README.md`.
+- **Una hipótesis que explica el síntoma no es una hipótesis verificada.** Cuando el firmware
+  asíncrono dejó de leer, se atribuyó al loop sin `delay` ("el RC522 no alcanza a energizar el
+  tag"): plausible, coherente… y falso. El firmware revertido, idéntico al de quincho, tampoco
+  leía.
+
+---
+
 ## 2026-08-07 — El schema de Airtable se movió abajo del código: `str + list` dejó a Aurora muda
 
 **Qué pasó:** Ivan escribía a Aurora desde su número y no recibía nada. Tampoco respondían

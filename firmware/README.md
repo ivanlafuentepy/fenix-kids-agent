@@ -14,6 +14,11 @@ los `curl` con los que se verificó el circuito por hardware real.
 | Carpeta | Fase | Qué hace |
 |---|---|---|
 | `banco_lector/` | **N0** | Lee el UID de una pulsera y lo imprime por serial. Sin WiFi. Confirma que el hardware lee. |
+| `estacion/` | **N2** | Lo mismo + WiFi + `POST /juego/estacion` a Railway + LED y buzzer de feedback local. Credenciales y `ESTACION_ID` en `config.h` (fuera de git). |
+
+Estaciones armadas hasta hoy: `quincho` y `basket`. El `estacion_id` de cada una debe estar
+además en la variable `JUEGO_ESTACIONES` de Railway, si no el backend devuelve **422** aunque
+el hardware funcione perfecto.
 
 ---
 
@@ -34,6 +39,28 @@ Los 7 jumpers hembra-hembra del pack Dupont. **El RC522 va a 3.3V — el pin de 
 
 En el ESP32-DevKitC de 38 pines, el pin `3V3` está en la esquina superior de un costado y
 hay varios `GND` repartidos — sirve cualquiera.
+
+---
+
+## Cableado del buzzer HW-508 → ESP32
+
+⚠️ **El pin del medio es GND, NO el positivo.** Es al revés que en la mayoría de los módulos
+KY, donde el del medio es VCC. Cablearlo como si el medio fuera `+` deja el módulo con la
+alimentación cruzada y hace un **zumbido continuo de interferencia** desde que arranca la
+placa — no un beep, un ruido permanente. Costó una tarde en la estación `basket` (07/08).
+
+| HW-508 | ESP32 | Nota |
+|---|---|---|
+| `S` (un extremo) | GPIO 25 | señal |
+| **medio** | **GND** | ⚠️ acá está la trampa |
+| extremo opuesto a `S` | 5V (`VIN`) | alimentación |
+
+Diagnóstico rápido si zumba: desconectá `S`. Si el ruido para, es la señal; si sigue, es la
+alimentación (que es el caso del medio cableado al revés).
+
+El piezo del HW-508 es chico y **se escucha poco** — verificado en `quincho` y en `basket`.
+El LED es la confirmación principal; el buzzer es refuerzo. Para ambientes ruidosos (una
+cancha con chicos) hace falta otro emisor, no es un problema de firmware.
 
 ---
 

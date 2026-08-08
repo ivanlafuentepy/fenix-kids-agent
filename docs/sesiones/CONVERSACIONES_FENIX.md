@@ -647,3 +647,24 @@ Fix en dos deploys incrementales: `95cb067` (identidad tutor → ALUMNOS) y `3fa
 con madre y 52 con padre, donde antes venía vacío.
 
 Detalle completo → `.claude/handoffs/handoff_20260807_1253.md`
+
+---
+
+## 2026-08-07 (noche) — Basket armada y el RC522 mudo
+
+Segunda estación del circuito NFC (`basket`) armada y verificada end-to-end: Iván soldó el
+header del RC522, se cableó lector + buzzer HW-508 y se flasheó `estacion.ino` (mismo binario
+que quincho, solo cambia `ESTACION_ID` en `config.h`). Se habilitó `basket` en la variable
+`JUEGO_ESTACIONES` de Railway — antes solo tenía `quincho` y por eso todos los taps volvían
+422. Verificado con hardware real: `UID 7B45DE00`/`3A90EF55` → `POST /juego/estacion → 200`.
+
+⚠️ Consecuencia a tener presente: con las dos estaciones activas, **una vuelta ahora exige
+tocar quincho Y basket**.
+
+El grueso de la sesión se fue en tres trampas de hardware, la última de ~2 horas: **el RC522
+se traba mudo** (responde `VersionReg` pero no detecta ningún tag) y **solo se destraba
+cortándole la alimentación** — el botón `EN` reinicia el ESP32 pero no le corta la corriente
+al lector. Sin cambios en los sketches: se probó una versión con POST asíncrono para acelerar
+la fila, rompió la detección y se revirtió entera con `git checkout`.
+
+Detalle completo → `.claude/handoffs/handoff_20260807_2318.md`
