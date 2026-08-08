@@ -511,8 +511,32 @@ def _parentesco_de_alumno(f: dict) -> str:
     return {"HOMBRE": "Papá", "MUJER": "Mamá"}.get((f.get("GENERO") or "").strip().upper(), "")
 
 
+def tutor_tiene_telefono(tutor: dict, telefono: str) -> bool:
+    """¿Este teléfono es de este tutor? — única fuente de verdad del criterio.
+
+    Contempla los DOS números de la fila (TELEFONO y TELEFONO2): un padre puede
+    hablarle a Aurora desde una línea distinta a la cargada para Salsa/Impulso
+    (la fila de ALUMNOS es compartida y su TELEFONO no siempre es el de Fenix).
+    Recibe un tutor ya mapeado por _tutor_a_dict.
+    """
+    if not telefono:
+        return False
+    conocidos = {
+        (tutor.get("cell") or "").strip(),
+        (tutor.get("cell_limpio") or "").strip(),
+        (tutor.get("cell2") or "").strip(),
+        (tutor.get("cell2_limpio") or "").strip(),
+    }
+    return telefono in (conocidos - {""})
+
+
 async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
-    """Busca al TUTOR (fila de ALUMNOS) por su TELEFONO LIMPIO.
+    """Busca al TUTOR (fila de ALUMNOS) por su teléfono — TELEFONO o TELEFONO2.
+
+    Se miran los dos números porque la fila de ALUMNOS es compartida con
+    Salsa/Impulso: el TELEFONO principal puede ser el de esos negocios y el
+    WhatsApp con el que la familia le habla a Aurora vivir en TELEFONO2
+    (control de identidad 07/08 — Gaudi escribía desde un número invisible).
 
     Un mismo teléfono puede tener varias filas en ALUMNOS (Salsa/Impulso/Fenix)
     — se elige por prioridad: con hijos FENIX linkeados > con NEGOCIO Fenix.
@@ -520,7 +544,8 @@ async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
     """
     if not telefono:
         return None
-    formula = f"FIND('{telefono}', {{TELEFONO LIMPIO}} & '')>0"
+    formula = (f"OR(FIND('{telefono}', {{TELEFONO LIMPIO}} & '')>0, "
+               f"FIND('{telefono}', {{TELEFONO2 LIMPIO}} & '')>0)")
     records = await _get_records(_ALUMNOS, formula=formula, max_records=10)
     con_hijos = [r for r in records if _hijos_de_tutor(r.get("fields", {}) or {})]
     if con_hijos:
@@ -758,6 +783,10 @@ def _tutor_a_dict(tutor_id: str, f: dict) -> dict:
         "ci": f.get("CI", ""),
         "cell": f.get("TELEFONO", ""),
         "cell_limpio": f.get("TELEFONO LIMPIO", ""),
+        # Segundo número: el WhatsApp con el que le habla a Aurora cuando el
+        # TELEFONO principal es el de Salsa/Impulso (fila compartida).
+        "cell2": f.get("TELEFONO2", ""),
+        "cell2_limpio": f.get("TELEFONO2 LIMPIO", ""),
         "email": f.get("EMAIL", ""),
         "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
         "parentesco": _parentesco_de_alumno(f),
@@ -1231,7 +1260,7 @@ async def registrar_pago_fenix(
     try:
         tutores = [t for t in (grupo or {}).get("tutores", []) if t.get("id")]
         _por_cell = next(
-            (t for t in tutores if telefono and telefono in (t.get("cell_limpio"), t.get("cell"))),
+            (t for t in tutores if tutor_tiene_telefono(t, telefono)),
             None,
         ) if telefono else None
         _marcado = next((t for t in tutores if t.get("es_quien_paga")), None)
