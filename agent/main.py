@@ -2947,15 +2947,24 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # si el padre chateó 20+ mensajes tras recibir los datos, el CI salía de
         # la ventana default y el comprobante no se detectaba (auditoría A6).
         historial_pago = await obtener_historial(telefono, limite=50)
+        _ya_pago_db = False
         if es_posible_comprobante(texto, historial_pago):
-            await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
-            return
+            # Guard persistente: el "ya pagó" del historial vive en la ventana
+            # de 50 mensajes — una familia que pagó hace semanas y siguió
+            # chateando re-disparaba el flujo de prueba ENTERO con el
+            # comprobante de la cuota (auditoría 09/08 A11). La DB no olvida.
+            from agent.memory import tiene_pago_confirmado_db
+            _ya_pago_db = await tiene_pago_confirmado_db(telefono)
+            if not _ya_pago_db:
+                await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
+                return
+            logger.info(f"[PAGOS] Comprobante de {telefono} con pago YA confirmado en DB → aviso, sin flujo automático")
 
         # Imagen/documento de alguien que YA pagó: puede ser un pago nuevo
         # (cuota, hermano, inscripción) — avisar al admin y seguir el flujo
         # normal, sin disparar nada automático (auditoría 2026-07-12, A3).
         from agent.pagos import es_segundo_comprobante
-        if es_segundo_comprobante(texto, historial_pago):
+        if _ya_pago_db or es_segundo_comprobante(texto, historial_pago):
             try:
                 await enviar_a_topic(
                     topic_id,
