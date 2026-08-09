@@ -1352,7 +1352,20 @@ async def crear_asistencia(
     Crea una fila de asistencia en ASISTENCIA FENIX (una fila = un niño presente
     en un sábado). F7.b: los links FAMILIA y PRUEBA ya no se escriben (el niño
     es el eje). Retorna el record_id creado o None.
+
+    UN SÁBADO = UNA FILA: si el niño ya tiene asistencia ese día, se devuelve la
+    existente sin crear otra. Hay TRES puntos que llaman acá (cara en el tótem,
+    QR de la reserva y marcado manual del HQ) y un niño puede pasar por más de
+    uno el mismo sábado. Antes eso dejaba filas duplicadas; ahora importa además
+    porque el saldo del pack se cuenta por filas de esta tabla, y duplicarlas le
+    comería clases al niño.
     """
+    if nino_id and fecha_iso:
+        ya = await obtener_asistencias_ninos_fecha([nino_id], fecha_iso)
+        if ya.get(nino_id):
+            logger.info(f"[ASISTENCIA] {nino_id} ya estaba presente el {fecha_iso} → no duplico")
+            return ya[nino_id]
+
     campos: dict = {
         "REGISTRO": nombre,
         "FECHA": fecha_iso,
