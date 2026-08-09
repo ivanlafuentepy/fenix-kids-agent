@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-08-09 — Un saldo que bajaba solo: el contador mutable que nadie podía auditar
+
+**Qué pasó:** Ivan objetó que el saldo del pack de clases "bajara mágicamente" sin poder ver de
+dónde salía el número. Tenía razón: `NIÑOS FENIX.CLASES DISPONIBLES` era un contador que el
+código pisaba en cada check-in. Si se descontaba dos veces, o alguien lo editaba a mano, no
+quedaba rastro. Convivían dos verdades sin estar atadas: las filas de `ASISTENCIA FENIX` (qué
+día vino) y el número (cuánto le queda).
+
+**Cómo se resolvió:** el saldo dejó de guardarse y pasó a **calcularse** en Airtable:
+`CLASES COMPRADAS` (rollup de los pagos PAQUETE5 vía `PAGOS.CLASES FENIX (PACK)`) −
+`CLASES USADAS` (asistencias desde `PACK DESDE`) = `SALDO CALCULADO`. Descontar una clase dejó
+de ser una operación: **crear la asistencia ES el descuento**, y esa fila dice día, turno y
+método. Tres deploys (`d89be4c` guarda de un-sábado-una-fila, `d2e3668` el pago aporta las
+clases, `29aea6c` muere el contador) + `bf5024f` en `salsa-soul-acceso`.
+
+**Los tres errores que se cometieron en el camino (los tres se atraparon verificando, no leyendo):**
+
+1. **Un campo "obsoleto" lo escribía OTRO repo.** Antes de dar el OK para borrar
+   `CLASES DISPONIBLES` se grepeó `agent/` y dio limpio. Al grepear **todos los proyectos de
+   Ivan** apareció `salsa-soul-acceso/gui_acceso.py` escribiéndolo al cobrar un pack por
+   mostrador. Borrar el campo habría hecho fallar ese PATCH con **422 en silencio**: el pago
+   cargado y el niño sin pack, sin que nadie se entere.
+2. **`PAQUETE12` aportaba 0 clases.** La fórmula nueva solo contemplaba `PAQUETE5`, pero el
+   mostrador ofrece los dos. Un pack de 12 habría dejado al niño como "mensual viejo" y sin
+   descuentos. Apareció leyendo el código del otro repo, no el propio.
+3. **Sin `PACK DESDE` el saldo no bajaba nunca.** La primera versión de `GASTA CLASE` daba 0
+   cuando ese campo estaba vacío — y el mostrador no lo seteaba. El niño se quedaba con 5
+   clases para siempre. Se agregó fallback: sin `PACK DESDE`, cuentan todas las asistencias.
+4. (Bonus, atrapado por el pre-cambio) `datetime` no estaba importado a nivel de módulo en
+   `inscripcion.py`: el código nuevo habría explotado con `NameError` **en el flujo del pago**.
+
+**Reglas para la próxima:**
+1. **Un número que el código pisa no es un dato: es una opinión sin respaldo.** Si un valor se
+   puede derivar de filas reales (pagos, asistencias), que se derive. El costo de migrar crece
+   con cada registro: acá había 2 niños con pack y salió gratis.
+2. **Antes de borrar un campo de Airtable, grepear TODOS los repos, no el del momento.** La
+   base es compartida entre Fenix, Salsa, Impulso y el sistema de acceso. Un grep del repo
+   activo demuestra muy poco. Ver también la Metadata API: no borra campos, los borra Ivan.
+3. **Si un dato tiene dos puertas de entrada, el cambio se hace en las dos o no se hace.** El
+   pack se cobra por Aurora y por el mostrador; arreglar una sola dejaba el sistema peor que
+   antes (media migración es la única versión que rompe).
+4. **`PAGOS.FECHA` es un `createdTime`: la fecha de CARGA, no la del pago, y no se puede
+   editar.** Por eso se agregó `FECHA PAGO` (editable) + `FECHA EFECTIVA`. Ojo:
+   `VENCIMIENTO_FORMULA` sigue calculando desde la fecha de carga — si Ivan carga tarde, el
+   vencimiento del MENSUAL se corre a favor de la familia. Sin resolver a propósito (toca
+   los pagos de Salsa).
+
+---
+
 ## 2026-08-07 — Aurora saludó a una mamá con el nombre de su marido y le inventó una reserva
 
 **Qué pasó:** Ivan preguntó por qué el 17/07 Aurora había saludado a Ilse Estigarribia con
