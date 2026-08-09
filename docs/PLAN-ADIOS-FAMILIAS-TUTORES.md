@@ -113,9 +113,11 @@ rec2UDvotloW13tqa, recAOnmj3dVuF1pW0, recyguE0SoC4NlmSm.
   `backups/2026-08-09/tutores-fenix-backup.json` (101 registros).
 
 **Queda para el borrado definitivo (~30 días, lo hace Iván):**
-1. Pegar el script nuevo de la automation CREAR FACTURA en la UI
-   (`docs/operaciones/automation-crear-factura-2026-08-09.js`) — la API no
-   edita customScript. Hasta entonces la versión vieja sigue funcionando.
+1. ~~Pegar el script nuevo de la automation CREAR FACTURA en la UI~~ ✅ **HECHO
+   09/08** (Iván lo pegó y publicó; verificado por API: deployed + valid, el
+   draft no difiere de lo desplegado, y linkea `TUTOR (ALUMNOS)` cuando el
+   pago es de FENIX). Copia del script en
+   `docs/operaciones/automation-crear-factura-2026-08-09.js`.
 2. Antes de BORRAR la tabla: sacar `{TUTOR RUC}` del `NEG1_FILTRO` del robot
    y de la cadena (`airtable.py`), y el fallback de `obtener_contacto_tutor`.
    Un lookup muerto en el filtro = 422 y NEG1 entero deja de facturar.
