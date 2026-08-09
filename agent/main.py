@@ -1954,6 +1954,13 @@ async def _build_contexto_aurora(tutores: list[dict], hijos_raw: list[dict], tel
             _reservas_texto = "RESERVAS ACTIVAS: ninguna"
     except Exception as e:
         logger.error(f"[AURORA] Error cargando reservas familia: {e}")
+        # "" era falsy → el mensaje iba SIN bloque de datos y el prompt le hacía
+        # ofrecer agendar a una familia que SÍ tiene reserva (auditoría 09/08 M2).
+        # Con el marcador, Aurora sabe que no puede afirmar ni negar reservas.
+        _reservas_texto = (
+            "⚠️ NO PUDE LEER LAS RESERVAS (error técnico): no afirmes ni niegues "
+            "ninguna reserva — decí que lo verificás y le confirmás en un rato."
+        )
 
     # Total agendados por horario (inscriptos + prueba, sin nombres)
     # Fuente ÚNICA: RESERVAS FENIX via obtener_ninos_por_horario (migración 2.B —
@@ -3260,6 +3267,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             if grupo:
                 contexto_extra, _reservas_airtable = await _build_contexto_aurora(
                     grupo["tutores"], grupo["hijos"], telefono)
+            else:
+                # grupo=None NO es un caso normal: o el número no identifica a
+                # nadie o Airtable falló (los dos caen acá). Sin este bloque,
+                # Aurora corría con el prompt pelado y AFIRMABA reservas desde
+                # el historial — la reserva inventada a Ilse (auditoría #301).
+                logger.warning(f"[AURORA] {telefono}: sin grupo familiar — contexto SIN DATOS")
+                contexto_extra = (
+                    "[SISTEMA: NO PUDE CARGAR LOS DATOS DE ESTA FAMILIA (el número "
+                    "no identifica a nadie o hubo un error técnico). NO afirmes ni "
+                    "niegues reservas, saldos ni datos de niños. Pedile amablemente "
+                    "su nombre para identificarlo, o decile que verificás y le "
+                    "confirmás en un rato.]"
+                )
 
         # ── Sin delays artificiales — Claude responde directo ────────────
                 # El flujo continúa abajo con la llamada normal a generar_respuesta()
