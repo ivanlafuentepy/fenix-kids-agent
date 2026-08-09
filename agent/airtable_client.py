@@ -305,28 +305,9 @@ async def crear_lead(telefono: str, rompehielos: str = "A") -> str | None:
     return None
 
 
-# Mapeo número rompehielos → record ID en DIAGNOSTICO FENIX
-_DIAGNOSTICO_MAP = {
-    1: "recbslONudH8ue7GJ", 2: "rec2rZhYc66lruB24", 3: "recujDup74w7jfHHa",
-    4: "reccI23SAUX3RLgBq", 5: "recpuZN4JHJw9ay7U", 6: "recCkqI2EMwB5iEkj",
-    7: "recEENwOs4WdkaOnH", 8: "recO9DRxqktfPqczU", 9: "rec22T28IFfVNoFNw",
-    10: "rec8BZJFathVxaads", 11: "recJuhT5tHqOlFVvI", 12: "recaV3I8LoKq9KJKE",
-    13: "recQ7sD9xYtMfLnJv", 14: "recJzk1SfWuZominQ", 15: "reclb2atSeA3kMq6n",
-}
-
-
-async def actualizar_diagnostico_lead(telefono: str, numeros: list[int]) -> bool:
-    """Linkea los números del rompehielos al lead en DIAGNOSTICO FENIX. Acumula, no sobreescribe."""
-    records = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
-    if not records:
-        return False
-    nuevos_ids = [_DIAGNOSTICO_MAP[n] for n in numeros if n in _DIAGNOSTICO_MAP]
-    if not nuevos_ids:
-        return False
-    # Leer los existentes y acumular
-    existentes = records[0].get("fields", {}).get("DIAGNOSTICO", [])
-    todos = list(set(existentes + nuevos_ids))
-    return await _patch(_LEADS, records[0]["id"], {"DIAGNOSTICO": todos})
+# (eliminado 09/08: actualizar_diagnostico_lead + _DIAGNOSTICO_MAP — sin
+# callers, y LEADS.DIAGNOSTICO dejó de ser link (hoy es texto): patchear los
+# rec-ids viejos daba 422/TypeError. Si el diagnóstico vuelve, escribir TEXTO.)
 
 
 async def actualizar_reserva_lead(telefono: str, fecha_reserva: str, hora_reserva: str) -> bool:

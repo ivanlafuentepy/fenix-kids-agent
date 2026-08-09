@@ -85,7 +85,7 @@ from agent.airtable_client import (
     tutor_tiene_telefono,
     eliminar_lead, eliminar_todo_de_telefono,
     obtener_o_crear_horario,
-    actualizar_datos_lead, actualizar_diagnostico_lead,
+    actualizar_datos_lead,
     actualizar_reserva_lead,
     obtener_ninos_por_horario, formatear_lista_ninos,
     obtener_horarios_disponibles, obtener_redes,
