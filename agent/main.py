@@ -511,10 +511,8 @@ async def checkin_confirmar(record_id: str):
                 hora_checkin_iso=ahora.isoformat(), nino_id=_nino_id_ci,
                 reserva_id=record_id, turno=hora, metodo="QR",
             )
-            # Descontar la clase del pack (idempotente por día; None = mensual viejo)
-            if _nino_id_ci:
-                from agent.airtable_client import descontar_clase
-                await descontar_clase(_nino_id_ci, ahora.date().isoformat())
+            # La clase del pack ya quedó descontada: el saldo se calcula desde
+            # las filas de ASISTENCIA, así que crearla ES el descuento.
         except Exception as _e_asis_ci:
             logger.warning(f"[CHECKIN] Asistencia no creada para {record_id}: {_e_asis_ci}")
 

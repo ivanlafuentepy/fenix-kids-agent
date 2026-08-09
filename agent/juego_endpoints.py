@@ -1110,11 +1110,11 @@ async def _checkin_face_inner(payload: dict, x_juego_key: str | None):
     # de su vencimiento en vez de clases. El aviso sale solo si Ivan lo prendió
     # con AVISO_CHECKIN_ACTIVO.
     try:
-        from agent.airtable_client import descontar_clase, padre_de_nino
+        from agent.airtable_client import obtener_saldo_clases, padre_de_nino
         from agent.checkin_aviso import aviso_activo, enviar_aviso_checkin, frase_estado
 
-        _pack = await descontar_clase(nino_id)
-        _saldo = _pack[0] if _pack else None
+        # La asistencia ya se creó arriba: el saldo calculado la refleja.
+        _saldo = await obtener_saldo_clases(nino_id)
 
         if aviso_activo():
             _nombre_padre, _tel_padre, _vence = await padre_de_nino(nino_id)

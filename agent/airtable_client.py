@@ -1408,16 +1408,28 @@ async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -
 
 
 # ── PACK DE CLASES (5 sábados que NO vencen — desde 28/07/2026) ──────────────
-# El saldo vive en NIÑOS FENIX.CLASES DISPONIBLES y se mueve SOLO por acá:
-# descontar_clase() cuando el niño entra, recargar_pack() cuando la familia paga.
-# Misma disciplina que _acreditar con el oro del juego: una única puerta.
+# El saldo NO se guarda en ningún lado: se CALCULA en Airtable, y por eso se
+# puede auditar. Las dos mitades salen de filas reales que Ivan puede abrir:
 #
-# CLASES DISPONIBLES vacío = la familia sigue con el plan mensual viejo
-# (decisión de Ivan 28/07: los del mensual siguen aparte) → no se le toca nada
-# y las funciones devuelven None para que el llamador no le hable de saldo.
+#   CLASES COMPRADAS  ← suma de sus pagos PAQUETE5 (PAGOS.CLASES FENIX (PACK))
+#   CLASES USADAS     ← sus asistencias desde PACK DESDE (ASISTENCIA.GASTA CLASE)
+#   SALDO CALCULADO   = COMPRADAS − USADAS
+#
+# Antes el saldo era un contador que el código pisaba (descontar_clase /
+# recargar_pack): si se descontaba dos veces, o alguien lo editaba a mano, no
+# quedaba rastro de por qué el número era ese. Ahora el código NO escribe el
+# saldo — solo lo lee (obtener_saldo_clases) y deja marcado desde cuándo cuenta
+# el pack (marcar_inicio_pack). Descontar una clase = crear la asistencia, que
+# es idempotente por día (ver crear_asistencia).
+#
+# SALDO CALCULADO vacío = la familia sigue con el plan mensual viejo (decisión
+# de Ivan 28/07: los del mensual siguen aparte) → se devuelve None para que el
+# llamador no le hable de saldo al padre.
+#
+# CLASES DISPONIBLES y ULTIMO DESCUENTO son el contador viejo: quedan en
+# Airtable como referencia histórica, ya no los lee ni los escribe nadie.
 
-_CAMPO_CLASES = "CLASES DISPONIBLES"
-_CAMPO_ULT_DESCUENTO = "ULTIMO DESCUENTO"
+_CAMPO_PACK_DESDE = "PACK DESDE"
 _CAMPO_PACK_DESDE = "PACK DESDE"
 # El saldo NO se guarda: se calcula en Airtable como CLASES COMPRADAS (suma de
 # los pagos PAQUETE5) − CLASES USADAS (asistencias desde PACK DESDE). Cada
@@ -1456,48 +1468,6 @@ async def obtener_saldo_clases(nino_id: str) -> int | None:
         return None
     valor = rec.get("fields", {}).get(_CAMPO_SALDO)
     return int(valor) if valor is not None else None
-
-
-async def descontar_clase(nino_id: str, fecha_iso: str = "") -> tuple[int, bool] | None:
-    """Descuenta UNA clase del pack. Retorna (saldo_que_queda, descontado).
-
-    Idempotente por día: si ULTIMO DESCUENTO ya es esa fecha, devuelve el saldo
-    sin volver a descontar. Hace falta porque hay TRES puntos que crean
-    asistencia (cara en el tótem, QR de reserva y marcado manual del HQ) y un
-    niño puede pasar por más de uno el mismo sábado.
-
-    Retorna None si el niño no tiene pack (familia del mensual viejo) o si el
-    PATCH falló — en ambos casos el llamador NO debe hablarle de saldo al padre.
-    Nunca baja de 0: si entró con 0, deja 0 y avisa por log. La entrada del niño
-    no se bloquea nunca por saldo — eso lo resuelve Ivan con la familia.
-    """
-    rec = await _leer_nino(nino_id)
-    if not rec:
-        return None
-    campos = rec.get("fields", {})
-    saldo = campos.get(_CAMPO_CLASES)
-    if saldo is None:
-        return None
-    saldo = int(saldo)
-
-    if not fecha_iso:
-        from datetime import datetime as _dt
-        from zoneinfo import ZoneInfo as _ZI
-        fecha_iso = _dt.now(_ZI("America/Asuncion")).date().isoformat()
-    hoy = fecha_iso
-    if (campos.get(_CAMPO_ULT_DESCUENTO) or "")[:10] == hoy:
-        logger.info(f"[PACK] {nino_id}: ya se descontó hoy ({hoy}) → quedan {saldo}")
-        return saldo, False
-
-    if saldo <= 0:
-        logger.warning(f"[PACK] {nino_id} entró con saldo 0 — no hay clase que descontar")
-        return 0, False
-
-    nuevo = saldo - 1
-    if not await _patch(_NINOS, nino_id, {_CAMPO_CLASES: nuevo, _CAMPO_ULT_DESCUENTO: hoy}):
-        return None
-    logger.info(f"[PACK] {nino_id}: clase descontada → quedan {nuevo}")
-    return nuevo, True
 
 
 async def padre_de_nino(nino_id: str) -> tuple[str, str, str]:
