@@ -711,6 +711,17 @@ async def crear_o_actualizar_tutor(persona: dict, parentesco: str) -> str | None
 
 # ── NIÑOS ─────────────────────────────────────────────────────────────────────
 
+_TALLAS_REMERA = {"6", "8", "10", "12", "14", "P", "M", "G", "XG"}
+_TALLAS_ALIAS = {"S": "P", "L": "G", "XL": "XG", "XXL": "XG"}
+
+
+def _normalizar_talla(talla) -> str:
+    """Normaliza una talla libre a una opción del select TALLA REMERA, o ''."""
+    t = str(talla or "").strip().upper().replace("TALLA", "").strip()
+    t = _TALLAS_ALIAS.get(t, t)
+    return t if t in _TALLAS_REMERA else ""
+
+
 async def crear_nino(
     datos_nino: dict,
     *,
@@ -764,7 +775,17 @@ async def crear_nino(
         if genero:
             campos["SEXO"] = genero
     if datos_nino.get("talla_remera"):
-        campos["TALLA REMERA"] = str(datos_nino["talla_remera"]).strip()
+        # TALLA REMERA es un singleSelect cerrado (6/8/10/12/14/P/M/G/XG): un
+        # valor fuera del select tumba el POST del niño ENTERO con 422 — mejor
+        # crear al niño sin talla y loggear que perder nombre, fecha y links.
+        _talla = _normalizar_talla(datos_nino["talla_remera"])
+        if _talla:
+            campos["TALLA REMERA"] = _talla
+        else:
+            logger.warning(
+                f"[NIÑO] Talla {datos_nino['talla_remera']!r} no es opción del select "
+                f"TALLA REMERA — creo a {datos_nino.get('nombre')} sin talla"
+            )
 
     # Links niño-eje: el niño apunta directo a sus tutores (filas de ALUMNOS).
     if padre_id:
