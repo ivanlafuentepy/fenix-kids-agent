@@ -563,7 +563,9 @@ async def _ejecutar_inscripcion(
     if _nino_ids_pago:
         _campos_nino_eje["NIÑOS FENIX"] = _nino_ids_pago
     if tutor_id:
-        _campos_nino_eje["PAGA"] = [tutor_id]
+        # tutor_id es una fila de ALUMNOS → va en PAGA (ALUMNOS). El link viejo
+        # PAGA (→TUTORES FENIX) con este id tumbaba el POST entero (422).
+        _campos_nino_eje["PAGA (ALUMNOS)"] = [tutor_id]
 
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",
@@ -640,9 +642,11 @@ async def _ejecutar_inscripcion(
     if tel:
         leads = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{tel}'", max_records=5)
         for lead in leads:
+            # TUTOR (ALUMNOS): el link viejo TUTOR FENIX (→TUTORES) con un id de
+            # ALUMNOS hacía morir el PATCH entero y el lead nunca quedaba INSCRIPTO.
             await _patch(_LEADS, lead["id"], {
                 "CONVERSION": "INSCRIPTO",
-                "TUTOR FENIX": [tutor_id],
+                "TUTOR (ALUMNOS)": [tutor_id],
             })
 
     # ── Confirmar ─────────────────────────────────────────────────────
