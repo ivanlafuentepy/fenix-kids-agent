@@ -169,6 +169,41 @@ TOOLS_AURORA = [
         },
     },
     {
+        "name": "registrar_familia",
+        "description": (
+            "Registra o actualiza el nombre del padre/madre de este teléfono. "
+            "Usar SOLO cuando no hay datos de la familia (el sistema lo indica) "
+            "y la persona ya dijo su nombre. NUNCA inventar el nombre."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nombre": {"type": "string", "description": "Primer nombre del padre/madre, tal como lo dijo."},
+                "apellido": {"type": "string", "description": "Apellido, si lo dijo."},
+            },
+            "required": ["nombre"],
+        },
+    },
+    {
+        "name": "registrar_hijo",
+        "description": (
+            "Registra un hijo de la familia de este teléfono (requiere que el "
+            "padre/madre ya esté registrado). Usar cuando el padre da los datos "
+            "de un hijo que no figura en la lista. NUNCA inventar datos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nombre": {"type": "string", "description": "Nombre del niño."},
+                "apellido": {"type": "string", "description": "Apellido, si lo dio."},
+                "fecha_nacimiento": {"type": "string", "description": "Fecha de nacimiento ISO (YYYY-MM-DD), si la dio."},
+                "ci": {"type": "string", "description": "Cédula del niño, si la dio."},
+                "talla_remera": {"type": "string", "description": "Talla de remera (6/8/10/12/14/P/M/G/XG), si la dio."},
+            },
+            "required": ["nombre"],
+        },
+    },
+    {
         "name": "escalar_a_humano",
         "description": (
             "Transfiere la conversación al Profe Ivan real (humano). "

@@ -9,7 +9,10 @@ from agent.tools.escalacion import escalar_a_humano
 from agent.tools.disponibilidad import consultar_disponibilidad
 from agent.tools.llamada import programar_llamada
 from agent.tools.agenda import gestionar_reserva
-# registrar_familia y registrar_hijo se manejan en onboarding, no como tools de Aurora
+# 09/08: registrar_familia/registrar_hijo pasan a ser tools de Aurora — el
+# onboarding por marker "REGISTRO PADRE:" murió en el refactor Wave 2 y el
+# flujo /registro quedaba mudo (el tutor nunca se creaba, auditoría A6).
+from agent.tools.registro import registrar_familia, registrar_hijo
 
 logger = logging.getLogger("agentkit")
 
@@ -22,6 +25,8 @@ _TOOLS = {
     "programar_llamada": programar_llamada,
     # Aurora
     "gestionar_reserva": gestionar_reserva,
+    "registrar_familia": registrar_familia,
+    "registrar_hijo": registrar_hijo,
 }
 
 # Tools que necesitan el teléfono del padre (acceden a Airtable/Telegram)
