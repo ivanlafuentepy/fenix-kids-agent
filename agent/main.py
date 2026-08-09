@@ -1204,6 +1204,9 @@ async def reset_total_admin(telefono: str, _: bool = Depends(_require_admin)):
 async def restaurar_aurora(telefono: str, _: bool = Depends(_require_admin)):
     """Restaura un número a Aurora sin borrar historial."""
     tutor = await buscar_tutor_por_telefono(telefono)
+    # Sin fila de conversación, actualizar_agent_actual era un no-op silencioso
+    # y el endpoint devolvía ok sin cambiar nada (auditoría 09/08 M8).
+    await asignar_variante(telefono)
     await actualizar_agent_actual(telefono, "aurora", "cliente_inscripto")
     await reactivar_dorita(telefono)
     return {

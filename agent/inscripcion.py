@@ -669,6 +669,18 @@ async def _ejecutar_inscripcion(
                 "TUTOR (ALUMNOS)": [tutor_id],
             })
 
+    # ── El inscripto pasa a Aurora ────────────────────────────────────
+    # Sin esto el padre seguía con el agente de VENTAS (precios de prueba al
+    # preguntar por su clase) y el botón "Sí, mandame fotos" del check-in caía
+    # al brain de leads: nunca recibía las fotos (auditoría 09/08).
+    if tel:
+        try:
+            from agent.ab_test import asignar_variante, actualizar_agent_actual
+            await asignar_variante(tel)  # crea la fila si no existía
+            await actualizar_agent_actual(tel, "aurora", "cliente_inscripto")
+        except Exception as _e_modo:
+            logger.error(f"[INSCRIPCION] No pude pasar {tel} a modo Aurora: {_e_modo}")
+
     # ── Confirmar ─────────────────────────────────────────────────────
     msg = (
         f"✅ *FAMILIA CARGADA*\n\n"
