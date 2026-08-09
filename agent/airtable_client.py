@@ -659,14 +659,21 @@ async def crear_o_actualizar_tutor(persona: dict, parentesco: str) -> str | None
 
     genero_esperado = {"Papá": "HOMBRE", "Mamá": "MUJER"}.get(parentesco, "")
 
-    # Idempotencia: candidatos por TELEFONO LIMPIO; se prefiere la fila cuyo
-    # GENERO matchea el parentesco (o sin GENERO), priorizando las que ya
-    # tienen hijos FENIX o la marca de NEGOCIO.
+    # Idempotencia: candidatos por TELEFONO LIMPIO **o TELEFONO2 LIMPIO** (el
+    # WhatsApp de Fenix puede vivir en el segundo número de una fila compartida
+    # con Salsa/Impulso — buscar solo el primero creaba una fila duplicada de
+    # la misma persona, bug #302). Se prefiere la fila cuyo GENERO matchea el
+    # parentesco (o sin GENERO), priorizando las que ya tienen hijos FENIX o
+    # la marca de NEGOCIO.
     if tel:
         tel_norm = re.sub(r"[^0-9]", "", tel)
         if tel_norm.startswith("0"):
             tel_norm = "595" + tel_norm[1:]
-        candidatos = await _get_records(_ALUMNOS, formula=f"{{TELEFONO LIMPIO}}='{tel_norm}'", max_records=10)
+        candidatos = await _get_records(
+            _ALUMNOS,
+            formula=f"OR({{TELEFONO LIMPIO}}='{tel_norm}',{{TELEFONO2 LIMPIO}}='{tel_norm}')",
+            max_records=10,
+        )
 
         def _compatible(c: dict) -> bool:
             g = ((c.get("fields", {}) or {}).get("GENERO") or "").strip().upper()
