@@ -48,7 +48,10 @@ _PAGOS     = "PAGOS"
 # rechaza con 422 cualquier escritura sobre ella. Una sola constante para que el
 # proximo renombre sea un solo lugar.
 _CAMPO_ESTADO_NINO = "ESTADO2"
-_TUTORES   = "TUTORES FENIX"  # LEGACY: solo CODIGO del juego y datos de factura viven acá
+# LEGACY por ID (no por nombre): así el rename a "TUTORES FENIX LEGACY" no
+# rompe el único lector que queda (fallback de obtener_contacto_tutor para
+# facturas anteriores al corte 09/08). CODIGO y FACTURA ya viven en ALUMNOS.
+_TUTORES   = "tblYlRqpGqtQGyUJA"
 _ALUMNOS   = "ALUMNOS"        # compartida con Salsa — los tutores de Fenix viven acá
 _NEGOCIO_FENIX = "FENIX KIDS ACADEMY"  # opción del multi-select NEGOCIO que marca al tutor
 _CONTENIDO = "CONTENIDO FENIX"
@@ -541,13 +544,9 @@ async def buscar_tutor_por_telefono(telefono: str) -> dict | None:
     return con_negocio[0] if con_negocio else None
 
 
-async def buscar_tutor_legacy_por_telefono(telefono: str) -> dict | None:
-    """Fila LEGACY del tutor en TUTORES FENIX (ahí siguen viviendo el CODIGO
-    del juego y los datos de facturación). Solo para esos dos flujos."""
-    if not telefono:
-        return None
-    records = await _get_records(_TUTORES, formula=f"FIND('{telefono}', {{CELL LIMPIO}})>0", max_records=1)
-    return records[0] if records else None
+# (buscar_tutor_legacy_por_telefono eliminada 09/08 — Etapa 2: el CODIGO del
+# juego y los datos fiscales migraron a ALUMNOS; nada lee más TUTORES FENIX
+# salvo el fallback de obtener_contacto_tutor para facturas viejas.)
 
 
 async def es_cliente_activo_por_telefono(telefono: str) -> bool:
@@ -832,7 +831,9 @@ def _tutor_a_dict(tutor_id: str, f: dict) -> dict:
         "email": f.get("EMAIL", ""),
         "fecha_nacimiento": f.get("FECHA NACIMIENTO", ""),
         "parentesco": _parentesco_de_alumno(f),
-        "es_quien_paga": bool(f.get("ES QUIEN PAGA")),  # no existe en ALUMNOS → False
+        # (es_quien_paga se eliminó 09/08: el campo era de TUTORES legacy y en
+        # ALUMNOS no existe — la priorización "el que paga" cae al primer tutor
+        # con teléfono en todos los consumidores.)
     }
 
 
@@ -1299,8 +1300,8 @@ async def registrar_pago_fenix(
                 return p["id"]
 
     # Tutor pagador (PAGA (ALUMNOS)): el tutor cuyo cel coincide con quien mandó
-    # el comprobante; si no, el marcado ES QUIEN PAGA; si no, el único tutor.
-    # Con 2+ tutores sin señal clara, no se adivina (queda sin pagador).
+    # el comprobante; si no, el único tutor. Con 2+ tutores sin señal clara,
+    # no se adivina (queda sin pagador).
     tutor_paga_id = None
     try:
         tutores = [t for t in (grupo or {}).get("tutores", []) if t.get("id")]
@@ -1308,8 +1309,7 @@ async def registrar_pago_fenix(
             (t for t in tutores if tutor_tiene_telefono(t, telefono)),
             None,
         ) if telefono else None
-        _marcado = next((t for t in tutores if t.get("es_quien_paga")), None)
-        _elegido = _por_cell or _marcado or (tutores[0] if len(tutores) == 1 else None)
+        _elegido = _por_cell or (tutores[0] if len(tutores) == 1 else None)
         tutor_paga_id = _elegido["id"] if _elegido else None
     except Exception as e:
         logger.warning(f"[PAGO] No pude resolver el tutor pagador ({telefono}): {e}")
@@ -1487,10 +1487,9 @@ async def obtener_saldo_clases(nino_id: str) -> int | None:
 async def padre_de_nino(nino_id: str) -> tuple[str, str, str]:
     """(nombre_padre, telefono, vence_el) del tutor del niño.
 
-    Para avisarle al padre cuando el hijo entra. Prioriza el tutor que paga
-    (ES QUIEN PAGA); si no hay, el primero con celular cargado. El teléfono
-    sale de TELEFONO LIMPIO (fórmula ya normalizada a 595...), que es el mismo
-    número con el que la familia habla por WhatsApp.
+    Para avisarle al padre cuando el hijo entra: el primer tutor con celular
+    cargado. El teléfono sale de TELEFONO LIMPIO (fórmula ya normalizada a
+    595...), que es el mismo número con el que la familia habla por WhatsApp.
     Devuelve ("", "", "") si no se puede resolver — el llamador no avisa.
     """
     rec = await _leer_nino(nino_id)
@@ -1513,12 +1512,10 @@ async def padre_de_nino(nino_id: str) -> tuple[str, str, str]:
         tf = recs[0].get("fields", {})
         tel = (tf.get("TELEFONO LIMPIO") or "").strip()
         if tel:
-            candidatos.append((bool(tf.get("ES QUIEN PAGA")), (tf.get("NOMBRE") or "").strip(), tel))
+            candidatos.append(((tf.get("NOMBRE") or "").strip(), tel))
     if not candidatos:
         return "", "", str(vence)
-    # el que paga primero; si ninguno lo es, el primero con celular
-    candidatos.sort(key=lambda c: not c[0])
-    _, nombre, telefono = candidatos[0]
+    nombre, telefono = candidatos[0]
     return nombre, telefono, str(vence)
 
 

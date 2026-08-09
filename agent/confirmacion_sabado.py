@@ -102,13 +102,10 @@ async def recolectar_envios() -> list[dict]:
             for tid in (f.get("PADRE (ALUMNOS)") or []) + (f.get("MADRE (ALUMNOS)") or [])
             if tid in tutor_por_id
         ]
-        # Pagador: el marcado ES QUIEN PAGA (no existe en ALUMNOS → cae al
-        # primero con teléfono).
+        # Pagador: el primer tutor con teléfono (ES QUIEN PAGA murió con la
+        # tabla TUTORES legacy — ALUMNOS no lo tiene).
         con_tel = [(tid, tf) for tid, tf in candidatos if (tf.get("TELEFONO LIMPIO") or "").strip()]
-        pagador = next(
-            ((tid, tf) for tid, tf in con_tel if tf.get("ES QUIEN PAGA")),
-            con_tel[0] if con_tel else None,
-        )
+        pagador = con_tel[0] if con_tel else None
         if not pagador:
             continue
         tid, tf = pagador

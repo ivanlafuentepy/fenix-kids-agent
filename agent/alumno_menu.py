@@ -42,12 +42,12 @@ _ID_A_OPCION = {
 def _primer_nombre(tutores: list[dict]) -> str:
     """Saca el primer nombre de un tutor para personalizar el saludo.
 
-    Niño-eje: recibe los tutores del grupo ya resueltos (obtener_grupo_familiar).
-    Prefiere al que paga; si no, el primer tutor.
+    Niño-eje: recibe los tutores del grupo ya resueltos (obtener_grupo_familiar)
+    — el primero es siempre el tutor que matchea el teléfono que escribe.
     """
     if not tutores:
         return ""
-    t = next((x for x in tutores if x.get("es_quien_paga")), tutores[0])
+    t = tutores[0]
     nombre = (t.get("nombre") or "").strip()
     return nombre.split()[0] if nombre else ""
 

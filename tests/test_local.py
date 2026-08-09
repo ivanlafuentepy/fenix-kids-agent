@@ -31,7 +31,7 @@ from agent.ab_test import (
 from agent.airtable_client import (
     crear_lead, actualizar_conversion_lead, actualizar_agent_lead,
     eliminar_lead,
-    obtener_grupo_familiar, _get_records, _TUTORES,
+    obtener_grupo_familiar, _get_records, _ALUMNOS,
 )
 # Importar las funciones de detección (sin levantar el server).
 # Nixie ya no existe (el router decide ivan/aurora por familia en DB) y
@@ -80,15 +80,17 @@ async def activar_modo_padre(nombre_apellido: str):
         print("[padre] Usá: padre Nombre (o Nombre Apellido)")
         return
     palabras = [p for p in texto.split() if len(p) > 1]
+    # Etapa 2 (09/08): los tutores viven en ALUMNOS (tabla compartida — se
+    # filtra por NEGOCIO o por hijos FENIX para no agarrar alumnos de Salsa).
     formula = "AND(" + ",".join(
         f"SEARCH(LOWER('{p}'), LOWER({{NOMBRE}} & ' ' & {{APELLIDO}}))>0" for p in palabras
-    ) + ")"
-    tutores = await _get_records(_TUTORES, formula=formula, max_records=1)
+    ) + ",OR({HIJOS FENIX (PADRE)}!='',{HIJOS FENIX (MADRE)}!=''))"
+    tutores = await _get_records(_ALUMNOS, formula=formula, max_records=1)
     if not tutores:
-        print(f"[padre] No encontré tutor con '{texto}' en TUTORES FENIX")
+        print(f"[padre] No encontré tutor con '{texto}' en ALUMNOS (con hijos FENIX)")
         return
     tf = tutores[0].get("fields", {}) or {}
-    cell = (tf.get("CELL LIMPIO") or "").strip()
+    cell = (tf.get("TELEFONO LIMPIO") or tf.get("TELEFONO2 LIMPIO") or "").strip()
     grupo = await obtener_grupo_familiar(cell) if cell else None
     if not grupo:
         print(f"[padre] El tutor '{texto}' no tiene grupo familiar resoluble (cell={cell or '-'})")
