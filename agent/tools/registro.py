@@ -8,6 +8,7 @@ from agent.airtable_client import (
     crear_o_actualizar_tutor,
     crear_nino,
     deducir_genero,
+    _parentesco_de_alumno,
     _patch,
     _ALUMNOS,
 )
@@ -92,7 +93,8 @@ async def registrar_hijo(
             "message": "No encontré un tutor registrado para este número. Primero hay que registrar al padre/madre con registrar_familia.",
         }
 
-    parentesco = ((tutor.get("fields", {}) or {}).get("PARENTESCO") or "").strip()
+    # El tutor es una fila de ALUMNOS (sin PARENTESCO): se deriva del GENERO.
+    parentesco = _parentesco_de_alumno(tutor.get("fields", {}) or {})
     _link = {"madre_id": tutor["id"]} if parentesco == "Mamá" else {"padre_id": tutor["id"]}
 
     datos_nino = {"nombre": nombre.strip().title()}

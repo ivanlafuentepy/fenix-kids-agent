@@ -450,7 +450,8 @@ async def _ejecutar_inscripcion(
     """Inscribe niño-eje (F7.b): NIÑOS → ACTIVO + PLAN, PAGOS linkeados a
     NIÑOS FENIX + PAGA, LEAD → INSCRIPTO. FAMILIAS ya no se crea ni patchea."""
     from agent.airtable_client import (
-        _get_records, _post, _patch, _LEADS, _NINOS, _TUTORES,
+        _get_records, _post, _patch, _LEADS, _NINOS, _ALUMNOS,
+        _parentesco_de_alumno,
         buscar_tutor_por_telefono, crear_o_actualizar_tutor, crear_nino,
         deducir_genero, plan_a_airtable,
     )
@@ -466,8 +467,11 @@ async def _ejecutar_inscripcion(
         tutor_id = _t["id"] if _t else ""
     parentesco_tutor = ""
     if tutor_id:
-        _trec = await _get_records(_TUTORES, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
-        parentesco_tutor = ((_trec[0].get("fields", {}) or {}).get("PARENTESCO") or "").strip() if _trec else ""
+        # tutor_id es una fila de ALUMNOS: el parentesco se deriva del GENERO.
+        # (El lookup viejo contra TUTORES nunca matcheaba → toda mamá quedaba
+        # linkeada como PADRE en los hijos nuevos.)
+        _trec = await _get_records(_ALUMNOS, formula=f"RECORD_ID()='{tutor_id}'", max_records=1)
+        parentesco_tutor = _parentesco_de_alumno(_trec[0].get("fields", {}) or {}) if _trec else ""
     else:
         genero = deducir_genero(nombre_padre or "")
         parentesco_tutor = "Mamá" if genero == "MUJER" else "Papá"
