@@ -557,7 +557,8 @@ async def _ejecutar_inscripcion(
             _hoy_g = _dt_g.now(_ZI_g("America/Asuncion")).date().isoformat()
             for _p_g in _pagos_g:
                 _pf_g = _p_g.get("fields", {})
-                if (_pf_g.get("FECHA") or "")[:10] == _hoy_g:
+                from agent.airtable_client import _fecha_creacion_py as _fcp_g
+                if _fcp_g(_pf_g.get("FECHA")) == _hoy_g:
                     _conceptos_hoy.add(_pf_g.get("CONCEPTO") or "")
     except Exception as _e_g:
         logger.warning(f"[INSCRIPCION] Guard anti-dup no pudo leer PAGOS: {_e_g}")

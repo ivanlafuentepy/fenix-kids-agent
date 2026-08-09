@@ -500,6 +500,17 @@ def _parentesco_de_alumno(f: dict) -> str:
     return {"HOMBRE": "Papá", "MUJER": "Mamá"}.get((f.get("GENERO") or "").strip().upper(), "")
 
 
+def _fecha_creacion_py(created) -> str:
+    """createdTime de Airtable (UTC ISO) → fecha YYYY-MM-DD en America/Asuncion."""
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat(str(created or "").replace("Z", "+00:00"))
+        return dt.astimezone(ZoneInfo("America/Asuncion")).date().isoformat()
+    except (ValueError, TypeError):
+        return str(created or "")[:10]
+
+
 def tutor_tiene_telefono(tutor: dict, telefono: str) -> bool:
     """¿Este teléfono es de este tutor? — única fuente de verdad del criterio.
 
@@ -1294,7 +1305,10 @@ async def registrar_pago_fenix(
         for p in pagos:
             pf = p.get("fields", {})
             pconc = (pf.get("CONCEPTO") or "")
-            pfecha = (pf.get("FECHA") or "")[:10]
+            # FECHA es createdTime en UTC: entre 21:00 y medianoche PY el [:10]
+            # pelado caía en el día siguiente y el guard fallaba para los dos
+            # lados (bloqueaba pagos legítimos / dejaba pasar duplicados).
+            pfecha = _fecha_creacion_py(pf.get("FECHA"))
             if pconc.startswith("PRUEBA") and pfecha == hoy:
                 logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para {telefono} → no duplico ({p['id']})")
                 return p["id"]

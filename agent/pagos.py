@@ -56,8 +56,13 @@ def monto_prueba_por_hijos_detallado(historial: list[dict]) -> tuple[int, bool]:
         if m.get("role") != "assistant":
             continue
         contenido = m.get("content", "")
-        # Saltar afiches de precios (listan TODOS los precios, no el monto acordado)
-        if "1 hijo" in contenido.lower() and "2 hijo" in contenido.lower():
+        # Saltar afiches de precios (listan TODOS los precios, no el monto
+        # acordado). Los afiches vigentes dicen "2 hermanos"; el skip viejo
+        # buscaba "2 hijo" y desde el cambio de textos (28/07) el afiche volvía
+        # a matchear los patrones y podía registrar el precio equivocado sin
+        # el aviso de ADIVINADO.
+        _cont_low = contenido.lower()
+        if "1 hijo" in _cont_low and ("2 hijo" in _cont_low or "2 herman" in _cont_low):
             continue
         # Patrón: "Transferencia: 120.000 Gs" o "A transferir: 120.000 Gs" (tolera **markdown**)
         match = re.search(r"[Tt]ransfer(?:ir|encia)\**[:\s]+(\d{2,3})[.\s]?(\d{3})\s*[Gg]s", contenido)

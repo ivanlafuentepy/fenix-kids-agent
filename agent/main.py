@@ -4341,10 +4341,15 @@ async def _procesar_confirmacion_reserva(
     fecha_iso = None
     if fecha_str and hora_str:
         try:
-            from datetime import date as _d
+            from datetime import date as _d, datetime as _dt_conf2
+            from zoneinfo import ZoneInfo as _ZI_conf2
             _MESES = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
                        "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
-            anio = _d.today().year
+            # Fecha de Asunción, no del server UTC (regla dura #5): entre las
+            # 21:00 y medianoche PY, today() del server ya es "mañana" y en
+            # año nuevo armaba fechas del año equivocado.
+            _hoy_py_conf = _dt_conf2.now(_ZI_conf2("America/Asuncion")).date()
+            anio = _hoy_py_conf.year
             # Formato "3/5" o "03/05"
             _m = re.search(r'(\d{1,2})/(\d{1,2})', fecha_str)
             if _m:
@@ -4364,7 +4369,7 @@ async def _procesar_confirmacion_reserva(
                 _m3 = re.search(r'(\d{1,2})', fecha_str)
                 if _m3:
                     dia = int(_m3.group(1))
-                    hoy = _d.today()
+                    hoy = _hoy_py_conf
                     # Probar este mes y el siguiente
                     for delta_mes in range(0, 3):
                         mes_test = hoy.month + delta_mes
