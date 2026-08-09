@@ -4380,13 +4380,24 @@ async def _procesar_confirmacion_reserva(
             if horario_id:
                 for nino in ninos:
                     # Detectar reserva doble (mismo niño, mismo día, otro horario)
-                    from agent.airtable_client import _get_records as _gr_dup, _RESERVAS as _RES_DUP
-                    _nid = nino["id"]
-                    _reservas_dia = await _gr_dup(
-                        _RES_DUP,
-                        formula=f"AND(FIND('{_nid}', ARRAYJOIN({{NINO}})), DATESTR({{FECHA}})='{fecha_iso}')",
-                        max_records=5,
+                    # por los LINKS del niño: el FIND(rec, ARRAYJOIN({NINO})) viejo
+                    # nunca matcheaba (ARRAYJOIN de un link devuelve NOMBRES, no
+                    # ids) — la alerta era código muerto (auditoría 09/08 A8).
+                    from agent.airtable_client import (
+                        _get_records as _gr_dup, _RESERVAS as _RES_DUP, _NINOS as _NIN_DUP,
                     )
+                    _nid = nino["id"]
+                    _reservas_dia = []
+                    _nrec_dup = await _gr_dup(_NIN_DUP, formula=f"RECORD_ID()='{_nid}'", max_records=1)
+                    _rids_dup = (_nrec_dup[0].get("fields", {}).get("RESERVAS FENIX") or []) if _nrec_dup else []
+                    if _rids_dup:
+                        _or_dup = ",".join(f"RECORD_ID()='{r}'" for r in _rids_dup)
+                        _f_dup = f"OR({_or_dup})" if len(_rids_dup) > 1 else _or_dup
+                        _reservas_dia = await _gr_dup(
+                            _RES_DUP,
+                            formula=f"AND({_f_dup}, DATESTR({{FECHA}})='{fecha_iso}')",
+                            max_records=5,
+                        )
                     if _reservas_dia:
                         # Ya tiene reserva ese día — alertar admin
                         _horas_existentes = [r.get("fields", {}).get("HORA", ["?"])[0] if isinstance(r.get("fields", {}).get("HORA"), list) else r.get("fields", {}).get("HORA", "?") for r in _reservas_dia]
