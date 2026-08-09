@@ -3448,14 +3448,21 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                         _ultimo_agente = _m.get("content", "").lower()
                         break
                 _agente_ofrecio_horarios = "11:00" in _ultimo_agente or "15:30" in _ultimo_agente
-                # Keywords explícitas de reservas
-                _keywords_reserva = any(k in _texto_lower for k in (
-                    "agendar", "reagendar", "cancelar", "cambiar", "reservar",
-                    "11:00", "15:30", "11h", "15h", "sab", "sábado",
-                ))
+                # Keywords explícitas de reservas — SOLO palabras completas: el
+                # substring "sab" forzaba la tool con "no SABemos si vamos" y
+                # "cambiar" pelado con "cambiar mi número" (auditoría 09/08 CR3).
+                # Con tool_choice={"type":"tool"} Haiku queda OBLIGADO a llamar
+                # gestionar_reserva y puede cancelar/agendar sin pedido real.
+                _keywords_reserva = bool(
+                    re.search(r'\b(agendar|reagendar|reagendemos|cancelar|cancelame|reservar|s[aá]bado)\b', _texto_lower)
+                    or re.search(r'\b(11:00|15:30|11h|15h)\b', _texto_lower)
+                    or re.search(r'\bcambiar\b.*\b(reserva|d[ií]a|fecha|hora|turno)\b', _texto_lower)
+                )
                 # Respuesta a oferta de horarios: "11", "15", "si", fecha, etc.
+                # Anclado a palabra completa: "va" y "sab" sueltos matcheaban
+                # "vamos a ver" / "sabemos" — se retiran de la alternación.
                 _responde_horario = _agente_ofrecio_horarios and (
-                    re.match(r'^(si|sí|dale|ok|va|11|15|sab)', _texto_lower)
+                    re.match(r'^(si|sí|dale|ok|11|15)\b', _texto_lower)
                     or re.search(r'\d{1,2}[/\s:h]', _texto_lower)
                     or re.match(r'^\d{1,2}$', _texto_lower)
                 )
@@ -3756,41 +3763,41 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.error(f"[AURORA] Error creando niño: {e}")
 
-        # ── Detectar cancelación de reserva por Aurora ─────────────────────
-        if agent_actual == "aurora" and "cancelé la reserva" in respuesta.lower() and "gestionar_reserva" not in _tool_names_used:
+        # ── Aurora: el TEXTO ya no dispara acciones (decisión Iván 09/08) ──
+        # Las reservas de familia se crean/cancelan SOLO cuando Haiku llama
+        # gestionar_reserva. El puente regex texto→acción creaba reservas desde
+        # preguntas ("¿agendamos el sábado 15 a las 11:00?") y cancelaba desde
+        # texto alucinado. Si Aurora AFIRMA una acción sin haber usado la tool,
+        # es una alucinación: avisar al topic para corregirla, nunca ejecutarla.
+        if (
+            agent_actual == "aurora"
+            and "gestionar_reserva" not in _tool_names_used
+            and ("cancelé la reserva" in respuesta.lower() or _detectar_confirmacion_aurora(respuesta))
+        ):
             try:
-                # Extraer fecha de "cancelé la reserva de X del sábado 2 de mayo a las 11:00h"
-                _m_cancel = re.search(
-                    r'cancelé la reserva.*?s[aá]bado\s+(\d{1,2})\s+de\s+(\w+)(?:\s+a\s+las?\s+(\d{1,2}[:.]\d{2}))?',
-                    respuesta.lower()
+                await enviar_a_topic(
+                    topic_id,
+                    "⚠️ Aurora AFIRMÓ una reserva/cancelación SIN usar la tool — "
+                    "no se ejecutó nada. Verificar la conversación.",
+                    telefono=telefono,
+                    group_override=_tg_group,
                 )
-                if _m_cancel:
-                    _dia = int(_m_cancel.group(1))
-                    _mes_nombre = _m_cancel.group(2)
-                    _hora_cancel = _m_cancel.group(3) or ""
-                    if _hora_cancel:
-                        _hora_cancel = _hora_cancel.replace(".", ":")
-                    _meses = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
-                              "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
-                    _mes = _meses.get(_mes_nombre, 0)
-                    if _mes:
-                        from datetime import date as _date_cls
-                        _year = _date_cls.today().year
-                        _fecha_iso = f"{_year}-{_mes:02d}-{_dia:02d}"
-                        # F7.b: cancela por el grupo familiar (links del niño) —
-                        # el camino viejo por FAMILIAS nunca matcheaba reservas.
-                        from agent.tools.agenda import gestionar_reserva as _gr_cancel
-                        _res_cancel = await _gr_cancel(telefono, "cancelar", fecha=_fecha_iso, hora=_hora_cancel or None)
-                        logger.info(f"[CANCELAR] {_res_cancel.get('cantidad_borradas', 0)} reservas canceladas para {telefono} el {_fecha_iso} {_hora_cancel}")
-            except Exception as e:
-                logger.error(f"[CANCELAR] Error cancelando reserva: {e}")
+            except Exception as _e_alu:
+                logger.warning(f"[AURORA] No pude avisar afirmación sin tool de {telefono}: {_e_alu}")
+            logger.warning(f"[AURORA] {telefono}: afirmación de reserva/cancelación sin tool — NO se ejecuta")
 
-        # ── Detectar confirmación de reserva (Ivan o Aurora) ───────────────
-        # Guard: para Ivan, solo procesar si el lead YA pagó (comprobante recibido).
+        # ── Detectar confirmación de reserva (solo Ivan/leads) ─────────────
+        # Guard: solo procesar si el lead YA pagó (comprobante recibido).
         # Sin esto, frases pre-pago como "tiene su lugar el sábado X" disparan
         # notificación de agenda + PAGO en Airtable antes de que el lead pague.
-        confirmaciones = _detectar_confirmacion_aurora(respuesta) if "gestionar_reserva" not in _tool_names_used and "gestionar_prueba" not in _tool_names_used else []
-        if confirmaciones and agent_actual == "ivan":
+        confirmaciones = (
+            _detectar_confirmacion_aurora(respuesta)
+            if agent_actual == "ivan"
+            and "gestionar_reserva" not in _tool_names_used
+            and "gestionar_prueba" not in _tool_names_used
+            else []
+        )
+        if confirmaciones:
             _hist_reciente = await obtener_historial(telefono, limite=10)
             _pago_en_historial = any(
                 "pago confirmado" in m.get("content", "").lower()
