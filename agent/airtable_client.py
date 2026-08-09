@@ -1241,7 +1241,8 @@ async def registrar_pago_fenix(
 ) -> str | None:
     """Crea un registro de PAGO en la tabla PAGOS (niño-eje, corte F7): linkea
     a NIÑOS FENIX (los hermanos que cubre — un pago, un monto, N hermanos;
-    NUNCA se parte), a PAGA (el tutor que puso la plata) y al LEAD FENIX si se
+    NUNCA se parte), a PAGA (ALUMNOS) (el tutor que puso la plata — fila de
+    ALUMNOS; el link viejo PAGA→TUTORES quedó legacy) y al LEAD FENIX si se
     pasa lead_id.
 
     El código es la ÚNICA fuente del pago. Idempotente: si ya hay un PAGO de
@@ -1286,9 +1287,9 @@ async def registrar_pago_fenix(
                 logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para {telefono} → no duplico ({p['id']})")
                 return p["id"]
 
-    # Tutor pagador (PAGA): el tutor cuyo cel coincide con quien mandó el
-    # comprobante; si no, el marcado ES QUIEN PAGA; si no, el único tutor.
-    # Con 2+ tutores sin señal clara, no se adivina (queda sin PAGA).
+    # Tutor pagador (PAGA (ALUMNOS)): el tutor cuyo cel coincide con quien mandó
+    # el comprobante; si no, el marcado ES QUIEN PAGA; si no, el único tutor.
+    # Con 2+ tutores sin señal clara, no se adivina (queda sin pagador).
     tutor_paga_id = None
     try:
         tutores = [t for t in (grupo or {}).get("tutores", []) if t.get("id")]
@@ -1315,7 +1316,9 @@ async def registrar_pago_fenix(
     if nino_ids:
         campos_pago["NIÑOS FENIX"] = nino_ids
     if tutor_paga_id:
-        campos_pago["PAGA"] = [tutor_paga_id]
+        # El tutor es una fila de ALUMNOS: va en PAGA (ALUMNOS). Escribir el
+        # link viejo PAGA (→TUTORES FENIX) con este id tumba el POST entero (422).
+        campos_pago["PAGA (ALUMNOS)"] = [tutor_paga_id]
     if lead_id:
         campos_pago["LEAD FENIX"] = [lead_id]
     record = await _post(_PAGOS, campos_pago)
