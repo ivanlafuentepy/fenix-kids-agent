@@ -91,7 +91,38 @@ rec2UDvotloW13tqa, recAOnmj3dVuF1pW0, recyguE0SoC4NlmSm.
 
 ---
 
-## ETAPA 2 — TUTORES FENIX desaparece (proyecto aparte — DECIDIR después de la Etapa 1)
+## ETAPA 2 — ✅ EJECUTADA 09/08/2026 (sesión auditoría+migración; tabla renombrada "TUTORES FENIX LEGACY")
+
+**Lo que se hizo (todo verificado en prod):**
+- Campos nuevos: `ALUMNOS.CODIGO FENIX` (fldt1UHfR22wFiTTn), `ALUMNOS.FACTURA FENIX`
+  (fldYFJWslw2ljiYiu), `FACTURAS.TUTOR (ALUMNOS)` (fldw4H3XP0jtWc5Or) +
+  lookup `TUTOR RUC (ALUMNOS)` (fldzn86XIkuX8faBD).
+- Backfill (`scripts/backfill_tutores_a_alumnos.py`): 5 filas CODIGO/FACTURA
+  (43E8EW en la fila personal de Iván) + 2 facturas espejadas. 0 sin match.
+- Juego a ALUMNOS (`juego_endpoints.py`): código, hijos, fotos, validación —
+  verificado `/juego/familia/43E8EW` en prod. Murieron los stubs.
+- Facturas a ALUMNOS (`facturas.py`): datos fiscales en `FACTURA FENIX`,
+  factura linkea `TUTOR (ALUMNOS)`; selector de envío acepta ambos links.
+- `PAGA (ALUMNOS)` / `TUTOR (ALUMNOS)` en pagos/inscripción/lead (eran los
+  CRÍTICOS de la auditoría: el link legacy tumbaba el POST del pago entero).
+- facturador-set (`b0ec54d` master): cadena RUC con lookup nuevo + legacy;
+  `NEG1_FILTRO` actualizado en `.env` y `.env.example`. `pendientes()` OK.
+- Limpieza: `buscar_tutor_legacy_por_telefono` y `ES QUIEN PAGA` muertos;
+  `test_local` modo padre por ALUMNOS; `_TUTORES` pasó a table ID.
+- **Tabla renombrada "TUTORES FENIX LEGACY"** (canario ~30 días). Backup:
+  `backups/2026-08-09/tutores-fenix-backup.json` (101 registros).
+
+**Queda para el borrado definitivo (~30 días, lo hace Iván):**
+1. Pegar el script nuevo de la automation CREAR FACTURA en la UI
+   (`docs/operaciones/automation-crear-factura-2026-08-09.js`) — la API no
+   edita customScript. Hasta entonces la versión vieja sigue funcionando.
+2. Antes de BORRAR la tabla: sacar `{TUTOR RUC}` del `NEG1_FILTRO` del robot
+   y de la cadena (`airtable.py`), y el fallback de `obtener_contacto_tutor`.
+   Un lookup muerto en el filtro = 422 y NEG1 entero deja de facturar.
+3. Borrar la tabla + campos huérfanos (`FACTURAS.TUTOR`, `TUTOR RUC`,
+   `PAGOS.PAGA`, `LEADS.TUTOR FENIX`).
+
+## (histórico) ETAPA 2 — dimensionamiento original
 
 Qué implicaría (para dimensionar, no para ejecutar ya):
 1. **ALUMNOS gana los campos que le faltan**: `PARENTESCO`, `ES QUIEN PAGA`,
