@@ -1418,6 +1418,12 @@ async def obtener_asistencias_ninos_fecha(nino_ids: list[str], fecha_iso: str) -
 
 _CAMPO_CLASES = "CLASES DISPONIBLES"
 _CAMPO_ULT_DESCUENTO = "ULTIMO DESCUENTO"
+_CAMPO_PACK_DESDE = "PACK DESDE"
+# El saldo NO se guarda: se calcula en Airtable como CLASES COMPRADAS (suma de
+# los pagos PAQUETE5) − CLASES USADAS (asistencias desde PACK DESDE). Cada
+# número se puede abrir hasta la fila que lo explica; el contador viejo
+# CLASES DISPONIBLES quedó de referencia hasta que se apague.
+_CAMPO_SALDO = "SALDO CALCULADO"
 
 
 async def _leer_nino(nino_id: str) -> dict | None:
@@ -1437,11 +1443,18 @@ async def _leer_nino(nino_id: str) -> dict | None:
 
 
 async def obtener_saldo_clases(nino_id: str) -> int | None:
-    """Clases que le quedan del pack. None = el niño no está en el modelo pack."""
+    """Clases que le quedan del pack. None = el niño no está en el modelo pack.
+
+    Sale de SALDO CALCULADO (CLASES COMPRADAS − CLASES USADAS), no del contador
+    viejo: así el número que se le dice al padre es el mismo que Ivan ve en la
+    ficha, y cada mitad se puede abrir hasta el pago o la asistencia que la
+    explica. El campo queda vacío cuando el niño no tiene pagos de pack, que es
+    justo el caso "familia del mensual viejo" → None.
+    """
     rec = await _leer_nino(nino_id)
     if not rec:
         return None
-    valor = rec.get("fields", {}).get(_CAMPO_CLASES)
+    valor = rec.get("fields", {}).get(_CAMPO_SALDO)
     return int(valor) if valor is not None else None
 
 
@@ -1525,23 +1538,30 @@ async def padre_de_nino(nino_id: str) -> tuple[str, str, str]:
     return nombre, telefono, str(vence)
 
 
-async def recargar_pack(nino_id: str, clases: int = 5) -> int | None:
-    """Suma clases al pack cuando la familia paga. Retorna el saldo nuevo.
+async def marcar_inicio_pack(nino_id: str, fecha_iso: str) -> bool:
+    """Deja marcado desde qué día cuentan las clases del pack para este niño.
 
-    Si el niño todavía no tenía saldo arranca desde 0: así es como una familia
-    entra al modelo pack (deja de ser del mensual viejo).
+    Reemplaza a la vieja recargar_pack: las clases ya NO se suman a mano, las
+    aporta el propio pago (PAGOS.CLASES FENIX (PACK) → NIÑOS.CLASES COMPRADAS).
+    Lo único que el pago no puede saber solo es desde cuándo empezar a contar
+    las asistencias, porque PAGOS.FECHA es la fecha de CARGA: si Ivan carga el
+    pago tres días tarde, arrancar ahí le regalaría las clases de esos días.
+
+    Solo se escribe si está vacío — el primer pack manda y los siguientes no lo
+    mueven. Ivan lo corrige a mano cuando la familia pagó otro día (el caso de
+    Máximo: pagó el 01/08, cargado el 04/08).
     """
-    if not nino_id or clases <= 0:
-        return None
+    if not nino_id or not fecha_iso:
+        return False
     rec = await _leer_nino(nino_id)
     if not rec:
-        return None
-    saldo = rec.get("fields", {}).get(_CAMPO_CLASES)
-    nuevo = int(saldo or 0) + clases
-    if not await _patch(_NINOS, nino_id, {_CAMPO_CLASES: nuevo}):
-        return None
-    logger.info(f"[PACK] {nino_id}: +{clases} clases → saldo {nuevo}")
-    return nuevo
+        return False
+    if (rec.get("fields", {}).get(_CAMPO_PACK_DESDE) or "").strip():
+        return False
+    if not await _patch(_NINOS, nino_id, {_CAMPO_PACK_DESDE: fecha_iso}):
+        return False
+    logger.info(f"[PACK] {nino_id}: el pack cuenta desde {fecha_iso}")
+    return True
 
 
 # ── CONTENIDO FENIX (posteos de redes sociales vinculados a niños) ───────────

@@ -618,18 +618,23 @@ async def _ejecutar_inscripcion(
         })
         if pago_plan:
             pagos_creados.append(f"Plan {monto // 1000}mil")
-            # Pack pagado → +5 clases a CADA niño del pago. SUMA sobre lo que
-            # tenga: si le quedaban 4 y compra otro pack, queda con 9 (las del
-            # pack no vencen, así que no se pisan ni se pierden).
+            # Pack pagado → las 5 clases las aporta el PAGO mismo (CLASES FENIX
+            # (PACK) → CLASES COMPRADAS): acá no se suma nada a mano. Lo único
+            # que hay que dejar escrito es desde qué día cuentan las asistencias
+            # de ESTE niño, que el pago no puede saber (su FECHA es la de carga).
             if concepto_plan == "PAQUETE5":
-                from agent.airtable_client import recargar_pack
+                from agent.airtable_client import marcar_inicio_pack, obtener_saldo_clases
+                from datetime import datetime as _dt_pack
+                from zoneinfo import ZoneInfo as _ZI_pack
+                _hoy_pack = _dt_pack.now(_ZI_pack("America/Asuncion")).date().isoformat()
                 for _nid_pack in _nino_ids_pago:
                     try:
-                        _saldo_pack = await recargar_pack(_nid_pack, 5)
+                        await marcar_inicio_pack(_nid_pack, _hoy_pack)
+                        _saldo_pack = await obtener_saldo_clases(_nid_pack)
                         if _saldo_pack is not None:
                             pagos_creados.append(f"+5 clases (quedan {_saldo_pack})")
                     except Exception as _e_pack:
-                        logger.error(f"[INSCRIPCION] no pude sumar el pack a {_nid_pack}: {_e_pack}")
+                        logger.error(f"[INSCRIPCION] no pude marcar el pack de {_nid_pack}: {_e_pack}")
 
     # ── LEAD → INSCRIPTO + link al tutor (F7.b: FAMILIA ya no se linkea) ──
     if tel:
