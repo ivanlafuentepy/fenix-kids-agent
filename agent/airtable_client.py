@@ -870,23 +870,25 @@ async def obtener_grupo_familiar(telefono: str) -> dict | None:
 async def obtener_ninos_al_dia() -> list[dict]:
     """Niños con pago AL DÍA para la confirmación proactiva del sábado (niño-eje).
 
-    Migración FAMILIAS→NIÑO: el vencimiento vive en el NIÑO ({AL DÍA?} =
-    fórmula sobre VENCE EL, rollup de sus PAGOS). Reemplaza a la vieja
-    obtener_familias_para_confirmacion que leía {AL DÍA?} de FAMILIAS.
+    Migración FAMILIAS→NIÑO: el vencimiento vive en el NIÑO ({ESTADO} =
+    fórmula sobre VENCE EL, rollup de sus PAGOS). Ojo con el nombre: el
+    2026-08-08 la fórmula pasó de llamarse {AL DÍA?} a {ESTADO} (y el select
+    editable pasó a {ESTADO2}) — leer el nombre viejo devolvía vacío en todas
+    las filas y la confirmación del sábado salía sin destinatarios.
 
-    El campo {AL DÍA?} devuelve "✅ AL DÍA" / "❌ VENCIDO" / vacío. Se traen
+    El campo {ESTADO} devuelve "✅ AL DÍA" / "❌ VENCIDO" / vacío. Se traen
     TODOS los niños (paginando con max_records alto) y se filtra en Python:
     un FIND sobre un campo fórmula con emoji + acento en filterByFormula da
     422 silenciosos (ver reference_airtable_errores).
 
-    Devuelve los records crudos (id + fields, incluye PADRE/MADRE/FAMILIA).
+    Devuelve los records crudos (id + fields, incluye PADRE/MADRE).
     El armado del envío (tutor pagador, agrupado por teléfono) lo hace
     agent/confirmacion_sabado.py.
     """
     ninos = await _get_records(_NINOS, max_records=2000)
     return [
         n for n in ninos
-        if "AL DÍA" in ((n.get("fields", {}) or {}).get("AL DÍA?") or "")
+        if "AL DÍA" in ((n.get("fields", {}) or {}).get("ESTADO") or "")
     ]
 
 
