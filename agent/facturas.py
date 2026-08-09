@@ -11,15 +11,16 @@ El robot facturador (facturador-set, la PC de Iván) emite el PDF en Marangatú
 y lo sube a FACTURA PDF + FACTURADO + COMPROBANTE SET; `_envio_facturas_fenix_loop`
 (loops.py) se lo hace llegar a la familia por WhatsApp.
 
-Niño-eje: los datos fiscales viven en el TUTOR pagador (TUTORES FENIX.FACTURA,
-texto libre con RUC/CI + nombre) y la factura linkea TUTOR → el robot lee el
-lookup TUTOR RUC.
+Etapa 2 (09/08/2026): los datos fiscales viven en la fila del tutor en
+ALUMNOS (campo FACTURA FENIX, texto libre con RUC/CI + nombre) y la factura
+linkea TUTOR (ALUMNOS) → el robot lee el lookup TUTOR RUC (ALUMNOS).
+TUTORES FENIX quedó legacy y este flujo ya no lo toca.
 """
 
 import logging
 
 from agent.ab_test import actualizar_estado_flags
-from agent.airtable_client import _patch, _post, _TUTORES, _FACTURAS
+from agent.airtable_client import _patch, _post, _ALUMNOS, _FACTURAS
 
 logger = logging.getLogger("agentkit")
 
@@ -44,8 +45,8 @@ async def crear_factura_fenix(
     tutor_id: str = "",
 ) -> str | None:
     """Crea el registro en FACTURAS para que el robot facturador lo emita.
-    NO toca el PAGO. Niño-eje: linkea TUTOR — el robot lee el lookup
-    TUTOR RUC. Retorna el record_id o None."""
+    NO toca el PAGO. tutor_id es una fila de ALUMNOS → linkea TUTOR (ALUMNOS);
+    el robot lee el lookup TUTOR RUC (ALUMNOS). Retorna el record_id o None."""
     descripcion = ("Clase de prueba FENIX Kids — sábado en el parque"
                    if concepto == "PRUEBA" else "Clase FENIX Kids — sábado en el parque")
     campos = {
@@ -58,7 +59,7 @@ async def crear_factura_fenix(
     if pago_rid:
         campos["PAGO"] = [pago_rid]
     if tutor_id:
-        campos["TUTOR"] = [tutor_id]
+        campos["TUTOR (ALUMNOS)"] = [tutor_id]
     record = await _post(_FACTURAS, campos)
     if record:
         logger.info(f"[FACTURA] Creada factura {record.get('id')} (pago {pago_rid}, tutor {tutor_id or '—'})")
@@ -68,42 +69,27 @@ async def crear_factura_fenix(
 
 
 async def _tutor_fiscal(telefono: str) -> dict | None:
-    """Registro CRUDO del tutor fiscal — la fila LEGACY de TUTORES FENIX:
-    ahí viven el campo FACTURA (texto) y el link FACTURAS.TUTOR que lee el
-    robot facturador. Si la familia es nueva (solo existe en ALUMNOS), se crea
-    un stub en TUTORES para colgarle los datos fiscales."""
+    """La fila de ALUMNOS del tutor pagador — ahí viven FACTURA FENIX (texto
+    fiscal) y el link FACTURAS.TUTOR (ALUMNOS) que lee el robot facturador.
+    Etapa 2: se acabaron los stubs en TUTORES (duplicaban personas)."""
     if not telefono:
         return None
-    from agent.airtable_client import (
-        buscar_tutor_legacy_por_telefono, buscar_tutor_por_telefono, _post,
-    )
-    tutor = await buscar_tutor_legacy_por_telefono(telefono)
-    if tutor:
-        return tutor
-    alumno = await buscar_tutor_por_telefono(telefono)
-    if not alumno:
-        return None
-    af = alumno.get("fields", {}) or {}
-    return await _post(_TUTORES, {
-        "NOMBRE": af.get("NOMBRE") or "Tutor",
-        "APELLIDO": af.get("APELLIDO") or "",
-        "CI": str(af.get("CI") or ""),
-        "CELL": af.get("TELEFONO LIMPIO") or telefono,
-    })
+    from agent.airtable_client import buscar_tutor_por_telefono
+    return await buscar_tutor_por_telefono(telefono)
 
 
 async def _asegurar_datos_fiscales(telefono: str) -> str:
-    """Asegura los datos fiscales en TUTORES FENIX.FACTURA (niño-eje).
+    """Asegura los datos fiscales en ALUMNOS.FACTURA FENIX (niño-eje).
 
-    El robot facturador lee el lookup TUTOR RUC (= campo FACTURA del tutor).
-    Si el tutor no lo tiene, se arma con su CI + nombre. Retorna el tutor_id
-    listo para linkear, o "" si no hay datos resolubles (el caller pide
-    RUC/CI por chat)."""
+    El robot facturador lee el lookup TUTOR RUC (ALUMNOS) (= campo FACTURA
+    FENIX del tutor). Si el tutor no lo tiene, se arma con su CI + nombre.
+    Retorna el tutor_id listo para linkear, o "" si no hay datos resolubles
+    (el caller pide RUC/CI por chat)."""
     tutor = await _tutor_fiscal(telefono)
     if not tutor:
         return ""
     tf = tutor.get("fields", {}) or {}
-    if (tf.get("FACTURA") or "").strip():
+    if (tf.get("FACTURA FENIX") or "").strip():
         return tutor["id"]
     # Armar con el CI del tutor
     ci = str(tf.get("CI") or "").strip()
@@ -112,8 +98,8 @@ async def _asegurar_datos_fiscales(telefono: str) -> str:
     datos = f"CI {ci}" + (f" - {nombre}" if nombre else "") if ci else ""
     if not datos:
         return ""
-    await _patch(_TUTORES, tutor["id"], {"FACTURA": datos})
-    logger.info(f"[FACTURA] FACTURA del tutor {tutor['id']} completado: '{datos}'")
+    await _patch(_ALUMNOS, tutor["id"], {"FACTURA FENIX": datos})
+    logger.info(f"[FACTURA] FACTURA FENIX del tutor {tutor['id']} completado: '{datos}'")
     return tutor["id"]
 
 
@@ -175,7 +161,7 @@ async def manejar_respuesta_factura(
             _tutor_doc = await _tutor_fiscal(telefono)
             _tutor_doc_id = _tutor_doc["id"] if _tutor_doc else ""
             if _tutor_doc_id:
-                await _patch(_TUTORES, _tutor_doc_id, {"FACTURA": texto.strip()})
+                await _patch(_ALUMNOS, _tutor_doc_id, {"FACTURA FENIX": texto.strip()})
                 logger.info(f"[FACTURA] Datos fiscales guardados en tutor {_tutor_doc_id}: '{texto.strip()}'")
             _rid = await crear_factura_fenix(pago_rid, monto, concepto, tutor_id=_tutor_doc_id)
             await _limpiar_flags_factura(telefono)

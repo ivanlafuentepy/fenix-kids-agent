@@ -1742,10 +1742,10 @@ async def obtener_nombre_nino(nino_id: str) -> dict | None:
 async def listar_facturas_fenix_para_enviar() -> list[dict]:
     """Facturas de FENIX emitidas por el robot facturador (FACTURADO=True +
     COMPROBANTE SET + PDF cargado) que todavía no se enviaron.
-    Niño-eje: la fila de Fenix se detecta por el link TUTOR; las de Salsa
-    (link ALUMNO) las reparte Dorita."""
+    La fila de Fenix se detecta por TUTOR (ALUMNOS) — o el TUTOR legacy en
+    facturas viejas; las de Salsa (link ALUMNO) las reparte Dorita."""
     formula = ("AND({FACTURADO}=TRUE(), {ENVIADO}=FALSE(), {COMPROBANTE SET}!='', "
-               "{TUTOR}!='')")
+               "OR({TUTOR}!='', {TUTOR (ALUMNOS)}!=''))")
     records = await _get_records(_FACTURAS, formula=formula, max_records=20)
     out = []
     for r in records:
@@ -1753,7 +1753,8 @@ async def listar_facturas_fenix_para_enviar() -> list[dict]:
         adj = f.get("FACTURA PDF") or []
         out.append({
             "record_id": r["id"],
-            "tutor_ids": f.get("TUTOR") or [],
+            # ALUMNOS primero; obtener_contacto_tutor resuelve ambos mundos
+            "tutor_ids": (f.get("TUTOR (ALUMNOS)") or f.get("TUTOR")) or [],
             "pdf_url": adj[0].get("url", "") if adj else "",
             "pdf_filename": (adj[0].get("filename") or "factura.pdf") if adj else "factura.pdf",
         })
