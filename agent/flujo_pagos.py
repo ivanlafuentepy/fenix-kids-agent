@@ -219,6 +219,12 @@ async def _procesar_comprobante(
         f"verificá el comprobante vs {formatear_monto(monto)} registrados."
         if _monto_adivinado else ""
     )
+    # Registro fallido: si Airtable rechazó el PAGO, el admin TIENE que saberlo
+    # acá (un logger.error solo mantuvo invisible 2 semanas el bug del link PAGA).
+    _aviso_no_registrado = (
+        "\n🚨 EL PAGO NO SE REGISTRÓ EN AIRTABLE — cargalo a mano y avisale a Claude."
+        if (tipo == "prueba" and monto > 0 and not _pago_rid_factura) else ""
+    )
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
         f"💰 Tipo: {tipo_label}\n"
@@ -227,6 +233,7 @@ async def _procesar_comprobante(
         f"{tg_link_admin}"
         f"{_aviso_inscripcion}"
         f"{_aviso_monto}"
+        f"{_aviso_no_registrado}"
     )
     # Reenviar imagen al admin (si hay media_id)
     if media_id:
