@@ -106,6 +106,33 @@ def monto_prueba_por_hijos(historial: list[dict]) -> int:
     return monto
 
 
+# Montos vigentes del pack por cantidad de hermanos (28/07/26): 350/500/650.
+_MONTOS_PACK_VALIDOS = {350_000, 500_000, 650_000}
+
+
+def monto_pack_del_historial(historial: list[dict]) -> tuple[int, bool]:
+    """
+    Extrae el monto del PACK que se acordó en la conversación: el último monto
+    mencionado por el agente que sea uno de los precios vigentes del pack
+    (350/500/650 mil según hermanos). Retorna (monto, adivinado): adivinado=True
+    si no se encontró ninguno y se usó el fallback de 350K (1 hijo) — el
+    llamador debe avisar al admin para que verifique el comprobante.
+    """
+    import re
+    for m in reversed(historial):
+        if m.get("role") != "assistant":
+            continue
+        contenido = m.get("content", "")
+        # Saltar afiches (listan TODOS los precios, no el acordado)
+        if "1 hijo" in contenido.lower() and "2 herman" in contenido.lower():
+            continue
+        for match in re.finditer(r"(\d{3})[.\s]?000\s*[Gg]s", contenido):
+            monto = int(match.group(1)) * 1000
+            if monto in _MONTOS_PACK_VALIDOS:
+                return monto, False
+    return 350_000, True
+
+
 # ── Detección de comprobante ─────────────────────────────────────────────────
 
 _KEYWORDS_PAGO = [
@@ -230,17 +257,30 @@ async def rechazar_pago(telefono: str) -> dict | None:
 # ── Detección de tipo de pago ────────────────────────────────────────────────
 
 _KEYWORDS_INSCRIPCION = [
+    # "de una" se retiró (28/08 auditoría): es muletilla de asentimiento y el
+    # propio afiche la induce ("podés inscribirte de una") — clasificaba
+    # pruebas como inscripciones.
     "inscribirme", "inscribir", "inscripcion", "inscripción",
-    "de una", "directo", "quiero el plan", "me inscribo",
+    "directo", "quiero el plan", "me inscribo",
+]
+
+# El pack de 5 sábados es EL producto que se vende hoy: si el lead lo nombró,
+# el comprobante es del pack y el PAGO va con CONCEPTO=PAQUETE5 (si quedara
+# como PRUEBA, la fórmula CLASES COMPRADAS no suma y el niño arranca sin clases).
+_KEYWORDS_PACK = [
+    "pack", "paquete", "5 clases", "5 clase", "5 sábados", "5 sabados", "p5",
 ]
 
 
 def detectar_tipo_pago(historial: list[dict]) -> str:
     """
-    Determina si el lead quiere prueba o inscripción según el historial.
-    Default: prueba (lo más común en Fenix).
+    Determina si el lead paga pack, inscripción o prueba según el historial.
+    Prioridad: pack > inscripción > prueba (default, lo más común en Fenix).
     """
     msgs_lead = [m.get("content", "").lower() for m in historial if m.get("role") == "user"]
+    for ml in msgs_lead:
+        if any(k in ml for k in _KEYWORDS_PACK):
+            return "pack"
     for ml in msgs_lead:
         if any(k in ml for k in _KEYWORDS_INSCRIPCION):
             return "inscripcion"

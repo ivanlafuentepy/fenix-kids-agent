@@ -74,11 +74,19 @@ async def _procesar_comprobante(
         monto = int(monto_override)
     elif tipo == "prueba":
         monto, _monto_adivinado = monto_prueba_por_hijos_detallado(historial)
+    elif tipo == "pack":
+        from agent.pagos import monto_pack_del_historial
+        monto, _monto_adivinado = monto_pack_del_historial(historial)
     else:
         monto = 0
 
     monto_fmt = formatear_monto(monto) if monto else ""
-    tipo_label = f"PRUEBA {monto_fmt}" if tipo == "prueba" and monto else "PRUEBA" if tipo == "prueba" else "INSCRIPCIÓN"
+    if tipo == "prueba":
+        tipo_label = f"PRUEBA {monto_fmt}" if monto else "PRUEBA"
+    elif tipo == "pack":
+        tipo_label = f"PACK 5 CLASES {monto_fmt}" if monto else "PACK 5 CLASES"
+    else:
+        tipo_label = "INSCRIPCIÓN"
 
     # ── Auto-confirmar pago (sin esperar botones del admin) ──────────────
     # (user message ya guardado al inicio del flujo)
@@ -122,10 +130,10 @@ async def _procesar_comprobante(
     # CONVERSION=PAGO ya se marcó arriba — follow-up loop lo excluye automáticamente
 
     # ── Registrar el PAGO por código (única fuente — reemplaza la automatización ──
-    #    vieja de Airtable). Solo pruebas con monto; la inscripción
+    #    vieja de Airtable). Prueba y PACK con monto; la inscripción
     #    crea sus PAGOS en inscripcion.py. Garantiza el grupo antes de colgar el pago.
     _pago_rid_factura = None
-    if tipo == "prueba" and monto > 0:
+    if tipo in ("prueba", "pack") and monto > 0:
         try:
             # Alta niño-eje (F7.b): TUTOR + NIÑOS A PRUEBA. Idempotente — si el
             # tutor ya existe con hijos, no crea nada.
@@ -145,10 +153,27 @@ async def _procesar_comprobante(
             from agent.airtable_client import _get_records, _LEADS
             _lr_pago2 = await _get_records(_LEADS, formula=f"{{TELEFONO}}='{telefono}'", max_records=1)
             _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
+            # El pack va con su concepto real: PAQUETE5 es lo que la fórmula
+            # CLASES COMPRADAS suma (como PRUEBA acreditaría 0 clases).
+            _concepto_reg = "PAQUETE5" if tipo == "pack" else concepto_pago
             _pago_rid_factura = await registrar_pago_fenix(
-                monto, concepto=concepto_pago, metodo=metodo_pago,
+                monto, concepto=_concepto_reg, metodo=metodo_pago,
                 lead_id=_lead_id_pago, telefono=telefono,
             )
+            # Pack registrado → dejar escrito desde qué día cuentan las
+            # asistencias de cada hijo (PACK DESDE, solo si está vacío).
+            if _pago_rid_factura and tipo == "pack":
+                from agent.airtable_client import obtener_grupo_familiar, marcar_inicio_pack
+                from datetime import datetime as _dt_pk
+                from zoneinfo import ZoneInfo as _ZI_pk
+                _hoy_pk = _dt_pk.now(_ZI_pk("America/Asuncion")).date().isoformat()
+                _grupo_pk = await obtener_grupo_familiar(telefono)
+                for _h_pk in (_grupo_pk or {}).get("hijos", []):
+                    if _h_pk.get("id"):
+                        try:
+                            await marcar_inicio_pack(_h_pk["id"], _hoy_pk)
+                        except Exception as _e_pk:
+                            logger.error(f"[PAGOS] No pude marcar PACK DESDE de {_h_pk['id']}: {_e_pk}")
         except Exception as e:
             logger.error(f"[PAGOS] Error registrando PAGO por código para {telefono}: {e}")
 
@@ -208,10 +233,17 @@ async def _procesar_comprobante(
         _metodo_linea = f"💳 Método: TARJETA{_aut}\n"
     # Inscripción: el PAGO en Airtable lo crea 'cargar familia' (inscripcion.py),
     # no este flujo — sin este aviso quedaba sin registrar y nadie se enteraba (M9).
-    _aviso_inscripcion = (
-        "\n⚠️ INSCRIPCIÓN: el PAGO no se registra solo — corré 'cargar familia'."
-        if tipo != "prueba" else ""
-    )
+    if tipo == "pack":
+        # El PAGO PAQUETE5 ya quedó registrado; 'cargar familia' hace el resto
+        # (matrícula, niño ACTIVO, PLAN) y su guard no duplica el pack de hoy.
+        _aviso_inscripcion = (
+            "\n📦 PACK: PAGO PAQUETE5 registrado. Corré 'cargar familia' para "
+            "la matrícula y activar al niño (no duplica el pack)."
+        )
+    elif tipo != "prueba":
+        _aviso_inscripcion = "\n⚠️ INSCRIPCIÓN: el PAGO no se registra solo — corré 'cargar familia'."
+    else:
+        _aviso_inscripcion = ""
     # Monto adivinado: ninguna regex encontró el monto acordado en el chat y
     # se registró el fallback de 100k — el admin tiene que verificar (A4).
     _aviso_monto = (
@@ -223,7 +255,7 @@ async def _procesar_comprobante(
     # acá (un logger.error solo mantuvo invisible 2 semanas el bug del link PAGA).
     _aviso_no_registrado = (
         "\n🚨 EL PAGO NO SE REGISTRÓ EN AIRTABLE — cargalo a mano y avisale a Claude."
-        if (tipo == "prueba" and monto > 0 and not _pago_rid_factura) else ""
+        if (tipo in ("prueba", "pack") and monto > 0 and not _pago_rid_factura) else ""
     )
     msg_admin = (
         f"💰 PAGO RECIBIDO ✅\n\n"
@@ -270,9 +302,10 @@ async def _procesar_comprobante(
     logger.info(f"[PAGOS] Pago AUTO-CONFIRMADO para {telefono} tipo={tipo} metodo={metodo_pago}")
 
     # ── Post-pago: mensaje determinístico de agenda (sin Claude) ─────────
-    # SOLO para prueba: la inscripción recibía el mensaje de agenda de CLASE DE
+    # Prueba y pack: los dos necesitan el formulario (datos del niño) y elegir
+    # su sábado. La inscripción NO — recibía el mensaje de agenda de CLASE DE
     # PRUEBA aunque estaba pagando el plan mensual (auditoría 04-07-26 M9).
-    if tipo == "prueba":
+    if tipo in ("prueba", "pack"):
         try:
             await asyncio.sleep(3)
             # Nuevo flujo: ANTES de ofrecer las fechas, mandar el formulario nativo de Meta
