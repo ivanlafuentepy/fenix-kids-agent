@@ -137,29 +137,29 @@ def _limpiar_codigo(codigo: str) -> str:
 
 
 async def _tutor_por_codigo(codigo: str) -> dict | None:
-    """Migración F5 (2026-07-13): el código del link mágico vive en el TUTOR
-    (TUTORES.CODIGO), no en FAMILIAS. Al momento del corte no había ningún
-    código repartido (0 familias con CODIGO FENIX) — se generan por tutor."""
-    from agent.airtable_client import _get_records, _TUTORES
+    """Etapa 2 (2026-08-09): el código del link mágico vive en la fila del
+    tutor en ALUMNOS ({CODIGO FENIX}). TUTORES FENIX quedó legacy y ya no se
+    consulta — los códigos repartidos se backfillearon a ALUMNOS
+    (scripts/backfill_tutores_a_alumnos.py)."""
+    from agent.airtable_client import _get_records, _ALUMNOS
     codigo = _limpiar_codigo(codigo)
     if len(codigo) < 4:
         return None
-    recs = await _get_records(_TUTORES, formula=f"{{CODIGO}}='{codigo}'", max_records=1)
+    recs = await _get_records(_ALUMNOS, formula=f"{{CODIGO FENIX}}='{codigo}'", max_records=1)
     return recs[0] if recs else None
 
 
 async def _hijo_ids_de_tutor(tutor: dict) -> list[str]:
-    """IDs de los hijos del tutor. El CODIGO vive en la fila LEGACY de TUTORES,
-    pero los hijos viven linkeados a la fila del padre en ALUMNOS (migración
-    08/26) → se resuelve por teléfono: TUTORES.CELL LIMPIO → ALUMNOS →
-    HIJOS FENIX (PADRE)/(MADRE)."""
+    """IDs de los hijos del tutor (fila de ALUMNOS): links directos
+    HIJOS FENIX (PADRE)/(MADRE). Fallback por teléfono para personas con más
+    de una fila en ALUMNOS (los hijos pueden estar linkeados en la otra —
+    buscar_tutor_por_telefono elige la mejor)."""
     from agent.airtable_client import buscar_tutor_por_telefono, _hijos_de_tutor
     tf = tutor.get("fields", {}) or {}
-    # Si ya es una fila de ALUMNOS (tiene los links), directo:
     hijos = _hijos_de_tutor(tf)
     if hijos:
         return hijos
-    tel = (tf.get("CELL LIMPIO") or tf.get("TELEFONO LIMPIO") or "").strip()
+    tel = (tf.get("TELEFONO LIMPIO") or tf.get("TELEFONO2 LIMPIO") or "").strip()
     if not tel:
         return []
     alumno = await buscar_tutor_por_telefono(tel)
@@ -209,36 +209,25 @@ async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | Non
     Body: {telefono | tutor_id}."""
     _auth(x_juego_key)
     from agent.airtable_client import (
-        _patch, _post, _TUTORES, _BASE_URL, _headers,
-        buscar_tutor_por_telefono, buscar_tutor_legacy_por_telefono,
+        _patch, _ALUMNOS, _BASE_URL, _headers, buscar_tutor_por_telefono,
     )
     import httpx, secrets
 
-    # El CODIGO vive en la fila LEGACY de TUTORES (los links repartidos apuntan
-    # ahí). Si la familia es nueva (post-migración, solo existe en ALUMNOS),
-    # se crea un stub en TUTORES para colgarle el código.
+    # Etapa 2 (09/08): el código vive en la fila de ALUMNOS del tutor — se
+    # acabaron los stubs en TUTORES (creaban filas duplicadas de la persona).
+    # payload.tutor_id ahora es un record id de ALUMNOS.
     tutor = None
     if payload.get("tutor_id"):
         async with httpx.AsyncClient() as client:
-            r = await client.get(f"{_BASE_URL}/{_TUTORES}/{payload['tutor_id']}", headers=_headers(), timeout=10)
+            r = await client.get(f"{_BASE_URL}/{_ALUMNOS}/{payload['tutor_id']}", headers=_headers(), timeout=10)
             if r.status_code == 200:
                 tutor = r.json()
     elif payload.get("telefono"):
-        _tel = str(payload["telefono"])
-        tutor = await buscar_tutor_legacy_por_telefono(_tel)
-        if not tutor:
-            alumno = await buscar_tutor_por_telefono(_tel)
-            if alumno:
-                af = alumno.get("fields", {}) or {}
-                tutor = await _post(_TUTORES, {
-                    "NOMBRE": af.get("NOMBRE") or "Tutor",
-                    "APELLIDO": af.get("APELLIDO") or "",
-                    "CELL": af.get("TELEFONO LIMPIO") or _tel,
-                })
+        tutor = await buscar_tutor_por_telefono(str(payload["telefono"]))
     if not tutor:
         raise HTTPException(status_code=404, detail="tutor no encontrado")
 
-    codigo = (tutor.get("fields", {}).get("CODIGO") or "").strip()
+    codigo = (tutor.get("fields", {}).get("CODIGO FENIX") or "").strip()
     if not codigo:
         for _ in range(5):  # colisión improbable (31^6) pero verificamos
             candidato = "".join(secrets.choice(_ALFA_CODIGO) for _ in range(6))
@@ -247,7 +236,7 @@ async def juego_familia_codigo(payload: dict = Body(...), x_juego_key: str | Non
                 break
         if not codigo:
             raise HTTPException(status_code=500, detail="no pude generar código único")
-        ok = await _patch(_TUTORES, tutor["id"], {"CODIGO": codigo})
+        ok = await _patch(_ALUMNOS, tutor["id"], {"CODIGO FENIX": codigo})
         if not ok:
             raise HTTPException(status_code=502, detail="no pude guardar el código")
         logger.info(f"[JUEGO] código {codigo} → tutor {tutor['id']}")
@@ -697,7 +686,8 @@ async def _juego_reto_video_inner(payload: dict):
 
     # muestreo: espejo a Telegram con el link del video (best-effort, jamás rompe la acreditación)
     try:
-        telefono = (tutor.get("fields", {}).get("CELL LIMPIO") or "").strip()
+        _tf_video = tutor.get("fields", {}) or {}
+        telefono = (_tf_video.get("TELEFONO LIMPIO") or _tf_video.get("TELEFONO2 LIMPIO") or "").strip()
         if telefono:
             from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
             link = f"{APP_URL}/api/video/{video_key}?f={codigo}"
