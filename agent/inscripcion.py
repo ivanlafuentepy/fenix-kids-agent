@@ -611,6 +611,21 @@ async def _ejecutar_inscripcion(
     if monto > 0 and concepto_plan in _conceptos_hoy:
         pagos_creados.append(f"Plan {concepto_plan} ya registrado hoy — no dupliqué")
         logger.info(f"[INSCRIPCION] PAGO {concepto_plan} ya existe hoy para {tel} → no duplico")
+        # El pack ya registrado (por el chat o por un reintento de esta misma
+        # función) puede haber quedado SIN PACK DESDE si la corrida anterior
+        # murió antes de marcarlo: marcar acá es idempotente (solo si vacío)
+        # y sin esto el niño arrancaba con clases comidas en silencio.
+        if concepto_plan == "PAQUETE5":
+            from agent.airtable_client import marcar_inicio_pack as _mip_retry
+            from datetime import datetime as _dt_r
+            from zoneinfo import ZoneInfo as _ZI_r
+            _hoy_r = _dt_r.now(_ZI_r("America/Asuncion")).date().isoformat()
+            for _nid_r in _nino_ids_pago:
+                try:
+                    if not await _mip_retry(_nid_r, _hoy_r):
+                        logger.warning(f"[INSCRIPCION] marcar_inicio_pack devolvió False para {_nid_r} (reintento)")
+                except Exception as _e_r:
+                    logger.error(f"[INSCRIPCION] no pude marcar el pack de {_nid_r} (reintento): {_e_r}")
     elif monto > 0:
         pago_plan = await _post(_pagos_tabla, {
             "MONTO": monto,
@@ -635,7 +650,8 @@ async def _ejecutar_inscripcion(
                 _hoy_pack = _dt_pack.now(_ZI_pack("America/Asuncion")).date().isoformat()
                 for _nid_pack in _nino_ids_pago:
                     try:
-                        await marcar_inicio_pack(_nid_pack, _hoy_pack)
+                        if not await marcar_inicio_pack(_nid_pack, _hoy_pack):
+                            logger.warning(f"[INSCRIPCION] marcar_inicio_pack devolvió False para {_nid_pack}")
                         _saldo_pack = await obtener_saldo_clases(_nid_pack)
                         if _saldo_pack is not None:
                             pagos_creados.append(f"+5 clases (quedan {_saldo_pack})")
