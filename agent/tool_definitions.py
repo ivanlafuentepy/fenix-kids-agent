@@ -156,6 +156,14 @@ TOOLS_AURORA = [
                     "enum": ["11:00", "15:30"],
                     "description": "Hora del turno. Para reagendar es la hora NUEVA.",
                 },
+                "fecha_original": {
+                    "type": "string",
+                    "description": (
+                        "SOLO para reagendar: la fecha de la reserva que se mueve. "
+                        "Obligatoria si la familia tiene reservas en más de una fecha "
+                        "(si no se pasa y hay varias, la tool no toca nada y pide aclarar)."
+                    ),
+                },
             },
             "required": ["accion"],
         },

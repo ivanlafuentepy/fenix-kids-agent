@@ -20,12 +20,14 @@ async def gestionar_reserva(
     accion: str,
     fecha: str | None = None,
     hora: str | None = None,
+    fecha_original: str | None = None,
     familia_id: str | None = None,  # ignorado — compat con schemas de tool viejos
 ) -> dict:
     """
     Tool unificada para agendar, reagendar y cancelar reservas (niño-eje, F7.b).
     - agendar: crea reserva nueva para todos los hijos
-    - reagendar: busca reservas futuras por los links del niño, cancela, crea nueva
+    - reagendar: mueve SOLO la reserva de fecha_original (o la única futura)
+      a la fecha/hora nueva — nunca borra las demás
     - cancelar: cancela reservas de la fecha/hora indicada
 
     El grupo se resuelve por teléfono (tutor → hijos).
@@ -53,7 +55,12 @@ async def gestionar_reserva(
     if accion == "agendar":
         return await _agendar(fecha, hora, ninos)
     elif accion == "reagendar":
-        return await _reagendar(fecha, hora, ninos)
+        # El pre-hook normaliza 'fecha' a ISO pero no 'fecha_original': el LLM
+        # puede mandarla como '15 de agosto' y las reservas comparan en ISO.
+        if fecha_original:
+            from agent.tools.reservas import _parsear_fecha
+            fecha_original = _parsear_fecha(fecha_original) or fecha_original
+        return await _reagendar(fecha, hora, ninos, fecha_original=fecha_original or "")
     elif accion == "cancelar":
         return await _cancelar(fecha, hora, ninos)
 
@@ -141,8 +148,12 @@ async def _agendar(fecha: str, hora: str, ninos: list[dict]) -> dict:
     }
 
 
-async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict]) -> dict:
-    """Busca reservas futuras por los links del niño, crea la nueva, borra las viejas."""
+async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict], fecha_original: str = "") -> dict:
+    """Mueve UNA fecha de reserva a otra. Nunca borra las demás fechas futuras.
+
+    Antes borraba TODAS las reservas futuras de la familia: mover la del 15
+    hacía desaparecer también la del 22 en silencio (auditoría 09/08 A1).
+    """
     if not fecha_nueva or not hora_nueva:
         return {
             "error": True,
@@ -160,8 +171,33 @@ async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict]) -> di
             "message": "No hay reservas activas para reagendar. Usar agendar en su lugar.",
         }
 
-    fecha_actual = reservas_futuras[0]["fecha"]
-    hora_actual = reservas_futuras[0]["hora"]
+    # Qué se mueve: la fecha_original pedida; sin ella, la única fecha futura.
+    # Con varias fechas y sin fecha_original NO se toca nada: hay que preguntar.
+    _fechas_futuras = sorted({r["fecha"] for r in reservas_futuras})
+    if fecha_original:
+        a_mover = [r for r in reservas_futuras if r["fecha"] == fecha_original]
+        if not a_mover:
+            return {
+                "error": True,
+                "error_category": "business",
+                "is_retryable": False,
+                "message": f"No hay reserva el {fecha_original}. Las reservas activas son: {', '.join(_fechas_futuras)}.",
+            }
+    elif len(_fechas_futuras) == 1:
+        a_mover = reservas_futuras
+    else:
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": True,
+            "message": (
+                f"La familia tiene reservas en varias fechas ({', '.join(_fechas_futuras)}). "
+                "Preguntar cuál mover y repetir con fecha_original."
+            ),
+        }
+
+    fecha_actual = a_mover[0]["fecha"]
+    hora_actual = a_mover[0]["hora"]
 
     # Crear la reserva nueva PRIMERO: si _agendar falla (Airtable caído,
     # horario inválido), las reservas viejas quedan intactas. Antes se
@@ -172,9 +208,9 @@ async def _reagendar(fecha_nueva: str, hora_nueva: str, ninos: list[dict]) -> di
         return result
     _ids_nuevas = set(result.get("reserva_ids", []) or [])
 
-    # Recién ahora borrar las futuras viejas — sin tocar las recién creadas
-    # (crear_reserva es idempotente y puede devolver una que ya existía)
-    for r in reservas_futuras:
+    # Recién ahora borrar SOLO las de la fecha movida — sin tocar las recién
+    # creadas (crear_reserva es idempotente y puede devolver una que ya existía)
+    for r in a_mover:
         if r["id"] in _ids_nuevas:
             continue
         await _delete(_RESERVAS, r["id"])
