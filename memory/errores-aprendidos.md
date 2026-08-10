@@ -828,3 +828,40 @@ texto completo, no sirven los headers.
 - Tras un deploy de mundo-fenix, los dispositivos se actualizan solos en ≤10 min
   (estando en reposo). Para verlo YA: recargar a mano.
 - Cualquier página kiosk nueva del ecosistema debe nacer con este auto-reload.
+
+---
+
+## 2026-08-09 — El agente quedó MUDO: un `import` dentro de una función sombreó el global
+
+**Síntoma:** Iván probando el flujo en vivo: el agente le preguntó el nombre y la edad
+del hijo, él contestó "Ivan 5 años" y **nunca más respondió**. Cero respuesta a cualquier
+mensaje, de cualquier número.
+
+**Causa raíz:** en el fix del guard de comprobantes agregué
+`from agent.pagos import CI_BANCARIO` **dentro** de `_procesar_mensaje_interno`, cuando
+ese nombre YA venía del import global del módulo. En Python, cualquier asignación
+(incluido un `import`) hace que el nombre sea **local en TODO el scope de la función**,
+no solo desde esa línea. Como el import estaba dentro de un `if` (la rama de
+comprobantes), cualquier mensaje que NO fuera un comprobante llegaba al uso de más
+abajo (`if agent_actual == "ivan" and CI_BANCARIO in respuesta`) con el nombre sin
+asignar → `UnboundLocalError` → el webhook moría después de guardar el mensaje del
+usuario, sin responder.
+
+**Por qué no lo agarró nada:** `import agent.main` compila igual (es un error de
+runtime, no de sintaxis), los 30 tests no ejercen el webhook completo, y el deploy
+quedó SUCCESS. Solo aparece con un mensaje real. En los logs sí estaba, clarísimo:
+`[WEBHOOK] Error procesando ...: cannot access local variable 'CI_BANCARIO'`.
+
+**Fix:** sacar el import local (commit `1fbf7db`). El nombre ya estaba disponible.
+
+**How to apply:**
+- **Nunca importar dentro de una función un nombre que ya está importado a nivel de
+  módulo.** Si hace falta el import local (para evitar ciclos), verificar que NINGÚN
+  otro uso del nombre viva fuera de la rama que lo importa.
+- Los imports locales en ramas condicionales son el patrón peligroso; en el cuerpo
+  lineal de una función corta son inofensivos.
+- Chequeo estático rápido (AST) que detecta el patrón — vale correrlo tras tocar
+  `main.py`: recorrer cada función, juntar los imports locales que están dentro de
+  `if/try/for/while` y ver si el nombre se usa fuera de esa rama.
+- Ante "el agente no responde": **PRIMERO los logs de Railway filtrando `ERROR`**. El
+  traceback estaba ahí desde el primer mensaje.
