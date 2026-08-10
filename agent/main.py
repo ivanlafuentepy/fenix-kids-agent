@@ -2649,8 +2649,19 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Flow que reciben los leads es este); el flag esperando_formulario_reserva solo
         # regula la agenda adentro del handler. Antes, con el flag apagado, el flow_data
         # caía al pipeline como "[formulario]" y se perdía. El alta admin va por su rama.
-        if (telefono != admin_phone and getattr(msg, "es_boton", False)
-                and (getattr(msg, "btn_id", "") or "") == "flow_completado"):
+        #
+        # Excepción: el admin probando el flujo de lead (modo padre). Recibe el MISMO
+        # Flow que el alta "cargar niño" y el payload es idéntico (los dos traen
+        # flow="cargar_nino"), así que lo único que los distingue es el flag, que solo
+        # se prende post-pago. Sin esto, probar el flujo desde el número del admin
+        # creaba un tutor y un niño ACTIVO duplicados y la reserva nunca se completaba.
+        _es_flow_completado = (getattr(msg, "es_boton", False)
+                               and (getattr(msg, "btn_id", "") or "") == "flow_completado")
+        if _es_flow_completado and telefono == admin_phone:
+            _es_flow_completado = bool(
+                (await obtener_estado_flags(telefono)).get("esperando_formulario_reserva")
+            )
+        if _es_flow_completado:
             _flow_data_r = getattr(msg, "flow_data", None) or {}
             # El contenido del formulario SIEMPRE queda en DB — nunca más un
             # formulario perdido sin rastro (595981941407, 25/07)
