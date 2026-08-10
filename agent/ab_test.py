@@ -309,13 +309,29 @@ def _lock_flags(telefono: str) -> asyncio.Lock:
 
 
 async def actualizar_estado_flags(telefono: str, **kwargs):
-    """Actualiza flags persistentes (merge, no reemplaza)."""
+    """Actualiza flags persistentes (merge, no reemplaza).
+
+    Si el teléfono todavía no tiene fila, se crea: antes el flag se descartaba
+    en SILENCIO (sin log) y los flujos laterales — webhook de tarjeta, altas
+    por HQ/Telegram, /restaurar-aurora — perdían tutor_id, modo_agenda,
+    pago_esperando_factura y esperando_formulario_reserva (auditoría S18).
+    """
     async with _lock_flags(telefono):
         async with async_session() as session:
             result = await session.execute(
                 select(ConversacionAB).where(ConversacionAB.telefono == telefono)
             )
             conv = result.scalar_one_or_none()
+            if not conv:
+                conv = ConversacionAB(
+                    telefono=telefono,
+                    variante="A",
+                    convertido=False,
+                    agent_actual="ivan",
+                    timestamp_inicio=datetime.utcnow(),
+                )
+                session.add(conv)
+                logger.info(f"[FLAGS] Fila creada para {telefono} (no existía) — flags: {list(kwargs)}")
             if conv:
                 actual = {}
                 if conv.estado_json:

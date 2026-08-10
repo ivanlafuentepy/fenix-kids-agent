@@ -22,6 +22,7 @@ async def gestionar_reserva(
     hora: str | None = None,
     fecha_original: str | None = None,
     familia_id: str | None = None,  # ignorado — compat con schemas de tool viejos
+    **_extra,   # el LLM puede mandar un argumento fuera del schema: se ignora
 ) -> dict:
     """
     Tool unificada para agendar, reagendar y cancelar reservas (niño-eje, F7.b).

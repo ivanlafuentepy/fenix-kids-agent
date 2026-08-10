@@ -259,12 +259,22 @@ async def generar_respuesta(
                     f"stop={response.stop_reason}"
                 )
 
-                # Caso 1: Solo texto (sin tool_use) → retornar
-                if response.stop_reason == "end_turn" or not _usa_tools:
+                # Caso 1: cualquier corte que NO sea tool_use → devolver el texto.
+                # Antes solo se contemplaba end_turn: con tools activas, un corte
+                # por max_tokens (o pause_turn/refusal) no matcheaba ningún caso,
+                # el loop repetía la MISMA llamada 3 veces (3× el costo) y el
+                # padre terminaba recibiendo "Ups, algo falló" con la respuesta
+                # ya generada en la mano (auditoría de silencio S16).
+                if response.stop_reason != "tool_use" or not _usa_tools:
                     texto = ""
                     for block in response.content:
                         if hasattr(block, "text"):
                             texto += block.text
+                    if response.stop_reason not in ("end_turn", None):
+                        logger.warning(
+                            f"[{agent_actual.upper()}] stop_reason={response.stop_reason} "
+                            f"— devuelvo el texto generado ({len(texto)} chars)"
+                        )
                     return (texto, acciones) if _usa_tools else texto
 
                 # Caso 2: Tool use → ejecutar y continuar

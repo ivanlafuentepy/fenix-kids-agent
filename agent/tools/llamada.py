@@ -17,6 +17,7 @@ _TZ_PY = ZoneInfo("America/Asuncion")
 async def programar_llamada(
     telefono: str,
     hora_llamada: str,
+    **_extra,   # argumento alucinado por el LLM → se ignora, no TypeError
 ) -> dict:
     """
     Programa un recordatorio para que Ivan llame al padre a la hora indicada.

@@ -171,11 +171,19 @@ async def manejar_respuesta(
     _texto_norm = (texto or "").strip().lower()
 
     # ── Eligió turno (botón interactivo) → crear la reserva ────────────────
-    # No depende del flag: el btn_id solo existe si Aurora mandó estos botones.
-    if btn_id in _TURNO_POR_BTN:
+    # Exige el flag: los botones viven en el chat para siempre y un padre que
+    # scrollea y toca el "11:00" de una plantilla de hace semanas creaba una
+    # reserva para el sábado siguiente sin que nadie la esperara (auditoría S19).
+    if btn_id in _TURNO_POR_BTN and flags.get("esperando_confirmacion_sabado"):
         hora = _TURNO_POR_BTN[btn_id]
         fecha = _proximo_sabado(datetime.now(_TZ_PY))
-        res = await gestionar_reserva(telefono, "agendar", fecha=fecha, hora=hora)
+        # gestionar_reserva puede lanzar: acá corre fuera del tool_executor,
+        # que es el que normalmente atrapa y devuelve un dict de error.
+        try:
+            res = await gestionar_reserva(telefono, "agendar", fecha=fecha, hora=hora)
+        except Exception as _e_res:
+            logger.error(f"[CONF-SAB] Error agendando para {telefono}: {_e_res}")
+            res = {"message": "Uy, no pude confirmar la reserva ahora. Escribime y lo resolvemos 🙏"}
         await actualizar_estado_flags(telefono, esperando_confirmacion_sabado=False)
         if res.get("agendada"):
             hijos = res.get("hijos", "tu hijo")

@@ -22,6 +22,7 @@ async def registrar_familia(
     nombre: str,
     apellido: str | None = None,
     familia_id: str | None = None,
+    **_extra,   # argumento alucinado por el LLM → se ignora, no TypeError
 ) -> dict:
     """
     Registra o actualiza el nombre del tutor de este teléfono (fila de ALUMNOS
@@ -79,6 +80,7 @@ async def registrar_hijo(
     ci: str | None = None,
     talla_remera: str | None = None,
     familia_id: str | None = None,
+    **_extra,   # argumento alucinado por el LLM → se ignora, no TypeError
 ) -> dict:
     """
     Registra un hijo linkeado directo al tutor del teléfono (PADRE o MADRE

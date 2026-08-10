@@ -20,6 +20,7 @@ async def consultar_disponibilidad(
     telefono: str,
     fecha: str | None = None,
     hora: str | None = None,
+    **_extra,   # argumento alucinado por el LLM → se ignora, no TypeError
 ) -> dict:
     """
     Consulta cuántos niños hay agendados por slot.
