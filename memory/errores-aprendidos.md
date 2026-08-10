@@ -865,3 +865,35 @@ quedó SUCCESS. Solo aparece con un mensaje real. En los logs sí estaba, clarí
   `if/try/for/while` y ver si el nombre se usa fuera de esa rama.
 - Ante "el agente no responde": **PRIMERO los logs de Railway filtrando `ERROR`**. El
   traceback estaba ahí desde el primer mensaje.
+
+---
+
+## 2026-08-09 — Dos semanas sin registrar un solo pago: un link que apuntaba a la tabla vieja
+
+**Síntoma:** ninguno. El lead recibía "Pago confirmado! 🎉", el admin recibía "💰 PAGO RECIBIDO ✅"
+y en Airtable **no quedaba nada**. Se descubrió en una auditoría, no por una queja: Iván venía
+cargando los pagos a mano por la GUI del mostrador y eso enmascaró el agujero desde el 25/07.
+
+**Causa raíz:** la migración de tutores a **ALUMNOS** (07/08) dejó dos writers escribiendo los
+links viejos: `PAGOS.PAGA` y `LEADS.TUTOR FENIX` apuntan a **TUTORES FENIX**, pero recibían
+record ids de **ALUMNOS**. Airtable **rechaza el POST/PATCH ENTERO con 422** cuando un link
+recibe un id que no existe en su tabla destino — no ignora el campo, tira todo. Así se perdían
+el PAGO completo (monto, niños, lead) y el `CONVERSION=INSCRIPTO`. `formulario_reserva.py` ya
+usaba el campo correcto: **el fix de la migración había quedado a medias**.
+
+**Por qué nadie se enteró:** `_post` devuelve `None` ante el 422 y el caller solo hacía
+`logger.error`. El mensaje al admin salía igual, idéntico al de un pago exitoso.
+
+**Fix:** `PAGA (ALUMNOS)` y `TUTOR (ALUMNOS)` (commits `26b5a57`, `9b4a6d1`) + el aviso al admin
+ahora lleva "🚨 EL PAGO NO SE REGISTRÓ EN AIRTABLE" cuando el POST falla (`ae7e2b4`).
+
+**How to apply:**
+- **Al mover una tabla de Airtable, grepear TODOS los campos link que la referencian**, no solo
+  los readers. Un link no se "adapta": o apunta a la tabla nueva o rechaza el registro entero.
+- **Todo fallo de escritura que involucre plata tiene que llegarle al admin en el mismo mensaje
+  donde se le dice que hubo pago.** Un `logger.error` en Railway no es un aviso: acá tapó el
+  agujero dos semanas.
+- Verificar una migración con **datos reales**, no solo con el schema: la señal fue "el último
+  PAGO creado por código es del 25/07" mirando la tabla, no leyendo el código.
+- Los campos con nombre "(ALUMNOS)" son los vivos; los pelados (`PAGA`, `TUTOR`, `TUTOR RUC`) son
+  legacy y mueren cuando se borre `TUTORES FENIX LEGACY`.

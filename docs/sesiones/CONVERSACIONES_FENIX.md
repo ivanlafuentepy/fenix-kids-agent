@@ -687,3 +687,22 @@ comparte fila con Salsa e Impulso y no se le podía pisar el principal. Commits 
 `13ef71e`, `bd7d88a`.
 
 Detalle completo → `.claude/handoffs/handoff_20260808_0040.md`
+
+## 2026-08-09 — Adiós TUTORES FENIX
+
+Auditoría completa post-migraciones con 5 agentes en paralelo (~50 hallazgos verificados
+contra el schema real de Airtable): destapó que **el bot no registraba un solo pago desde el
+25/07** — los links `PAGA`/`TUTOR FENIX` apuntaban a la tabla legacy y recibían ids de ALUMNOS,
+así que Airtable rechazaba el POST entero; los pagos de agosto los había cargado Iván a mano
+por la GUI. También que el texto de Aurora creaba y cancelaba reservas por regex. Se arreglaron
+los 3 críticos y los 14 altos, y se ejecutó la **Etapa 2 completa** (TUTORES FENIX → ALUMNOS:
+código del juego, datos fiscales, robot facturador, tabla renombrada LEGACY con canario de 30 días).
+
+Dos de esos fixes rompieron producción: uno dejó al **agente mudo 8 minutos** por un `import`
+dentro de una rama condicional, y lo descubrió Iván probando, no el sistema. De ahí salió una
+segunda auditoría —los **caminos de silencio**— con sus 14 hallazgos arreglados: el `except` del
+webhook ahora le responde al padre y alerta al admin, el envío se verifica y reintenta, y el
+shutdown espera los mensajes en vuelo. Además `tests/test_webhook_no_muda.py`, validado
+reintroduciendo el bug del día. 37 commits + 1 en facturador-set, todos deployados y verificados.
+
+Detalle completo → `.claude/handoffs/handoff_20260809_2206.md`
