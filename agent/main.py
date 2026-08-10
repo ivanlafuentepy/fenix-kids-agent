@@ -1317,9 +1317,46 @@ async def pago_confirmado(request: Request):
                 except Exception:
                     pass
 
+        # Pago del DESAFÍO hecho desde la WEB: no hay Pedido porque el link no lo
+        # mandó el agente, pero el padre igual tiene que quedar inscripto. Antes
+        # caía al else de abajo: se le decía "pago confirmado" y ahí moría —
+        # sin PAGO en Airtable, sin datos del niño y sin reserva de los 3 días.
+        # El teléfono lo pide la propia pasarela antes de mostrar la tarjeta, y
+        # el concepto (que viaja firmado en el link) distingue el pago del campus
+        # de uno hecho a mano desde el panel /admin, que NO debe crear reservas.
+        if not gestionado and not _pedido and "desaf" in (concepto or "").lower():
+            try:
+                historial = await obtener_historial(telefono, limite=40)
+                _grupo_web = await grupo_telegram_para(telefono)
+                _nombre_topic = _extraer_nombre_del_historial(historial, "") or telefono
+                topic_id = await obtener_o_crear_topic(telefono, _nombre_topic, group_override=_grupo_web)
+                await _procesar_comprobante(
+                    telefono, "[pago con tarjeta desde la web]", None, historial, topic_id,
+                    group_override=_grupo_web,
+                    metodo_pago="CREDIT CARD",
+                    monto_override=monto,
+                    tipo_override="prueba",   # el Desafío usa el carril de la entrada
+                    concepto_pago="DESAFIO",
+                    auth_number=auth,
+                )
+                gestionado = True
+                logger.info(f"[PAGO-CONFIRMADO] {telefono}: pago web del Desafío → flujo completo")
+            except Exception as e:
+                logger.exception(f"[PAGO-CONFIRMADO] pago web falló para {telefono}: {e}")
+                gestionado = False
+                try:
+                    await proveedor.enviar_mensaje(
+                        admin_phone,
+                        f"⚠️ Pago WEB del Desafío de {telefono} ({_monto_txt}) confirmado "
+                        f"pero el flujo falló: {e}\nHay que cargarlo a mano.",
+                    )
+                except Exception:
+                    pass
+
         if not gestionado and not _pedido:
-            # Sin Pedido (link del panel /admin de la pasarela, etc.): confirmar +
-            # avisar al admin. La pasarela registra en la caja central (gestionado=false).
+            # Sin Pedido y sin concepto de Desafío (link del panel /admin de la
+            # pasarela, etc.): confirmar + avisar al admin. La pasarela registra
+            # en la caja central (gestionado=false).
             _msg = f"✅ ¡Pago confirmado! Recibimos tus *{_monto_txt}* 🎉 ¡Gracias!"
             await guardar_mensaje(telefono, "assistant", _msg)
             await proveedor.enviar_mensaje(telefono, _msg)
