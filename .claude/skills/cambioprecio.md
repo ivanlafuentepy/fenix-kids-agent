@@ -38,18 +38,25 @@ registra con el fallback de 100k en silencio. Verificarlo explícitamente.
 
 ---
 
-## Paso 2 — Los 7 lugares del agente
+## Paso 2 — Los lugares del agente
 
-Editar TODOS. Ninguno es opcional:
+> **Cambió el 09/08 con el DESAFÍO FENIX.** El precio ahora depende del día (350.000 hasta el
+> jueves 23:59, 550.000 desde el viernes), así que se CALCULA en un solo lugar en vez de estar
+> escrito en siete. Los textos pasaron de constantes a funciones: una constante congela el
+> precio del deploy y a la semana miente.
 
 | # | Archivo | Qué tiene |
 |---|---|---|
-| 1 | `config/prompts.yaml` | sección PRECIOS + la línea de FASE 2B (inscripción) |
-| 2 | `agent/lead_menu.py` | `TEXTO_PRECIOS` y `TEXTO_HERMANOS` (menú de botones) |
-| 3 | `agent/afiches.py` | `msg_precios` y `msg_hermanos` (acompañan al afiche) |
-| 4-5 | `agent/main.py` (**× 2**) | los fallbacks de texto de los interceptores, cuando el afiche YA se envió (buscar `_pide_hermanos` / `_pide_precios`) |
-| 6 | `agent/reminders.py` | `_MENSAJES_SEGUIMIENTO["A"]` — el follow-up automático repite precios |
-| 7 | `agent/pagos.py` | dict `PRECIOS` (sin consumidores hoy, pero es la tabla de referencia) |
+| 1 | **`agent/desafio.py`** | `PRECIO_ANTICIPADA` / `PRECIO_NORMAL` / `EXTRA_HERMANO` + el corte del jueves. **Acá se cambia el precio del campus.** |
+| 2 | `agent/lead_menu.py` | `texto_precios()` / `texto_hermanos()` / `texto_horarios()`. De acá leen `afiches.py` y los dos fallbacks de `main.py` — no hay que tocarlos por separado. |
+| 3 | `config/prompts.yaml` | sección PRECIOS DEL DESAFÍO + "qué pasa después del campus" |
+| 4 | `agent/pagos.py` | dict `PRECIOS` (referencia) **y el fallback de `monto_prueba_por_hijos_detallado`**, que usa `precio_desafio(1)`. Con el fallback fijo viejo, un comprobante mal parseado se registraba de menos y en silencio. |
+| 5 | `agent/flujo_pagos.py` | `_MONTOS_AGENDA` del comando `/agenda` (admin) + el ayuda-memoria de `main.py` |
+| 6 | `agent/facturas.py` | la DESCRIPCION que sale impresa en la factura y `_CONCEPTO_FACTURA` |
+
+`agent/reminders.py` ya NO lleva precio a propósito: los follow-ups se resuelven al programarse
+y se envían hasta 6h después, así que un número escrito ahí puede cruzar el corte y llegar
+mentido. Si vas a volver a poner precios ahí, resolvelos en el momento del envío.
 
 ---
 
@@ -83,7 +90,11 @@ El de horarios (`afiche_horarios.png`) solo cambia si cambian los horarios.
 
 ## Paso 5 — La web (repo aparte, **rama master**)
 
-`Projects/fenixkidsacademy-web/index.html`, sección `<!-- PRECIOS -->`: cards + tabla de hermanos.
+Son **tres** archivos, no uno:
+- **`assets/campus.js`** — fechas del próximo campus y precio vigente. La lógica vive acá y la
+  comparten las dos páginas (mismo criterio que `agent/desafio.py`).
+- **`index.html`** — la home: cards de precios + tabla por cantidad de hijos + links de pago.
+- **`desafio.html`** — la landing de anuncios (sin menú): mismas tablas y links.
 
 ⚠️ **Los links de pago van firmados**: `sig = HMAC(LINK_SECRET, "fenix:{monto}")[:16]`
 (`agent/pagos_tarjeta.py`). Cambiar el monto sin refirmar deja el link **roto para el cliente**
