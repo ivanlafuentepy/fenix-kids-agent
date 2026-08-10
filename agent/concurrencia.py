@@ -54,3 +54,38 @@ def _fire_and_forget(coro):
         if not t.cancelled() and t.exception() else None
     )
     return task
+
+
+# ── Mensajes en vuelo ────────────────────────────────────────────────────────
+# El webhook responde 200 a Meta y procesa en background: si el proceso muere
+# (CADA git push redeploya Railway), esos mensajes quedaban marcados como
+# procesados por la dedup y no se contestaban NUNCA (auditoría de silencio S7).
+# Se registran acá para poder esperarlos en el shutdown.
+_mensajes_en_vuelo: set = set()
+
+
+def procesar_mensaje_task(coro):
+    """Como _fire_and_forget, pero la task queda registrada como 'en vuelo'."""
+    task = _fire_and_forget(coro)
+    _mensajes_en_vuelo.add(task)
+    task.add_done_callback(_mensajes_en_vuelo.discard)
+    return task
+
+
+async def esperar_mensajes_en_vuelo(timeout: float = 15.0) -> int:
+    """Espera a que terminen los mensajes que se están procesando.
+
+    Se llama en el shutdown, ANTES de cancelar los loops. Railway da unos
+    segundos de gracia tras el SIGTERM: alcanzan para terminar de contestar.
+    Devuelve cuántos quedaron sin terminar (0 = todos contestados).
+    """
+    pendientes = {t for t in _mensajes_en_vuelo if not t.done()}
+    if not pendientes:
+        return 0
+    logger.warning(f"[SHUTDOWN] Esperando {len(pendientes)} mensaje(s) en vuelo (máx {timeout}s)")
+    _, sin_terminar = await asyncio.wait(pendientes, timeout=timeout)
+    if sin_terminar:
+        logger.error(f"[SHUTDOWN] {len(sin_terminar)} mensaje(s) quedaron sin responder por el reinicio")
+    else:
+        logger.info("[SHUTDOWN] Todos los mensajes en vuelo quedaron contestados")
+    return len(sin_terminar)

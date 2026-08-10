@@ -116,7 +116,11 @@ proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
 # ── Concurrencia (extraído a agent/concurrencia.py) ──
-from agent.concurrencia import _obtener_lock, _check_rate_limit, _fire_and_forget, _RATE_LIMIT_MAX, _RATE_LIMIT_WINDOW
+from agent.concurrencia import (
+    _obtener_lock, _check_rate_limit, _fire_and_forget,
+    procesar_mensaje_task, esperar_mensajes_en_vuelo,
+    _RATE_LIMIT_MAX, _RATE_LIMIT_WINDOW,
+)
 
 # ── Resúmenes admin (extraído a agent/resumenes.py) ──
 from agent.resumenes import (
@@ -287,6 +291,13 @@ async def lifespan(app: FastAPI):
     )
     print("[STARTUP] Monitor de producción: conversaciones + salud activos", flush=True)
     yield
+    # Terminar de contestar lo que está en vuelo ANTES de cortar (cada git push
+    # redeploya Railway: los mensajes a medio procesar quedaban marcados como
+    # procesados por la dedup y no se contestaban nunca).
+    try:
+        await esperar_mensajes_en_vuelo(timeout=15.0)
+    except Exception as _e_sd:
+        logger.error(f"[SHUTDOWN] Error esperando mensajes en vuelo: {_e_sd}")
     # Cancelar TODOS los tasks registrados (antes solo se cancelaban 5 de ~10)
     for _t in _monitor_bg_tasks.values():
         _t.cancel()
@@ -1781,6 +1792,9 @@ async def webhook_handler(request: Request):
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
+          # Un try POR MENSAJE: un fallo de DB en la dedup del primero descartaba
+          # el resto del lote en silencio (auditoría de silencio S15).
+          try:
             if msg.es_propio or not msg.texto:
                 continue
 
@@ -1804,8 +1818,19 @@ async def webhook_handler(request: Request):
             if msg.mensaje_id and not await registrar_mensaje_procesado(msg.mensaje_id):
                 continue  # otro webhook concurrente ya lo tomó
 
-            # Procesamiento en background — responder 200 rápido a Meta
-            _fire_and_forget(_procesar_mensaje_webhook(msg))
+            # Procesamiento en background — responder 200 rápido a Meta.
+            # Registrado como "en vuelo" para que el shutdown lo espere en vez
+            # de matarlo (cada deploy perdía los mensajes que estaba contestando).
+            procesar_mensaje_task(_procesar_mensaje_webhook(msg))
+          except Exception as _e_msg:
+            logger.error(f"[WEBHOOK] Error preparando mensaje de {getattr(msg, 'telefono', '?')}: {_e_msg}", exc_info=True)
+            registrar_error_webhook(getattr(msg, "telefono", "desconocido"), str(_e_msg))
+            if getattr(msg, "mensaje_id", None):
+                try:
+                    await borrar_mensaje_procesado(msg.mensaje_id)
+                except Exception:
+                    pass
+            continue
 
         return {"status": "ok"}
 
