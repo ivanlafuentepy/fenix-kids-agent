@@ -13,11 +13,17 @@
 #   5. Si el lead escribe texto libre antes de pedir "Hablar con Aurora", se le
 #      insiste con los botones (no se pasa a conversacional).
 #
+# EXCEPCIÓN — el que llega desde el botón "pagar con tarjeta" de la web no entra
+# al menú de venta: se le pregunta solo para cuántos hijos es y se le manda el
+# link firmado. Ese camino se decide por CONTENIDO (ver viene_de_la_web_a_pagar).
+#
 # Cuando el lead pasa a conversacional (flag persistente menu_estado="conversacional"),
 # el menú se aparta y el resto del flujo de main.py (interceptores + brain con
 # TOOLS_IVAN) funciona igual que hoy.
 
 import logging
+import os
+import unicodedata
 
 from agent.memory import guardar_mensaje
 from agent.ab_test import obtener_estado_flags, actualizar_estado_flags
@@ -175,6 +181,66 @@ _ID_A_OPCION = {
 }
 
 
+# ── Camino directo: el botón "pagar con tarjeta" de la web ───────────────────
+# La web (fenixkidsacademy.com y /desafio) abre WhatsApp con un texto FIJO que
+# escribimos nosotros en el href, no una frase que el padre inventa. El que
+# llega por ahí YA decidió: no se le vuelve a vender, solo falta saber para
+# cuántos hijos es y pasarle el link firmado.
+#
+# Antes caía en el saludo genérico + los botones de venta (endpoint del 10/08
+# 04:31): el primer contacto se resolvía por ESTADO, sin mirar el contenido. La
+# instrucción del prompt tampoco alcanzaba, porque el mensaje nunca llegaba al
+# brain — el menú corta antes.
+_FRASE_TARJETA_WEB = "quiero pagar con tarjeta"
+
+SALUDO_TARJETA = (
+    "Hola! Te saluda Aurora 🌟 de Fenix Kids.\n\n"
+    "Te paso la info para abonar con tarjeta el DESAFÍO FENIX 🔥\n\n"
+    "¿Para cuántos hijos es?"
+)
+
+# Cuántos hijos, por botón: el monto tiene que ser un dato, no una adivinanza.
+_BOTONES_HIJOS_TARJETA = [
+    {"id": "tarjeta_1", "title": "1 hijo"},
+    {"id": "tarjeta_2", "title": "2 hermanos"},
+    {"id": "tarjeta_3", "title": "3 hermanos"},
+]
+_HIJOS_POR_BTN = {"tarjeta_1": 1, "tarjeta_2": 2, "tarjeta_3": 3}
+_HIJOS_POR_PALABRA = {"1": 1, "un": 1, "uno": 1, "una": 1,
+                      "2": 2, "dos": 2, "3": 3, "tres": 3}
+_TEXTO_RECORDATORIO_HIJOS = "Decime para cuántos hijos es 👇"
+
+
+def _sin_acentos(texto: str) -> str:
+    """Minúsculas y sin tildes — 'Desafío' y 'Desafio' son el mismo mensaje."""
+    limpio = unicodedata.normalize("NFD", (texto or "").lower())
+    return "".join(c for c in limpio if unicodedata.category(c) != "Mn")
+
+
+def viene_de_la_web_a_pagar(texto: str) -> bool:
+    """¿Este mensaje es el deep-link de pago con tarjeta de la web?
+
+    Es un match contra NUESTRA propia frase, no un detector de intención nuevo:
+    el texto lo escribe el href de fenixkidsacademy.com, igual que _TURNO_POR_BTN
+    matchea los ids de botón que mandamos nosotros.
+    """
+    return _FRASE_TARJETA_WEB in _sin_acentos(texto)
+
+
+def _hijos_del_mensaje(texto: str, btn_id: str | None, es_boton: bool) -> int | None:
+    """Cuántos hijos eligió el padre, o None si no se puede saber.
+
+    Botón primero; si escribió, se acepta un 1/2/3 (o "dos") suelto — match
+    contra valores conocidos, del mismo modo que la elección de turnos.
+    """
+    if es_boton and btn_id in _HIJOS_POR_BTN:
+        return _HIJOS_POR_BTN[btn_id]
+    for palabra in _sin_acentos(texto).replace(",", " ").split():
+        if palabra in _HIJOS_POR_PALABRA:
+            return _HIJOS_POR_PALABRA[palabra]
+    return None
+
+
 # ── Helpers de envío ─────────────────────────────────────────────────────────
 
 async def _espejar_telegram(telefono: str, texto: str, topic_id: int | None, tg_group: int):
@@ -278,6 +344,95 @@ async def _handle_ubicacion(telefono: str, proveedor, topic_id: int | None, tg_g
     await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_UBICACION, topic_id, tg_group)
 
 
+# ── Handlers del camino de tarjeta ───────────────────────────────────────────
+
+async def _enviar_saludo_tarjeta(
+    telefono: str, proveedor, topic_id: int | None, tg_group: int
+):
+    """Saludo corto + la única pregunta que falta: para cuántos hijos es."""
+    await enviar_botones_al_padre(proveedor, telefono, SALUDO_TARJETA, _BOTONES_HIJOS_TARJETA)
+    await guardar_mensaje(telefono, "assistant", SALUDO_TARJETA)
+    await _espejar_telegram(
+        telefono, f"{SALUDO_TARJETA}\n[botones: 1 hijo / 2 hermanos / 3 hermanos]",
+        topic_id, tg_group,
+    )
+
+
+async def _avisar_admin_sin_link(telefono: str, proveedor, monto: int):
+    """El link de tarjeta no salió: es plata, no puede quedar solo en un log."""
+    admin = os.getenv("ADMIN_PHONE", "")
+    if not admin or admin == telefono:
+        return
+    try:
+        await proveedor.enviar_mensaje(
+            admin,
+            f"⚠️ No pude armar el link de tarjeta para https://wa.me/{telefono} "
+            f"(Desafío, {monto} Gs). Le pasé los datos de transferencia.",
+        )
+    except Exception as e:
+        logger.error(f"[MENU] Tampoco pude avisarle al admin del link caído: {e}")
+
+
+async def _enviar_link_tarjeta(
+    telefono: str, proveedor, hijos: int, topic_id: int | None, tg_group: int
+):
+    """Arma el link firmado del Desafío para esa cantidad de hijos y lo manda.
+
+    El monto sale de precio_desafio() — explícito, calculado acá. NO se deja al
+    parser del historial (monto_prueba_por_hijos_detallado): la firma del link
+    viaja por monto y cobrar de menos no se deshace.
+
+    Deja el Pedido abierto: es lo que hace que /pago-confirmado reconozca el
+    cobro como del campus y dispare formulario + reserva de los 3 días.
+    """
+    from agent.desafio import precio_desafio, proximo_campus, label_campus
+    from agent.pagos import formatear_monto, DATOS_BANCARIOS
+    from agent.pagos_tarjeta import link_pago_fenix, tarjeta_habilitada
+    from agent.memory import crear_o_actualizar_pedido
+
+    campus = proximo_campus()
+    monto, anticipada = precio_desafio(hijos, campus=campus)
+    cuantos = "tu hijo" if hijos == 1 else f"tus {hijos} hijos"
+    monto_txt = f"{formatear_monto(monto)} Gs"
+
+    link = ""
+    if tarjeta_habilitada():
+        try:
+            link = link_pago_fenix(monto, concepto="Desafío FENIX", telefono=telefono)
+            await crear_o_actualizar_pedido(
+                telefono, tipo="prueba", concepto="DESAFIO", monto_total=monto)
+        except Exception as e:
+            link = ""
+            logger.error(f"[MENU] No pude armar el link de tarjeta de {telefono}: {e}")
+    else:
+        logger.error("[MENU] LINK_SECRET vacío — no se puede ofrecer tarjeta")
+
+    if link:
+        texto = (
+            f"Perfecto 🔥 El DESAFÍO FENIX para {cuantos} sale *{monto_txt}*"
+            f"{' (reserva anticipada)' if anticipada else ''}.\n\n"
+            f"📅 {label_campus(campus)}\n\n"
+            f"💳 Pagá con tarjeta acá:\n{link}\n\n"
+            "Apenas se acredite te pido los datos de tu hijo y elegimos los turnos 😊"
+        )
+    else:
+        # Sin link no se corta la venta: se sigue por transferencia y se avisa.
+        texto = (
+            f"Perfecto 🔥 El DESAFÍO FENIX para {cuantos} sale *{monto_txt}*"
+            f"{' (reserva anticipada)' if anticipada else ''}.\n\n"
+            f"📅 {label_campus(campus)}\n\n"
+            "Justo el pago con tarjeta no me está respondiendo, así que te paso "
+            f"los datos para transferencia:\n\n{DATOS_BANCARIOS}\n"
+            f"Monto: {monto_txt}\n\n"
+            "Mandame la foto del comprobante y seguimos 😊"
+        )
+        await _avisar_admin_sin_link(telefono, proveedor, monto)
+
+    await _enviar_y_registrar(telefono, texto, proveedor, topic_id, tg_group)
+    logger.info(f"[TARJETA] {telefono}: {'link' if link else 'transferencia'} "
+                f"por {monto} ({hijos} hijo/s) desde el botón de la web")
+
+
 # ── Orquestador principal ────────────────────────────────────────────────────
 
 async def procesar_menu_lead(
@@ -304,6 +459,32 @@ async def procesar_menu_lead(
     # Ya está conversando con el cerebro de leads → el menú no interviene.
     if menu_estado == "conversacional":
         return None
+
+    # ── Camino de tarjeta: esperando saber para cuántos hijos es ──────────
+    if menu_estado == "tarjeta":
+        hijos = _hijos_del_mensaje(texto, btn_id, es_boton)
+        if hijos is None:
+            await enviar_botones_al_padre(
+                proveedor, telefono, _TEXTO_RECORDATORIO_HIJOS, _BOTONES_HIJOS_TARJETA)
+            await guardar_mensaje(telefono, "assistant", _TEXTO_RECORDATORIO_HIJOS)
+            await _espejar_telegram(
+                telefono, f"{_TEXTO_RECORDATORIO_HIJOS}\n[botones: 1 / 2 / 3 hijos]",
+                topic_id, tg_group)
+            return "[tarjeta: recordatorio hijos]"
+        # Con el link ya enviado el menú se aparta: si el padre pregunta algo,
+        # lo atiende el cerebro de leads.
+        await _enviar_link_tarjeta(telefono, proveedor, hijos, topic_id, tg_group)
+        await actualizar_estado_flags(telefono, menu_estado="conversacional")
+        return "[tarjeta: link enviado]"
+
+    # ── Llega desde el botón de la web: se responde por CONTENIDO ─────────
+    # Vale en el primer contacto y también si estaba navegando el menú: el que
+    # toca "pagar con tarjeta" ya decidió y no hay nada que venderle.
+    if not es_boton and viene_de_la_web_a_pagar(texto):
+        await _enviar_saludo_tarjeta(telefono, proveedor, topic_id, tg_group)
+        await actualizar_estado_flags(telefono, menu_estado="tarjeta")
+        logger.info(f"[MENU] {telefono}: viene de la web a pagar con tarjeta")
+        return "[tarjeta: saludo + cuántos hijos]"
 
     # ── Click de botón o ítem de lista ────────────────────────────────────
     if es_boton and btn_id:
