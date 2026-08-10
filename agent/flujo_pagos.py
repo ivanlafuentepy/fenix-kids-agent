@@ -342,17 +342,22 @@ async def _procesar_comprobante(
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
 
-# Solo los precios vigentes: 100k/1 hijo, 150k/2, 200k/3. Los viejos (90/120/180)
-# se retiraron — aceptarlos hacía cobrar de menos si el admin seguía la ayuda vieja.
-_MONTOS_AGENDA = {"100mil": 100_000, "150mil": 150_000, "200mil": 200_000, "gratis": 0}
+# Montos vigentes del DESAFÍO: anticipada 350/500/650 y normal 550/700/850 según
+# hermanos. Los de la clase de prueba (100/150/200) se retiraron con el producto:
+# dejarlos era cerrar una agenda cobrando 100.000 por un campus de 350.000.
+_MONTOS_AGENDA = {
+    "350mil": 350_000, "500mil": 500_000, "650mil": 650_000,
+    "550mil": 550_000, "700mil": 700_000, "850mil": 850_000,
+    "gratis": 0,
+}
 
 
 async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int, group_override: int = 0):
     """
-    /agenda 100mil Carolina  → 1 hijo, 100k
-    /agenda 150mil Carolina  → 2 hijos, 150k
-    /agenda 200mil Carolina  → 3 hijos, 200k
-    /agenda gratis Carolina  → prueba gratis (referidos/promo)
+    /agenda 350mil Carolina  → 1 hijo, anticipada (550mil después del jueves)
+    /agenda 500mil Carolina  → 2 hermanos, anticipada (700mil después)
+    /agenda 650mil Carolina  → 3 hermanos, anticipada (850mil después)
+    /agenda gratis Carolina  → Desafío sin cargo (referidos/promo)
 
     Ivan usa esto cuando cierra la agenda por llamada telefónica.
     Crea la FAMILIA A PRUEBA + NIÑOS, reactiva el agente, y le manda al padre
@@ -362,7 +367,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
     if len(partes) < 3 or partes[1].lower() not in _MONTOS_AGENDA:
         await enviar_a_topic(
             thread_id,
-            "⚠️ Uso: /agenda 100mil|150mil|200mil|gratis nombre\nEj: /agenda 100mil Carolina",
+            "⚠️ Uso: /agenda 350mil|500mil|650mil|550mil|700mil|850mil|gratis nombre\nEj: /agenda 350mil Carolina",
             telefono=telefono,
             group_override=group_override,
         )

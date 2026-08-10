@@ -118,13 +118,15 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"Por solo 100mil gs ya podés traerle a {nombre_hijo} a probar, o podés inscribirte de una. ¿Cuál te interesa más? 😊\n\n"
+            f"El DESAFÍO FENIX son 3 días — viernes, sábado y domingo — para que {nombre_hijo} "
+            "descubra de qué es capaz 🔥 ¿Te paso los precios? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo un rato "
             "así te explico todo 🤝"
         )
     else:
         return (
-            "Por solo 100mil gs ya podés venir a probar, o podés inscribirte de una. ¿Cuál te interesa más? 😊\n\n"
+            "El DESAFÍO FENIX son 3 días — viernes, sábado y domingo — para que tu hijo "
+            "descubra de qué es capaz 🔥 ¿Te paso los precios? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo "
             "un rato así te explico todo 🤝"
         )
@@ -148,18 +150,8 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
 
         await asyncio.sleep(3)
 
-        msg_hermanos = (
-            "👦👦 *Hermanos:*\n\n"
-            "*Prueba (+50mil c/u extra):*\n"
-            "1 hijo: 100.000 Gs\n"
-            "2 hermanos: 150.000 Gs\n"
-            "3 hermanos: 200.000 Gs\n\n"
-            "*Pack 5 clases, no vencen (+150mil c/u extra):*\n"
-            "1 hijo: 350.000 Gs\n"
-            "2 hermanos: 500.000 Gs\n"
-            "3 hermanos: 650.000 Gs\n\n"
-            "📋 *Matrícula anual:* 100.000 Gs por niño"
-        )
+        from agent.lead_menu import texto_hermanos
+        msg_hermanos = texto_hermanos()
         await proveedor.enviar_mensaje(telefono, msg_hermanos)
         await guardar_mensaje(telefono, "assistant", msg_hermanos)
 
@@ -204,15 +196,10 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
         except Exception as _e_img:
             logger.error(f"[AFICHE] Error enviando la imagen a {telefono}: {_e_img}")
 
-        # Mensaje corto después del afiche
-        msg_precios = (
-            "🌳 *Probá FENIX (padres entran gratis):*\n\n"
-            "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
-            "🎟️ *Pack 5 clases:* 350.000 Gs (5 sábados que NO vencen)\n"
-            "📋 *Matrícula anual:* 100.000 Gs por niño\n\n"
-            "+50mil por hermano en prueba | +150mil por hermano en el pack\n\n"
-            "¿Querés venir a probar o inscribirte de una?"
-        )
+        # Mensaje corto después del afiche. El texto sale de lead_menu para que
+        # el precio del Desafío se calcule en UN solo lugar (anticipada vs normal).
+        from agent.lead_menu import texto_precios
+        msg_precios = texto_precios() + "\n\n¿Reservamos el lugar de tu hijo/a?"
         from agent.envio_seguro import enviar_al_padre
         await enviar_al_padre(proveedor, telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)

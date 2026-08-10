@@ -2220,7 +2220,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `/rechazado` — evaluación rechazada\n"
                 "• `/fenix` — reset conversación + reactivar\n"
                 "• `/registro` — activar Aurora para registrar familia\n"
-                "• `/agenda 100mil|150mil|200mil|gratis nombre` — cerrar agenda manual\n"
+                "• `/agenda 350mil|500mil|650mil|gratis nombre` — cerrar agenda manual\n"
                 "• _(texto libre)_ — se reenvía como mensaje de Ivan al padre"
             )
             await proveedor.enviar_mensaje(telefono, msg_comandos)
@@ -3495,18 +3495,17 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _acciones_interceptadas.append("afiche_hermanos")
                     _partes.append("Tenemos un plan especial para familias 💪 Te paso el afiche de hermanos")
                 elif _pide_hermanos:
+                    from agent.lead_menu import texto_hermanos as _texto_hermanos_fb
                     _partes.append(
-                        "👦👦 *Hermanos:*\n"
-                        "Prueba: 100mil +50mil c/u extra\n"
-                        "Pack 5 clases (no vencen): 350mil +150mil c/u extra\n"
-                        "Matrícula: 100mil por niño\n"
-                        "¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
+                        _texto_hermanos_fb() +
+                        "\n\n¿Cuántos hijos tenés? Así te armo el combo exacto 🤝"
                     )
                 elif _pide_precios and not _ya_envio_afiche:
                     _acciones_interceptadas.append("afiche_precios")
                     _partes.append("Te paso un afiche para que veas todas las opciones 😊")
                 elif _pide_precios:
-                    _partes.append("Prueba: 100mil (1 sábado). Pack 5 clases: 350mil (5 sábados que NO vencen) + matrícula 100mil por niño. +50mil/+150mil por hermano 🌳 Padres entran gratis")
+                    from agent.lead_menu import texto_precios as _texto_precios_fb
+                    _partes.append(_texto_precios_fb())
 
                 if _pide_horarios and not _ya_envio_horarios:
                     _acciones_interceptadas.append("afiche_horarios")

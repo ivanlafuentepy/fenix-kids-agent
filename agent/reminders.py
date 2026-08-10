@@ -36,24 +36,32 @@ _tareas_activas: dict[str, list[asyncio.Task]] = {}
 # Tareas de seguimiento inicial (rompehielos sin respuesta): {telefono: [Task, ...]}
 _tareas_seguimiento: dict[str, list[asyncio.Task]] = {}
 
-_HORARIOS_FENIX = "🕙 11:00h | 🕞 15:30h"
-
+# Los 3 mensajes se resuelven al PROGRAMAR el seguimiento y se envían hasta 6h
+# después: un precio escrito acá se congela y puede cruzar el corte del jueves
+# 23:59 (350.000 → 550.000) y llegarle mentido al padre. Por eso el follow-up
+# cuenta el Desafío y ofrece pasar los precios; el número exacto lo da el flujo
+# de precios, que lo calcula en el momento (lead_menu.texto_precios).
 _MENSAJES_SEGUIMIENTO = {
     "A": [
         "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
-            f"Te cuento los horarios para venir al parque con tu hijo:\n"
-            f"Sábados: {_HORARIOS_FENIX}\nPrueba 100mil, pack de 5 sábados 350mil (no vencen) + matrícula 100mil por niño. Padres entran gratis 🌳 ¿Te interesa?"
+            "Te cuento cómo es el DESAFÍO FENIX 🔥 Son 3 días: viernes, sábado y domingo.\n"
+            "Tu hijo conoce la metodología, entrena, enfrenta desafíos reales, y el domingo "
+            "cerramos con el Gran Desafío y un almuerzo en familia 🌳\n"
+            "¿Te paso los precios y los horarios?"
         ),
-        "Imaginate un sábado al aire libre, frente al río, vos entrenando al lado de tu hijo 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
+        "Imaginate a tu hijo el domingo, terminando su primer Desafío FENIX frente al río, "
+        "con toda la familia mirándolo 🌳 ¿Reservamos su lugar?",
     ],
     "B": [
-        "¿Todo bien? Si querés te cuento más sobre el Parque FENIX, entrenamientos al aire libre para toda la familia 🌿",
+        "¿Todo bien? Si querés te cuento más sobre el Parque FENIX, entrenamiento al aire libre en plena naturaleza 🌿",
         (
-            f"Los sábados son así: tu hijo trepa, corre, supera desafíos en la naturaleza. Y vos entrenás al lado con tu propio profe 💪\n"
-            f"Sábados: {_HORARIOS_FENIX}\n¿Te gustaría agendar un sábado inolvidable para vos y tu hijo? 🤝"
+            "El DESAFÍO FENIX es así: viernes descubre, sábado supera, domingo conquista 💪\n"
+            "Tres días para que tu hijo se anime a cosas que hoy no se anima, en 3000m² "
+            "frente al río.\n¿Te paso los detalles?"
         ),
-        "En el Parque FENIX entrenás con tu hijo en 3000m² de naturaleza, frente al río 🌳 ¿Te gustaría agendar un sábado inolvidable para los dos?",
+        "El desafío termina el domingo, pero la transformación recién empieza 🔥 "
+        "¿Querés que le reserve el lugar a tu hijo en el próximo campus?",
     ],
 }
 

@@ -47,8 +47,8 @@ async def crear_factura_fenix(
     """Crea el registro en FACTURAS para que el robot facturador lo emita.
     NO toca el PAGO. tutor_id es una fila de ALUMNOS → linkea TUTOR (ALUMNOS);
     el robot lee el lookup TUTOR RUC (ALUMNOS). Retorna el record_id o None."""
-    descripcion = ("Clase de prueba FENIX Kids — sábado en el parque"
-                   if concepto == "PRUEBA" else "Clase FENIX Kids — sábado en el parque")
+    descripcion = ("Desafío FENIX Kids — campus de 3 días en el parque"
+                   if concepto in ("PRUEBA", "DESAFIO") else "Clase FENIX Kids — sábado en el parque")
     campos = {
         "FUENTE": "FENIX KIDS ACADEMY",
         "MONTO": monto,

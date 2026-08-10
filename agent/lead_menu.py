@@ -51,21 +51,21 @@ SALUDO_AURORA = (
 # Botones del menú principal (Meta soporta máximo 3). Títulos <= 20 chars.
 _BOTONES_MENU_PRINCIPAL = [
     {"id": "lead_info", "title": "📋 Info sobre clases"},
-    {"id": "lead_agendar", "title": "🎯 Agendar prueba"},
+    {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
     {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
 ]
 _TEXTO_BOTONES = "¿Qué te gustaría hacer? 👇"
 
 # Botones que aparecen DESPUÉS de mostrar Precios / Horarios / Ubicación.
 _BOTONES_POST_INFO = [
-    {"id": "lead_agendar", "title": "🎯 Agendar prueba"},
+    {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
     {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
     {"id": "lead_volver_info", "title": "📋 Ver más info"},
 ]
 # Botones específicos después de Precios: ofrecen el combo de hermanos.
 _BOTONES_POST_PRECIOS = [
     {"id": "lead_combo_hermanos", "title": "🧒 Combo hermanos"},
-    {"id": "lead_agendar", "title": "🎯 Agendar prueba"},
+    {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
     {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
 ]
 _TEXTO_POST_INFO = "¿Qué querés hacer? 👇"
@@ -79,41 +79,71 @@ _LISTA_INFO_CLASES = [
         {"id": "lead_precios", "title": "📅 Precios"},
         {"id": "lead_horarios", "title": "🕐 Horarios"},
         {"id": "lead_ubicacion", "title": "📍 Ubicación"},
-        {"id": "lead_agendar", "title": "🎯 Agendar prueba"},
+        {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
         {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
     ]},
 ]
 _TEXTO_INFO = "Elegí una opción 👇"
 _BOTON_LISTA = "Ver opciones"
 
-# Texto de precios (sin la pregunta abierta — la reemplazan los botones).
-# El detalle de hermanos vive en el botón "Combo hermanos" para no ensuciar acá.
-TEXTO_PRECIOS = (
-    "🌳 *Probá FENIX (padres entran gratis):*\n\n"
-    "👦 *Clase de prueba:* 100.000 Gs (1 sábado)\n"
-    "🎟️ *Pack 5 clases:* 350.000 Gs (5 sábados que NO vencen)\n"
-    "📋 *Matrícula anual:* 100.000 Gs por niño"
-)
+# Los precios del DESAFÍO dependen del día (anticipada hasta el jueves 23:59) y las
+# fechas dependen del campus que se esté vendiendo → estos textos son funciones, no
+# constantes: una constante congelaba el precio del deploy y a la semana mentía.
 
-# Texto del combo hermanos (acompaña al afiche de hermanos). Tabla clara por hijo.
-TEXTO_HERMANOS = (
-    "👦👦 *Combo hermanos:*\n\n"
-    "*Clase de prueba:*\n"
-    "1 hijo: 100.000 Gs\n"
-    "2 hermanos: 150.000 Gs\n"
-    "3 hermanos: 200.000 Gs\n\n"
-    "*Pack 5 clases (no vencen):*\n"
-    "1 hijo: 350.000 Gs\n"
-    "2 hermanos: 500.000 Gs\n"
-    "3 hermanos: 650.000 Gs\n\n"
-    "📋 *Matrícula anual:* 100.000 Gs por niño"
-)
+def texto_precios() -> str:
+    """Precios del Desafío para el campus vigente (sin pregunta abierta: van botones)."""
+    from agent.desafio import proximo_campus, precio_desafio, label_campus
+    campus = proximo_campus()
+    _monto, anticipada = precio_desafio(1, campus=campus)
+    precio = ("💰 *Reservando con anticipación:* 350.000 Gs\n"
+              "Precio normal: 550.000 Gs\n"
+              if anticipada else
+              "💰 *Inversión:* 550.000 Gs\n")
+    return (
+        "🔥 *DESAFÍO FENIX* — campus de 3 días\n\n"
+        "*Viernes:* Descubrir · *Sábado:* Superar · *Domingo:* Conquistar\n\n"
+        "El domingo cerramos con el Gran Desafío, almuerzo en familia "
+        "(el del niño va incluido) y reconocimiento 🏅\n\n"
+        f"{precio}"
+        "👦👦 Hermano adicional: +150.000 Gs\n\n"
+        f"📅 Próximo campus: {label_campus(campus)}\n"
+        "🔥 Cupos limitados — 10 por turno"
+    )
 
-# Texto de horarios (acompaña al afiche de horarios).
-TEXTO_HORARIOS = (
-    "Entrenamos todos los sábados 🌳\n"
-    "Horarios: 11:00h | 15:30h"
-)
+
+def texto_hermanos() -> str:
+    """Tabla por cantidad de hijos. Mantiene "1 hijo" / "2 hermanos" a propósito:
+    monto_prueba_por_hijos_detallado() usa esas palabras para saltear los afiches
+    y no confundir la lista de precios con el monto acordado."""
+    from agent.desafio import precio_desafio
+    anticipada = precio_desafio(1)[1]
+    if anticipada:
+        tabla = ("*Con reserva anticipada:*\n"
+                 "1 hijo: 350.000 Gs\n"
+                 "2 hermanos: 500.000 Gs\n"
+                 "3 hermanos: 650.000 Gs\n\n"
+                 "*Precio normal:*\n"
+                 "1 hijo: 550.000 Gs\n"
+                 "2 hermanos: 700.000 Gs\n"
+                 "3 hermanos: 850.000 Gs")
+    else:
+        tabla = ("1 hijo: 550.000 Gs\n"
+                 "2 hermanos: 700.000 Gs\n"
+                 "3 hermanos: 850.000 Gs")
+    return f"👦👦 *Hermanos en el Desafío FENIX:*\n\n{tabla}"
+
+
+def texto_horarios() -> str:
+    """Los 3 días del campus con sus turnos."""
+    from agent.desafio import proximo_campus, label_campus
+    campus = proximo_campus()
+    return (
+        f"🔥 *DESAFÍO FENIX* — {label_campus(campus)}\n\n"
+        "*VIERNES* (elegís turno)\n17:00 a 18:30  o  19:30 a 20:45\n\n"
+        "*SÁBADO* (elegís turno)\n11:00 a 12:30  o  15:30 a 17:00\n\n"
+        "*DOMINGO* (todos juntos)\n"
+        "12:00 Gran Desafío FENIX\n13:00 Almuerzo en familia\n15:00 Cierre y reconocimiento"
+    )
 
 # Texto de ubicación (reusado del interceptor existente en main.py).
 TEXTO_UBICACION = (
@@ -125,7 +155,7 @@ TEXTO_UBICACION = (
 # Mensajes puente al pasar a modo conversacional. El cerebro de leads toma el
 # control en el SIGUIENTE mensaje del lead (no se llama al brain en este turno).
 PUENTE_AGENDAR = (
-    "¡Buenísimo! 🎯 Vamos a agendar la clase de prueba.\n\n"
+    "¡Buenísimo! 🔥 Vamos a reservar tu lugar en el Desafío FENIX.\n\n"
     "¿Cómo se llama tu hijo/a y cuántos años tiene?"
 )
 PUENTE_AURORA = (
@@ -230,18 +260,18 @@ async def _handle_precios(telefono: str, proveedor, topic_id: int | None, tg_gro
     await _enviar_afiche(telefono, proveedor, _AFICHE_PATH)
     # Después de precios ofrecemos el combo de hermanos como botón.
     await _enviar_contenido_con_botones(
-        telefono, proveedor, TEXTO_PRECIOS, topic_id, tg_group, botones=_BOTONES_POST_PRECIOS
+        telefono, proveedor, texto_precios(), topic_id, tg_group, botones=_BOTONES_POST_PRECIOS
     )
 
 
 async def _handle_horarios(telefono: str, proveedor, topic_id: int | None, tg_group: int):
     await _enviar_afiche(telefono, proveedor, _AFICHE_HORARIOS_PATH)
-    await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_HORARIOS, topic_id, tg_group)
+    await _enviar_contenido_con_botones(telefono, proveedor, texto_horarios(), topic_id, tg_group)
 
 
 async def _handle_combo_hermanos(telefono: str, proveedor, topic_id: int | None, tg_group: int):
     # Solo la info de hermanos (sin afiche — el afiche está desactualizado).
-    await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_HERMANOS, topic_id, tg_group)
+    await _enviar_contenido_con_botones(telefono, proveedor, texto_hermanos(), topic_id, tg_group)
 
 
 async def _handle_ubicacion(telefono: str, proveedor, topic_id: int | None, tg_group: int):
