@@ -185,17 +185,24 @@ async def _enviar_afiche_hermanos_y_followup(telefono: str, topic_id: int | None
 async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_group: int = 0):
     """Envía el afiche de precios + precios escritos + promo hoy + CTA."""
     try:
-        with open(_AFICHE_PATH, "rb") as f:
-            image_bytes = f.read()
-
-        ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
-        if ok:
-            logger.info(f"[AFICHE] Imagen enviada a {telefono}")
-        else:
-            logger.error(f"[AFICHE] Error enviando imagen a {telefono}")
-
-        # Delay antes del mensaje de precios
-        await asyncio.sleep(3)
+        # La imagen es best-effort APARTE: en esta rama el texto de Claude se
+        # descarta a propósito, así que si el PNG falta (rename, deploy sin
+        # static/) el padre que pidió precios NO recibía absolutamente nada
+        # — y el flag afiche_enviado quedaba puesto igual, sin reintento
+        # (auditoría de silencio S13). Los precios en texto salen siempre.
+        try:
+            with open(_AFICHE_PATH, "rb") as f:
+                image_bytes = f.read()
+            ok = await proveedor.enviar_imagen_bytes(telefono, image_bytes, "image/png")
+            if ok:
+                logger.info(f"[AFICHE] Imagen enviada a {telefono}")
+            else:
+                logger.error(f"[AFICHE] Error enviando imagen a {telefono}")
+            await asyncio.sleep(3)   # delay solo si salió la imagen
+        except FileNotFoundError:
+            logger.error(f"[AFICHE] Archivo no encontrado: {_AFICHE_PATH} — mando solo los precios en texto")
+        except Exception as _e_img:
+            logger.error(f"[AFICHE] Error enviando la imagen a {telefono}: {_e_img}")
 
         # Mensaje corto después del afiche
         msg_precios = (
@@ -206,7 +213,8 @@ async def _enviar_afiche_y_followup(telefono: str, topic_id: int | None, tg_grou
             "+50mil por hermano en prueba | +150mil por hermano en el pack\n\n"
             "¿Querés venir a probar o inscribirte de una?"
         )
-        await proveedor.enviar_mensaje(telefono, msg_precios)
+        from agent.envio_seguro import enviar_al_padre
+        await enviar_al_padre(proveedor, telefono, msg_precios)
         await guardar_mensaje(telefono, "assistant", msg_precios)
 
         # Follow-up CTA eliminado — la pregunta ya está al final del msg de precios

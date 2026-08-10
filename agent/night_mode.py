@@ -71,7 +71,10 @@ async def procesar_leads_pendientes(
 
     for telefono in pendientes:
         try:
-            await limpiar_noche_pendiente(telefono)
+            # El flag se limpia DESPUÉS de responder: si el envío falla acá, el
+            # lead tiene que seguir pendiente para el próximo intento. Limpiarlo
+            # primero hacía que un fallo a las 07:00 lo dejara sin respuesta
+            # para siempre (auditoría de silencio S12).
             historial = await obtener_historial_fn(telefono)
             if not historial:
                 continue
@@ -93,8 +96,13 @@ async def procesar_leads_pendientes(
                 agent_actual="ivan",
             )
 
+            from agent.envio_seguro import enviar_al_padre
+            _ok_noche = await enviar_al_padre(proveedor, telefono, respuesta)
+            if not _ok_noche:
+                logger.error(f"[NOCHE 07:00] No salió el envío a {telefono} — queda pendiente para el próximo intento")
+                continue   # sin limpiar el flag: se reintenta
             await guardar_mensaje_fn(telefono, "assistant", respuesta)
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            await limpiar_noche_pendiente(telefono)
             logger.info(f"[NOCHE 07:00] ✅ {telefono}: {respuesta[:60]}...")
 
             try:
