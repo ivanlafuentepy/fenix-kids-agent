@@ -4145,10 +4145,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     # monto y cobrar de menos es peor que no ofrecer tarjeta.
                     if _monto_link > 0 and not _adivinado_link:
                         _link_tj = link_pago_fenix(
-                            _monto_link, concepto="Sábado en el parque", telefono=telefono)
+                            _monto_link, concepto="Desafío FENIX", telefono=telefono)
                         from agent.memory import crear_o_actualizar_pedido
                         await crear_o_actualizar_pedido(
-                            telefono, tipo="prueba", concepto="PRUEBA", monto_total=_monto_link)
+                            telefono, tipo="prueba", concepto="DESAFIO", monto_total=_monto_link)
                         _msg_tj = f"💳 Si preferís tarjeta, pagá acá:\n{_link_tj}"
                         await guardar_mensaje(telefono, "assistant", _msg_tj)
                         await proveedor.enviar_mensaje(telefono, _msg_tj)
