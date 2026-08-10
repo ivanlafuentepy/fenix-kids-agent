@@ -191,25 +191,26 @@ recibe el mensaje de error. Validado reintroduciendo el bug de hoy: 13 tests en 
 antes un test podía correr contra la base de PRODUCCIÓN — de hecho la primera
 versión del test escribió en los topics de Telegram reales.
 
-## ⚠️ PENDIENTES DE SILENCIO (no arreglados — decisión de Iván)
+## ✅ PENDIENTES DE SILENCIO — TODOS ARREGLADOS (09/08, madrugada)
 
-| # | Hallazgo | Riesgo |
+| # | Hallazgo | Fix |
 |---|---|---|
-| S7 | **Deploy = mensajes perdidos**: la dedup se registra ANTES de procesar y el trabajo va en background; cada `git push` reinicia Railway y los mensajes en vuelo quedan marcados como procesados sin respuesta | ALTO (ocurre en cada deploy) |
-| S8 | El `bool` de `enviar_mensaje` **se ignora** en las 4 ramas de envío: token muerto o 4xx de Meta → no hay reintento, no hay aviso, y el historial dice que se respondió | ALTO |
-| S9 | Rate limit (10 msg/60s) **descarta sin guardar ni avisar**: una ráfaga de fotos + textos pierde los mensajes del 11º en adelante | ALTO |
-| S10 | Cuando Iván escribe en el topic, el agente se silencia 5 min y **los mensajes del padre en esa ventana mueren** (no hay cola). Si el envío de Iván falla, nadie se entera | ALTO |
-| S11 | Auto-silencio por falso positivo de spam/prompt-injection ("olvida todo lo que te dije") → el padre no recibe nada y ese mensaje queda sin responder para siempre | ALTO |
-| S12 | Modo noche limpia el flag de pendiente ANTES de responder: si falla el envío de las 06:00, el lead nunca recibe respuesta | ALTO |
-| S13 | Rama del afiche: el texto de Claude se descarta a propósito y si falta el PNG el padre **no recibe nada**; el flag `afiche_enviado` queda puesto igual | ALTO |
-| S14 | El menú de leads no verifica que el interactivo haya salido: si Meta lo rechaza, el **primer mensaje de un lead nuevo** se pierde | ALTO |
-| S15 | Una excepción en el webhook descarta **el resto del lote** de mensajes | MEDIO |
-| S16 | `stop_reason=max_tokens` con tools → 3 llamadas idénticas y mensaje de error al padre | MEDIO |
-| S17 | 4 de 7 tools no aceptan `**kwargs`: un argumento alucinado por el LLM da TypeError → "Datos inválidos" al padre | MEDIO |
-| S18 | `actualizar_estado_flags` descarta el flag en silencio si el teléfono no tiene fila | MEDIO |
-| S19 | `confirmacion_sabado`: el botón de turno se evalúa ANTES del guard de "esperando confirmación" → un botón viejo crea reserva | MEDIO |
-| S20 | Un mensaje puede tardar ~80s (3 reintentos de brain × 25s) + hasta 35s de backoff de Airtable | MEDIO |
+| S7 | **Deploy = mensajes perdidos**: el trabajo va en background tras responderle 200 a Meta; cada `git push` reinicia Railway y los mensajes en vuelo quedaban marcados como procesados sin respuesta | Se registran como "en vuelo" y el shutdown los espera hasta 15s antes de cancelar los loops; los que no llegan quedan en el log |
+| S8 | El `bool` de `enviar_mensaje` se ignoraba en las 4 ramas: token muerto o 4xx de Meta → sin reintento, sin aviso, y el historial diciendo que se respondió | `agent/envio_seguro.py`: reintenta una vez y alerta al admin con el texto que no llegó |
+| S9 | Rate limit (10 msg/60s) descartaba sin guardar ni avisar | El mensaje se guarda y se espeja al topic como "MENSAJE NO CONTESTADO" |
+| S10 | Agente silenciado porque Ivan escribió en el topic: los mensajes del padre de esa ventana morían sin cola | Se espejan al topic como "SIN RESPONDER" |
+| S11 | Auto-silencio por falso positivo de spam/injection | La alerta ya mostraba el texto; queda documentado que es respondible a mano |
+| S12 | Modo noche limpiaba el flag ANTES de responder: un fallo a las 07:00 dejaba al lead sin respuesta para siempre | Se limpia después del envío exitoso; si falla, queda pendiente y se reintenta |
+| S13 | Rama del afiche: el texto de Claude se descarta a propósito y si faltaba el PNG el padre no recibía NADA | La imagen es best-effort aparte; los precios en texto salen siempre (probado con ruta inexistente) |
+| S14 | El menú no verificaba que el interactivo saliera: si Meta lo rechaza, el **primer mensaje de un lead nuevo** se perdía | `enviar_botones_al_padre` cae a texto plano con las opciones listadas |
+| S15 | Una excepción descartaba **el resto del lote** de mensajes | Un try por mensaje + se borra su dedup para permitir reenvío |
+| S16 | `stop_reason=max_tokens` con tools → 3 llamadas idénticas y mensaje de error al padre | Cualquier corte que no sea `tool_use` devuelve el texto ya generado |
+| S17 | 4 de 7 tools sin `**kwargs`: un argumento alucinado daba TypeError → "Datos inválidos" al padre | Las 5 tools aceptan y descartan argumentos fuera del schema |
+| S18 | `actualizar_estado_flags` descartaba el flag en silencio si el teléfono no tenía fila | Crea la fila (verificado con un teléfono nuevo) |
+| S19 | El botón de turno del sábado se evaluaba ANTES del guard → un botón viejo creaba una reserva que nadie esperaba | Exige `esperando_confirmacion_sabado` + `gestionar_reserva` dentro de try |
+| S20 | Un mensaje puede tardar ~80s (3 reintentos de brain × 25s + backoff de Airtable) | **NO tocado a propósito**: son reintentos que salvan mensajes ante caídas; bajarlos cambia el trade-off. Queda documentado |
 
-**Lo que hoy convierte un silencio en algo visible**: el monitor (Capa 1) alerta por
-Telegram si el último mensaje de una conversación es del padre y pasaron >10 min sin
-respuesta — pero solo mira una ventana de 6 h y corre cada 1 h.
+**Lo que hoy convierte un silencio en algo visible**: el `except` del webhook le
+responde al padre y **alerta al admin por WhatsApp**, el envío fallido alerta con
+el texto que no llegó, los mensajes descartados se espejan al topic, y el monitor
+(Capa 1) sigue avisando por Telegram si una conversación queda >10 min sin respuesta.
