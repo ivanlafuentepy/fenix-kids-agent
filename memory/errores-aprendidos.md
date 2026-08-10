@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-08-10 — Un HTTP 200 que no probaba nada, y un cobro roto hace un mes
+
+**Qué falló (tres cosas del mismo día, todas de verificación):**
+
+**1. Verificar por código HTTP en vez de por contenido.** Al publicar la landing nueva, un
+`curl -o /dev/null -w %{http_code}` a `/desafio` y a `/assets/campus.js` devolvió **200** para
+las dos... y ninguna existía todavía. Cloudflare Pages sirve el `index.html` como fallback de
+cualquier ruta que no encuentra. La pista fue el tamaño: `campus.js` "pesaba" 66 KB, o sea el
+index entero. Casi se reporta un deploy exitoso que no había pasado.
+
+**Regla:** verificar por CONTENIDO, no por status. Buscar una cadena que solo exista en el
+archivo nuevo (`grep` del `<title>` propio, de la primera línea del JS). Un 200 en un hosting
+con fallback no prueba absolutamente nada. Ídem con el cache del edge: la misma URL puede
+responder distinto dos veces seguidas, así que si un conteo da 0 y el archivo local dice otra
+cosa, reintentar con cache-buster antes de diagnosticar.
+
+**2. El cobro con tarjeta desde la web estaba roto desde el 12/07 y nadie lo sabía.**
+`pagos-bancard` valida la firma del link, y para fenix rechaza cualquiera cuya firma no cubra el
+teléfono (`link_firma_valida`, cierre del hueco A5). Pero el link de una web se firma **sin**
+teléfono —la web no lo sabe— y el pagador lo tipea recién en la pasarela: al enviarlo saltaba
+"Link de pago inválido o manipulado". No era del Desafío: los links de pack y matrícula
+publicados desde el 28/07 tenían el mismo problema. Nadie lo reportó porque el que falla en una
+pasarela se va, no escribe.
+
+**Regla:** cuando se endurece una validación de seguridad, enumerar **todos** los emisores de lo
+que se valida (bot, web, panel admin) y probar cada uno. Y un camino de cobro que nadie usa hace
+semanas no es "poco usado": probablemente está roto.
+
+**3. Un pago que cobraba sin inscribir a nadie.** `/pago-confirmado` solo procesaba pagos con
+"Pedido activo" (los que abre el agente al mandar el link). Un pago hecho desde la web no tiene
+Pedido → contestaba "¡Pago confirmado!" y ahí moría: sin PAGO en Airtable, sin datos del niño,
+sin reserva. La plata entraba y el sistema no se enteraba.
+
+**Regla:** todo camino que termine en "el cliente pagó" tiene que terminar en el MISMO lugar,
+sin importar por dónde entró. Si un flujo depende de un estado previo (un Pedido, un flag), hay
+que preguntarse quién más puede llegar ahí sin ese estado.
+
+**Bonus del mismo día:** la suite de tests se ponía roja sola después de las 23:00 (el modo noche
+contesta "fuera de servicio" y no llega al brain). Una suite que miente en rojo es tan mala como
+una que miente en verde, y acá se trabaja de noche. Fijar la hora en el fixture.
+
+---
+
 ## 2026-08-09 — Un saldo que bajaba solo: el contador mutable que nadie podía auditar
 
 **Qué pasó:** Ivan objetó que el saldo del pack de clases "bajara mágicamente" sin poder ver de

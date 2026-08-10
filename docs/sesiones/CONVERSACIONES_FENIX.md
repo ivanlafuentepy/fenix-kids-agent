@@ -706,3 +706,25 @@ shutdown espera los mensajes en vuelo. Además `tests/test_webhook_no_muda.py`, 
 reintroduciendo el bug del día. 37 commits + 1 en facturador-set, todos deployados y verificados.
 
 Detalle completo → `.claude/handoffs/handoff_20260809_2206.md`
+
+## 2026-08-10 — Nace el Desafío FENIX
+
+Cambio de producto completo en una noche: la clase de prueba de un sábado murió y la puerta de
+entrada pasó a ser el **DESAFÍO FENIX**, un campus de viernes a domingo (350.000 reservando hasta
+el jueves, 550.000 después, +150.000 por hermano). El primer campus es el 14, 15 y 16 de agosto.
+
+Se tocó todo el circuito: `agent/desafio.py` nuevo (campus, precio por fecha, cupos, 3 reservas
+por niño), los textos que pasaron de constantes a funciones porque el precio depende del día, el
+prompt de ventas, la elección de turnos post-pago con botones, el `CONCEPTO=DESAFIO`, el afiche,
+y la web entera —home reorientada, landing `/desafio` para anuncios y `campus.js` compartido—.
+El pago con tarjeta terminó pidiéndose por WhatsApp: el cobro desde la web estaba roto desde el
+12/07 por la validación de firma de la pasarela, y encima no inscribía a nadie.
+
+Arrancó por otro lado: el pago de prueba de Iván aparecía sin nombre de alumno. Eran dos bugs
+distintos —el PAGO no escribía el link `ALUMNO`, del que cuelgan la fórmula del nombre y el CI, y
+el formulario del admin creaba tutor y niño duplicados— más un tercero que apareció solo: la
+suite de tests se ponía roja después de las 23:00 por el modo noche.
+
+22 commits (16 en el agente + 6 en la web), todos deployados y verificados en producción.
+
+Detalle completo → `.claude/handoffs/handoff_20260810_0141.md`
