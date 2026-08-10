@@ -3976,6 +3976,40 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             await _delay_humano(respuesta)
             await proveedor.enviar_mensaje(telefono, respuesta)
 
+        # ── Link de tarjeta junto a los datos bancarios ───────────────────
+        # El prompt promete "transferencia o tarjeta (el sistema pasa alias y
+        # link)" pero el link solo se armaba en /agenda (cierre manual del
+        # admin): el lead que cerraba por chat nunca recibía la opción de
+        # tarjeta. La señal es el CI bancario EN la respuesta (mismo marcador
+        # que usa es_posible_comprobante), no una intención adivinada.
+        if agent_actual == "ivan" and CI_BANCARIO in (respuesta or "") and "/pagar/fenix" not in (respuesta or ""):
+            try:
+                from agent.pagos_tarjeta import link_pago_fenix, tarjeta_habilitada
+                from agent.pagos import monto_prueba_por_hijos_detallado
+                if tarjeta_habilitada():
+                    _hist_link = await obtener_historial(telefono, limite=10)
+                    _monto_link, _adivinado_link = monto_prueba_por_hijos_detallado(
+                        _hist_link + [{"role": "assistant", "content": respuesta}]
+                    )
+                    # Si el monto es adivinado NO se manda link: la firma va por
+                    # monto y cobrar de menos es peor que no ofrecer tarjeta.
+                    if _monto_link > 0 and not _adivinado_link:
+                        _link_tj = link_pago_fenix(
+                            _monto_link, concepto="Sábado en el parque", telefono=telefono)
+                        from agent.memory import crear_o_actualizar_pedido
+                        await crear_o_actualizar_pedido(
+                            telefono, tipo="prueba", concepto="PRUEBA", monto_total=_monto_link)
+                        _msg_tj = f"💳 Si preferís tarjeta, pagá acá:\n{_link_tj}"
+                        await guardar_mensaje(telefono, "assistant", _msg_tj)
+                        await proveedor.enviar_mensaje(telefono, _msg_tj)
+                        if topic_id:
+                            await enviar_a_topic(topic_id, f"💳 Link de tarjeta enviado ({_monto_link})", telefono=telefono, group_override=_tg_group)
+                        logger.info(f"[TARJETA] Link enviado a {telefono} por {_monto_link}")
+                    else:
+                        logger.info(f"[TARJETA] {telefono}: monto adivinado o 0 — no mando link")
+            except Exception as _e_tj:
+                logger.error(f"[TARJETA] No pude enviar el link a {telefono}: {_e_tj}")
+
         # ── Espejo respuesta en Telegram ──────────────────────────────────
         agente_label = "🌟 AURORA" if agent_actual == "aurora" else "👨‍🏫 IVAN"
         if topic_id:
