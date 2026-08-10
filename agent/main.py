@@ -2960,8 +2960,14 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # de 50 mensajes — una familia que pagó hace semanas y siguió
             # chateando re-disparaba el flujo de prueba ENTERO con el
             # comprobante de la cuota (auditoría 09/08 A11). La DB no olvida.
-            from agent.memory import tiene_pago_confirmado_db
-            _ya_pago_db = await tiene_pago_confirmado_db(telefono)
+            # PERO no alcanza con "alguna vez pagó": eso bloqueaba el segundo
+            # pago legítimo (pack tras la prueba, otro hijo, lead que vuelve)
+            # y el pago se perdía en silencio. Manda la CRONOLOGÍA: si el
+            # agente le pasó los datos bancarios DESPUÉS del último pago
+            # confirmado, es un pago nuevo y se procesa.
+            from agent.memory import es_comprobante_de_pago_nuevo
+            from agent.pagos import CI_BANCARIO
+            _ya_pago_db = not await es_comprobante_de_pago_nuevo(telefono, CI_BANCARIO)
             if not _ya_pago_db:
                 await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
                 return

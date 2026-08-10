@@ -416,6 +416,40 @@ async def tiene_pago_confirmado_db(telefono: str) -> bool:
         return result.scalar_one_or_none() is not None
 
 
+async def es_comprobante_de_pago_nuevo(telefono: str, marcador_bancario: str) -> bool:
+    """¿Este comprobante corresponde a un pago NUEVO (y no a uno ya cobrado)?
+
+    La señal es la CRONOLOGÍA, no "alguna vez pagó": si el agente le pasó los
+    datos bancarios DESPUÉS del último pago confirmado, entonces le pidió plata
+    de nuevo y este comprobante es legítimo (segundo hijo, pack tras la prueba,
+    lead que vuelve). Si los datos bancarios son anteriores, la imagen es de
+    alguien que ya pagó y no se le pidió nada nuevo → solo aviso al admin.
+
+    Sin pagos confirmados previos es True (primer pago, camino normal).
+    """
+    async with async_session() as session:
+        pago = (await session.execute(
+            select(PagoPendiente.creado_en)
+            .where(PagoPendiente.telefono == telefono, PagoPendiente.estado == "confirmado")
+            .order_by(PagoPendiente.creado_en.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if pago is None:
+            return True
+
+        pedido = (await session.execute(
+            select(Mensaje.timestamp)
+            .where(
+                Mensaje.telefono == telefono,
+                Mensaje.role == "assistant",
+                Mensaje.content.contains(marcador_bancario),
+            )
+            .order_by(Mensaje.timestamp.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        return bool(pedido and pedido > pago)
+
+
 async def resolver_pago_db(telefono: str, estado: str) -> dict | None:
     """Confirma o rechaza un pago (estado='confirmado' o 'rechazado'). Retorna datos o None."""
     async with async_session() as session:
