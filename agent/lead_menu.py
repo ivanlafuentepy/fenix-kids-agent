@@ -1,17 +1,17 @@
 # agent/lead_menu.py — Menú de botones para leads nuevos (estilo Dorita)
 #
-# Flujo del lead: TODO se navega por botones hasta que toca "Hablar con Aurora".
+# Flujo del lead: TODO se navega por botones hasta que toca "Reservar lugar".
 # Mientras tanto NO entra el cerebro conversacional — solo botones.
 #
 #   1. Foto de La Casona + el relato del DESAFÍO FENIX + 3 botones:
 #        [📅 Info y precios] · [🎯 Reservar lugar] · [📞 Agendar llamada]
-#   2. "Info y precios" → lista: Precios / Horarios / Ubicación / Agendar / Hablar
-#   3. Precios / Horarios / Ubicación → muestran el contenido (afiche + texto) y
-#      terminan SIEMPRE con botones: [Agendar prueba] · [Hablar con Aurora] · [Ver más info]
-#   4. "Agendar prueba" / "Hablar con Aurora" → recién acá pasa a modo conversacional
+#   2. "Info y precios" → manda TODO de una, en mensajes separados: afiche +
+#      precios, horarios, ubicación. El último cierra con botones.
+#   3. Los botones de cierre son [Reservar lugar] · [Combo hermanos] · [Agendar llamada]
+#   4. "Reservar lugar" → recién acá pasa a modo conversacional
 #      (el cerebro de leads toma el control, branded Aurora).
-#   5. Si el lead escribe texto libre antes de pedir "Hablar con Aurora", se le
-#      insiste con los botones (no se pasa a conversacional).
+#   5. Si el lead escribe texto libre antes de pasar a conversacional, se le
+#      insiste con los botones.
 #
 # EXCEPCIÓN — el que llega desde el botón "pagar con tarjeta" de la web no entra
 # al menú de venta: se le pregunta solo para cuántos hijos es y se le manda el
@@ -71,35 +71,23 @@ _BOTONES_MENU_PRINCIPAL = [
 ]
 _TEXTO_BOTONES = "¿Qué te gustaría hacer? 👇"
 
-# Botones que aparecen DESPUÉS de mostrar Precios / Horarios / Ubicación.
+# Botones que cierran el paquete de info. Ya no hay "Ver más info": el botón
+# principal manda TODO (precios, horarios y ubicación), así que no queda info
+# pendiente que ofrecer — sí el combo de hermanos, que es la tabla completa.
 _BOTONES_POST_INFO = [
     {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
-    {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
-    {"id": "lead_volver_info", "title": "📋 Ver más info"},
-]
-# Botones específicos después de Precios: ofrecen el combo de hermanos.
-_BOTONES_POST_PRECIOS = [
     {"id": "lead_combo_hermanos", "title": "🧒 Combo hermanos"},
-    {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
-    {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
+    {"id": "lead_llamada", "title": "📞 Agendar llamada"},
 ]
 _TEXTO_POST_INFO = "¿Qué querés hacer? 👇"
 
 # Recordatorio cuando el lead escribe texto libre en vez de tocar un botón.
 _TEXTO_RECORDATORIO = "Tocá una de las opciones 👇"
 
-# Lista del submenú "Info sobre clases" (>3 opciones → lista). Títulos <= 24 chars.
-_LISTA_INFO_CLASES = [
-    {"title": "Info sobre clases", "rows": [
-        {"id": "lead_precios", "title": "📅 Precios"},
-        {"id": "lead_horarios", "title": "🕐 Horarios"},
-        {"id": "lead_ubicacion", "title": "📍 Ubicación"},
-        {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
-        {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
-    ]},
-]
-_TEXTO_INFO = "Elegí una opción 👇"
-_BOTON_LISTA = "Ver opciones"
+# Ya no hay submenú-lista: el que toca "Info y precios" está pidiendo TODO, y
+# hacerlo elegir de una lista era un paso de más. Los handlers de precios /
+# horarios / ubicación siguen vivos (ver _ID_A_OPCION): un padre puede tocar la
+# lista de un mensaje viejo que quedó en su chat y tiene que seguir funcionando.
 
 # Los precios del DESAFÍO dependen del día (anticipada hasta el jueves 23:59) y las
 # fechas dependen del campus que se esté vendiendo → estos textos son funciones, no
@@ -377,15 +365,6 @@ async def _avisar_pedido_de_llamada(telefono: str, proveedor, nombre: str) -> bo
         return False
 
 
-async def _enviar_lista_info(
-    telefono: str, proveedor, topic_id: int | None, tg_group: int
-):
-    """Submenú 'Info sobre clases' como lista desplegable."""
-    await proveedor.enviar_lista(telefono, _TEXTO_INFO, _BOTON_LISTA, _LISTA_INFO_CLASES)
-    await guardar_mensaje(telefono, "assistant", "[menú: info sobre clases]")
-    await _espejar_telegram(telefono, "[lista: Precios / Horarios / Ubicación / Agendar / Hablar]", topic_id, tg_group)
-
-
 async def _enviar_recordatorio_botones(
     telefono: str, proveedor, topic_id: int | None, tg_group: int
 ):
@@ -399,15 +378,26 @@ async def _enviar_recordatorio_botones(
 
 async def _handle_precios(telefono: str, proveedor, topic_id: int | None, tg_group: int):
     await _enviar_afiche(telefono, proveedor, _AFICHE_PATH)
-    # Después de precios ofrecemos el combo de hermanos como botón.
-    await _enviar_contenido_con_botones(
-        telefono, proveedor, texto_precios(), topic_id, tg_group, botones=_BOTONES_POST_PRECIOS
-    )
+    await _enviar_contenido_con_botones(telefono, proveedor, texto_precios(), topic_id, tg_group)
 
 
 async def _handle_horarios(telefono: str, proveedor, topic_id: int | None, tg_group: int):
-    await _enviar_afiche(telefono, proveedor, _AFICHE_HORARIOS_PATH)
+    # Sin afiche: afiche_horarios.png es HOY el mismo archivo que afiche_fenix.png
+    # (md5 idéntico), así que mandarlo repetía la imagen de precios.
     await _enviar_contenido_con_botones(telefono, proveedor, texto_horarios(), topic_id, tg_group)
+
+
+async def _handle_info_completa(telefono: str, proveedor, topic_id: int | None, tg_group: int):
+    """El botón "Info y precios" es un pedido explícito de TODO.
+
+    Va todo de una, pero en mensajes SEPARADOS —precios, horarios, ubicación—
+    en vez de un ladrillo único. El afiche abre el paquete y los botones cierran
+    el último mensaje, así el padre nunca queda sin qué tocar.
+    """
+    await _enviar_afiche(telefono, proveedor, _AFICHE_PATH)
+    await _enviar_y_registrar(telefono, texto_precios(), proveedor, topic_id, tg_group)
+    await _enviar_y_registrar(telefono, texto_horarios(), proveedor, topic_id, tg_group)
+    await _enviar_contenido_con_botones(telefono, proveedor, TEXTO_UBICACION, topic_id, tg_group)
 
 
 async def _handle_combo_hermanos(telefono: str, proveedor, topic_id: int | None, tg_group: int):
@@ -592,8 +582,8 @@ async def procesar_menu_lead(
         opcion = _ID_A_OPCION.get(btn_id)
 
         if opcion == "info_clases":
-            await _enviar_lista_info(telefono, proveedor, topic_id, tg_group)
-            return "[menú: info sobre clases]"
+            await _handle_info_completa(telefono, proveedor, topic_id, tg_group)
+            return "[info completa: precios + horarios + ubicación]"
 
         if opcion == "precios":
             await _handle_precios(telefono, proveedor, topic_id, tg_group)

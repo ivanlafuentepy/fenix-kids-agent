@@ -119,6 +119,43 @@ def test_el_primer_contacto_manda_la_foto_de_la_casona(prov):
     assert titulos == ["📅 Info y precios", "🎯 Reservar lugar", "📞 Agendar llamada"]
 
 
+# ── "Info y precios" manda todo ──────────────────────────────────────────────
+
+def test_info_y_precios_manda_todo_sin_hacerlo_elegir_de_una_lista(prov):
+    """El que toca el botón ya pidió toda la info: no se le devuelve un menú."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    prov.imagenes.clear()
+    r = _procesar(prov, "", btn_id="lead_info", es_boton=True)
+
+    assert r == "[info completa: precios + horarios + ubicación]"
+    cuerpo = "\n".join(_al_padre(prov)[-3:])
+    assert "350.000" in cuerpo or "550.000" in cuerpo, "faltan los precios"
+    assert "VIERNES" in cuerpo and "17:00" in cuerpo, "faltan los horarios"
+    assert "Maestras Paraguayas" in cuerpo, "falta la ubicación"
+    assert len(prov.imagenes) == 1, "el afiche de precios, una sola vez"
+
+
+def test_la_info_va_en_mensajes_separados_no_en_un_ladrillo(prov):
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    antes = len(_al_padre(prov))
+    _procesar(prov, "", btn_id="lead_info", es_boton=True)
+    assert len(_al_padre(prov)) - antes == 3, "precios, horarios y ubicación separados"
+
+
+def test_el_ultimo_mensaje_cierra_con_botones(prov):
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    _procesar(prov, "", btn_id="lead_info", es_boton=True)
+    titulos = [b["title"] for b in prov.botones[-1][1]]
+    assert titulos == ["🎯 Reservar lugar", "🧒 Combo hermanos", "📞 Agendar llamada"]
+
+
+def test_ya_no_queda_ningun_boton_de_hablar_con_aurora():
+    """Iván los reemplazó todos por 'Agendar llamada'."""
+    for grupo in (menu._BOTONES_MENU_PRINCIPAL, menu._BOTONES_POST_INFO):
+        for b in grupo:
+            assert "Aurora" not in b["title"], f"quedó un botón viejo: {b['title']}"
+
+
 # ── Pedido de llamada ────────────────────────────────────────────────────────
 
 def test_el_boton_de_llamada_pide_el_nombre_sin_preguntar_hora(prov):
