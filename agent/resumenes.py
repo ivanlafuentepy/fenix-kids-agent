@@ -952,7 +952,10 @@ async def _generar_resumen_anuncios(telefono: str, texto_cmd: str):
     for rec in all_records:
         f = rec.get("fields", {})
         _conc = (f.get("CONCEPTO") or "").strip()
-        if not (_conc.startswith("PRUEBA") or _conc in ("CLASE", "UNA CLASE", "FENIXMAMA")):
+        # DESAFIO es la entrada desde el 09/08 (antes PRUEBA): sin esto los pagos
+        # del campus no aparecían en el resumen y las conversiones daban cero.
+        if not (_conc.startswith("PRUEBA")
+                or _conc in ("DESAFIO", "CLASE", "UNA CLASE", "FENIXMAMA")):
             continue
         fecha_raw = _fecha_py(f.get("FECHA", ""))
         if not fecha_raw:

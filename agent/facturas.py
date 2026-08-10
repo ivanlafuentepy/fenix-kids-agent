@@ -31,7 +31,10 @@ BOTONES_FACTURA = [
 
 # Concepto del PAGO → opción CONCEPTO en FACTURAS (opciones EXISTENTES del
 # singleSelect — verificadas en el schema; NUNCA inventar opciones nuevas)
-_CONCEPTO_FACTURA = {"PRUEBA": "LEAD PRUEBA", "CLASE": "UNA CLASE"}
+# FACTURAS.CONCEPTO no tiene opción propia para el campus: LEAD PRUEBA es la que
+# le corresponde (el lead que paga la entrada). Inventar una opción nueva en el
+# select tumbaría el POST entero con 422.
+_CONCEPTO_FACTURA = {"PRUEBA": "LEAD PRUEBA", "DESAFIO": "LEAD PRUEBA", "CLASE": "UNA CLASE"}
 
 # Keywords (mismas de Dorita) — el cliente pasa datos para facturar a otro nombre
 _KEYWORDS_DATOS = (

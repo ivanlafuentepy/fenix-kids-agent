@@ -155,7 +155,16 @@ async def _procesar_comprobante(
             _lead_id_pago = _lr_pago2[0]["id"] if _lr_pago2 else None
             # El pack va con su concepto real: PAQUETE5 es lo que la fórmula
             # CLASES COMPRADAS suma (como PRUEBA acreditaría 0 clases).
-            _concepto_reg = "PAQUETE5" if tipo == "pack" else concepto_pago
+            # La entrada ya no es una clase de prueba sino el campus: se registra
+            # como DESAFIO para poder medirlo aparte en PAGOS. Igual que PAQUETE5,
+            # queda fuera del SWITCH de VENCIMIENTO_FORMULA y por lo tanto SIN
+            # vencimiento — correcto: es un evento de fin de semana, no un plan.
+            if tipo == "pack":
+                _concepto_reg = "PAQUETE5"
+            elif tipo == "prueba":
+                _concepto_reg = "DESAFIO"
+            else:
+                _concepto_reg = concepto_pago
             _pago_rid_factura = await registrar_pago_fenix(
                 monto, concepto=_concepto_reg, metodo=metodo_pago,
                 lead_id=_lead_id_pago, telefono=telefono,

@@ -169,7 +169,10 @@ async def _completar_pago_huerfano(telefono: str, nino_ids: list[str], tutor_id:
                                max_records=len(pago_ids))
     for p in pagos:
         pf = p.get("fields", {}) or {}
-        if (pf.get("CONCEPTO") or "").startswith("PRUEBA") and not pf.get("NIÑOS FENIX"):
+        _conc_pago = (pf.get("CONCEPTO") or "")
+        # DESAFIO es el concepto de la entrada desde el 09/08; PRUEBA queda por
+        # los pagos viejos que todavía pueden estar sin niños linkeados.
+        if (_conc_pago == "DESAFIO" or _conc_pago.startswith("PRUEBA")) and not pf.get("NIÑOS FENIX"):
             campos: dict = {"NIÑOS FENIX": nino_ids}
             # El tutor es una fila de ALUMNOS → link PAGA (ALUMNOS); el viejo
             # PAGA (→TUTORES) quedó legacy.
