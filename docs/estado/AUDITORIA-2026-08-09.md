@@ -163,3 +163,53 @@ Nota de diseño: esto NO se arregla con más regex (regla dura #10) — el puent
 5. **A2**: `AL DÍA?` → `ESTADO` en `obtener_ninos_al_dia` (antes de prender la confirmación).
 6. **CR3**: decidir con Iván el rediseño del puente texto→acción de Aurora (no es un parche regex).
 7. El resto por severidad; A13 (parentesco) y A9 (talla) son fixes chicos y seguros.
+
+---
+
+# ANEXO — Auditoría de CAMINOS DE SILENCIO (09/08, noche)
+
+Motivo: el agente quedó mudo en prod dos veces por fixes de esta misma sesión.
+Dos agentes auditaron el camino del mensaje entrante + los módulos del hot path,
+más un detector AST propio del patrón exacto del incidente.
+
+## ✅ ARREGLADO Y EN PROD
+
+| # | Hallazgo | Fix |
+|---|---|---|
+| S1 | **El `except` del webhook era silencio puro** (solo log en Railway). Causa ESTRUCTURAL: cualquier excepción entre el early save y el envío dejaba mudo al padre sin avisarle a nadie. | Ahora manda el mensaje de error al padre + alerta al admin por WhatsApp con el tipo de excepción |
+| S2 | `enviar_mensaje(tel, "")` **devolvía True sin mandar nada** (`_partir_mensaje("")` → `[]`). El guard anti-vacío cubría solo a `ivan` con historial: Aurora podía dejar mudo a un inscripto y guardar una fila vacía en el historial | `meta.py` devuelve False y loguea; guard universal anti-vacío en main para los dos agentes |
+| S3 | **IndexError reproducido**: `"Sofia, 6 años,"` (coma final) reventaba `_extraer_nombre_hijo_historial`, que corre SIN try en el camino del comprobante → el padre pagaba y no recibía nada | Se saltean las partes vacías |
+| S4 | `datos_form` UnboundLocalError (mismo patrón del bug de hoy) | Inicializado antes del try |
+| S5 | Guard anti-dup de pagos comparaba contra `"PRUEBA"` fijo: prueba + pack el mismo día → **el PAQUETE5 nunca se creaba**, sin alerta (retorno truthy) | Compara contra el CONCEPTO que se registra |
+| S6 | `hooks.py` importaba `enviar_lead_submitted` (no existe) → **ninguna reserva reportaba conversión a Meta Ads** | Usa `enviar_evento_agenda` |
+
+**Red de seguridad nueva**: `tests/test_webhook_no_muda.py` recorre el camino real
+del mensaje (mundo exterior mockeado) y falla si el padre no recibe nada **o** si
+recibe el mensaje de error. Validado reintroduciendo el bug de hoy: 13 tests en rojo
+(mientras `import agent.main` y los 30 tests viejos seguían en verde).
+`tests/conftest.py` aísla la suite (DB temporal efímera + credenciales falsas):
+antes un test podía correr contra la base de PRODUCCIÓN — de hecho la primera
+versión del test escribió en los topics de Telegram reales.
+
+## ⚠️ PENDIENTES DE SILENCIO (no arreglados — decisión de Iván)
+
+| # | Hallazgo | Riesgo |
+|---|---|---|
+| S7 | **Deploy = mensajes perdidos**: la dedup se registra ANTES de procesar y el trabajo va en background; cada `git push` reinicia Railway y los mensajes en vuelo quedan marcados como procesados sin respuesta | ALTO (ocurre en cada deploy) |
+| S8 | El `bool` de `enviar_mensaje` **se ignora** en las 4 ramas de envío: token muerto o 4xx de Meta → no hay reintento, no hay aviso, y el historial dice que se respondió | ALTO |
+| S9 | Rate limit (10 msg/60s) **descarta sin guardar ni avisar**: una ráfaga de fotos + textos pierde los mensajes del 11º en adelante | ALTO |
+| S10 | Cuando Iván escribe en el topic, el agente se silencia 5 min y **los mensajes del padre en esa ventana mueren** (no hay cola). Si el envío de Iván falla, nadie se entera | ALTO |
+| S11 | Auto-silencio por falso positivo de spam/prompt-injection ("olvida todo lo que te dije") → el padre no recibe nada y ese mensaje queda sin responder para siempre | ALTO |
+| S12 | Modo noche limpia el flag de pendiente ANTES de responder: si falla el envío de las 06:00, el lead nunca recibe respuesta | ALTO |
+| S13 | Rama del afiche: el texto de Claude se descarta a propósito y si falta el PNG el padre **no recibe nada**; el flag `afiche_enviado` queda puesto igual | ALTO |
+| S14 | El menú de leads no verifica que el interactivo haya salido: si Meta lo rechaza, el **primer mensaje de un lead nuevo** se pierde | ALTO |
+| S15 | Una excepción en el webhook descarta **el resto del lote** de mensajes | MEDIO |
+| S16 | `stop_reason=max_tokens` con tools → 3 llamadas idénticas y mensaje de error al padre | MEDIO |
+| S17 | 4 de 7 tools no aceptan `**kwargs`: un argumento alucinado por el LLM da TypeError → "Datos inválidos" al padre | MEDIO |
+| S18 | `actualizar_estado_flags` descarta el flag en silencio si el teléfono no tiene fila | MEDIO |
+| S19 | `confirmacion_sabado`: el botón de turno se evalúa ANTES del guard de "esperando confirmación" → un botón viejo crea reserva | MEDIO |
+| S20 | Un mensaje puede tardar ~80s (3 reintentos de brain × 25s) + hasta 35s de backoff de Airtable | MEDIO |
+
+**Lo que hoy convierte un silencio en algo visible**: el monitor (Capa 1) alerta por
+Telegram si el último mensaje de una conversación es del padre y pasaron >10 min sin
+respuesta — pero solo mira una ventana de 6 h y corre cada 1 h.
