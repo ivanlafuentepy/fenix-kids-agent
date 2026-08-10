@@ -1807,6 +1807,11 @@ async def webhook_handler(request: Request):
             # descartado quedaba perdido para siempre — auditoría 04-07-26 C3).
             if _check_rate_limit(msg.telefono):
                 logger.warning(f"[RATE LIMIT] {msg.telefono} excede {_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s")
+                # El mensaje NO se contesta, pero se guarda y se avisa: antes
+                # desaparecía sin dejar rastro (ni en la DB ni en Telegram) y
+                # una ráfaga de fotos se perdía entera (auditoría S9).
+                procesar_mensaje_task(_registrar_mensaje_descartado(
+                    msg, f"rate limit ({_RATE_LIMIT_MAX} msgs/{_RATE_LIMIT_WINDOW}s)"))
                 continue
 
             # Registrar dedup en PostgreSQL (insert-como-candado: si dos webhooks
@@ -2034,6 +2039,33 @@ async def _build_contexto_aurora(tutores: list[dict], hijos_raw: list[dict], tel
         logger.error(f"[AURORA] Error cargando redes: {e}")
 
     return contexto, _reservas_texto
+
+
+async def _registrar_mensaje_descartado(msg, motivo: str):
+    """Deja rastro de un mensaje que NO se va a contestar.
+
+    Lo guarda en el historial (para que el contexto no mienta) y lo espeja al
+    topic marcado, para que Ivan pueda responderlo a mano. Todo best-effort.
+    """
+    telefono = getattr(msg, "telefono", "")
+    texto = getattr(msg, "texto", "") or ""
+    if not telefono:
+        return
+    try:
+        await guardar_mensaje(telefono, "user", texto)
+    except Exception as e:
+        logger.error(f"[DESCARTADO] No pude guardar el mensaje de {telefono}: {e}")
+    try:
+        from agent.telegram_bridge import obtener_o_crear_topic as _oct, grupo_telegram_para as _gtp
+        _grp = await _gtp(telefono)
+        _tid = await _oct(telefono, f"📱 {telefono}", group_override=_grp)
+        if _tid:
+            _aviso = f"⚠️ MENSAJE NO CONTESTADO ({motivo}) — respondé vos:\n{texto[:400]}"
+            await enviar_a_topic(
+                _tid, _aviso, telefono=telefono, group_override=_grp,
+            )
+    except Exception as e:
+        logger.error(f"[DESCARTADO] No pude avisar del mensaje de {telefono}: {e}")
 
 
 async def _procesar_mensaje_webhook(msg):
@@ -2829,9 +2861,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             except Exception as e:
                 logger.warning(f"[DIAGNOSTICO] Error enviando alerta: {e}")
 
-        # ── Verificar si Ivan (admin) está respondiendo manualmente ──��────
+        # ── Verificar si Ivan (admin) está respondiendo manualmente ──────
+        # El agente no contesta, pero el mensaje NO puede desaparecer: se espeja
+        # al topic marcado como SIN RESPONDER para que Ivan lo vea (antes moría
+        # acá sin cola ni aviso — auditoría de silencio S10).
         if not await dorita_esta_activa(telefono):
             logger.info(f"Agente silenciado para {telefono} — Ivan activo en Telegram")
+            if topic_id:
+                try:
+                    _aviso_sil = f"🔇 SIN RESPONDER (agente silenciado, respondé vos):\n{texto[:400]}"
+                    await enviar_a_topic(
+                        topic_id, _aviso_sil, telefono=telefono, group_override=_tg_group,
+                    )
+                except Exception as _e_sil:
+                    logger.warning(f"[SILENCIO] No pude espejar el mensaje de {telefono}: {_e_sil}")
             return
 
         # ── PROMO MADRE: formulario (nombre+apellido responsable, nombre+apellido+fnac hijo) ──
@@ -3082,7 +3125,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # ── Detección de spam / scam / cuenta hackeada ─────────────────
         if _es_spam_o_scam(texto):
             logger.warning(f"[SPAM] Mensaje sospechoso de {telefono}: {texto[:100]}")
-            # Silenciar — NO responder nada al padre
+            # Silenciar — NO responder nada al padre. El mensaje igual queda
+            # guardado (early save) y la alerta de abajo lo muestra: si fue un
+            # falso positivo ("olvidá todo lo que te dije"), Ivan lo ve y
+            # responde a mano en vez de que muera sin rastro (S11).
             await silenciar_dorita(telefono)
             # Alertar a Ivan en Telegram
             _spam_alerta = (
