@@ -258,10 +258,13 @@ async def enviar_capi_event(tool_name: str, params: dict, result: dict, context:
 
     if tool_name == "gestionar_prueba" and result.get("confirmada"):
         try:
-            from agent.meta_capi import enviar_lead_submitted
+            # enviar_lead_submitted NO existe en meta_capi (se llama
+            # enviar_evento_agenda): el ImportError caía en el except de abajo
+            # y NINGUNA reserva confirmada reportaba conversión a Meta Ads.
+            from agent.meta_capi import enviar_evento_agenda
             telefono = context.get("telefono", "")
-            asyncio.create_task(enviar_lead_submitted(telefono))
-            logger.info(f"[HOOK-POST] CAPI LeadSubmitted enviado para {telefono}")
+            asyncio.create_task(enviar_evento_agenda(telefono))
+            logger.info(f"[HOOK-POST] CAPI evento de agenda enviado para {telefono}")
         except Exception as e:
             logger.error(f"[HOOK-POST] Error CAPI: {e}")
 

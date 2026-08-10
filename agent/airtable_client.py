@@ -1309,7 +1309,12 @@ async def registrar_pago_fenix(
             # pelado caía en el día siguiente y el guard fallaba para los dos
             # lados (bloqueaba pagos legítimos / dejaba pasar duplicados).
             pfecha = _fecha_creacion_py(pf.get("FECHA"))
-            if pconc.startswith("PRUEBA") and pfecha == hoy:
+            # Se compara contra el CONCEPTO que se está registrando, no contra
+            # "PRUEBA" fijo: con el guard viejo, una familia que pagaba la
+            # prueba y ese mismo día el pack recibía el id del PAGO de PRUEBA
+            # y el PAQUETE5 NUNCA se creaba — sin aviso, porque el retorno era
+            # truthy. Encima dos packs del mismo día no se deduplicaban.
+            if pconc == concepto and pfecha == hoy:
                 logger.info(f"[PAGO] Ya existe PAGO {pconc} hoy para {telefono} → no duplico ({p['id']})")
                 return p["id"]
 
