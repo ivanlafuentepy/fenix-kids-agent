@@ -757,4 +757,10 @@ iba sin versión y el navegador servía el JS del cache — verificar con un nav
 un falso OK. Se arregló con `?v=2`. Iván pidió además que el botón vaya debajo del reloj y que
 la fecha del hero dejara de capitalizar el "y" y el "de".
 
+Al cierre, además: el frontend de Mundo Fenix (páginas, los 2 SPECs nuevos, `_headers`,
+`_serve.py`, el script de Roblox) entró al repo por primera vez (`f4f3e94`), y los 63 MB de
+`mundo-fenix/assets/` —187 voces de George, guardianes, videos— quedaron respaldados en el
+bucket R2 `mundo-fenix-assets`, verificados 215/215 por tamaño y md5. Los assets van al
+`.gitignore`: se sirven desde Pages y git guardaría cada versión entera de cada binario.
+
 Detalle completo → `.claude/handoffs/handoff_20260810_1329.md`
