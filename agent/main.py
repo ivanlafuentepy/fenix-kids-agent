@@ -2965,8 +2965,11 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # y el pago se perdía en silencio. Manda la CRONOLOGÍA: si el
             # agente le pasó los datos bancarios DESPUÉS del último pago
             # confirmado, es un pago nuevo y se procesa.
+            # OJO: CI_BANCARIO ya viene del import global (línea ~78). Importarlo
+            # de nuevo ACÁ lo volvía local de toda la función y el uso de más
+            # abajo reventaba con UnboundLocalError cuando el flujo no pasaba
+            # por esta rama — el agente quedaba mudo en TODA conversación.
             from agent.memory import es_comprobante_de_pago_nuevo
-            from agent.pagos import CI_BANCARIO
             _ya_pago_db = not await es_comprobante_de_pago_nuevo(telefono, CI_BANCARIO)
             if not _ya_pago_db:
                 await _procesar_comprobante(telefono, texto, msg.media_id, historial_pago, topic_id, _tg_group)
