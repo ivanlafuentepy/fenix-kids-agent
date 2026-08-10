@@ -188,9 +188,17 @@ def _extraer_nombre_hijo_historial(historial: list[dict]) -> str:
                     # Si tiene coma, el nombre del hijo suele ser la segunda parte
                     if "," in resp:
                         partes = [p.strip() for p in resp.split(",")]
-                        # Tomar la última parte que parece nombre
+                        # Tomar la última parte que parece nombre. OJO: las
+                        # partes vacías se saltean — "Sofia, 6 años," (coma
+                        # final, comunísimo escribiendo en el celular) dejaba
+                        # un "" que reventaba con IndexError en .split()[0],
+                        # y este extractor corre SIN try en el camino del
+                        # comprobante: el padre pagaba y no recibía nada.
                         for p in reversed(partes):
-                            candidato = p.split()[0]
+                            palabras = p.split()
+                            if not palabras:
+                                continue
+                            candidato = palabras[0]
                             if _es_nombre_hijo_valido(candidato):
                                 return candidato.title()
                     # Si es un nombre solo o "se llama X"

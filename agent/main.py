@@ -23,7 +23,7 @@ from fastapi.responses import PlainTextResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from agent.brain import generar_respuesta, extraer_datos_formulario
+from agent.brain import generar_respuesta, extraer_datos_formulario, obtener_mensaje_error
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
@@ -3923,6 +3923,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             # Salir — no procesar más
             return {"status": "ok"}
 
+        # ── Guard universal anti-silencio ─────────────────────────────────
+        # Si la respuesta quedó vacía (Claude devolvió "", la limpieza la
+        # borró, etc.) el envío no manda nada y el padre se queda esperando.
+        # El guard viejo cubría solo a "ivan" con historial: Aurora podía
+        # dejar mudo a un inscripto y guardar una fila vacía en el historial.
+        if not _interceptado and not (respuesta or "").strip():
+            respuesta = obtener_mensaje_error()
+            logger.error(f"[ANTI-SILENCIO] Respuesta vacía para {telefono} (agente={agent_actual}) — mando fallback")
+
         # ── Enviar respuesta (con delay humano) ────────────────────────────
         if _es_formulario_completo:
             # Extraer nombres hijos + fecha/hora del mensaje "Reserva confirmada" previo
@@ -4142,6 +4151,10 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 # ── Materializar el lead (2.C-C2): FAMILIA A PRUEBA + NIÑOS +
                 # RESERVA real + QR. PRUEBA FENIX ya no se crea — el dinero ya
                 # quedó en PAGOS (registrar_pago_fenix al confirmar el comprobante).
+                # Inicializado ANTES del try: si extraer_datos_formulario falla,
+                # el `if datos_form` de más abajo (fuera de este try) tiraba
+                # UnboundLocalError — mismo patrón que dejó mudo al agente el 09/08.
+                datos_form = {}
                 try:
                     # Usar Haiku para extraer datos completos del historial
                     datos_form = await extraer_datos_formulario(historial_completo)
@@ -4307,6 +4320,30 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         # Borrar dedup para que si el padre reenvía, se procese
         if msg.mensaje_id:
             await borrar_mensaje_procesado(msg.mensaje_id)
+
+        # ── El padre NO se queda esperando en el vacío ────────────────────
+        # Este except era silencio puro: solo un log en Railway. Fue lo que
+        # hizo invisible el UnboundLocalError del 09/08 (el agente quedó mudo
+        # 8 minutos y se enteró Iván probando, no el sistema). Cualquier
+        # excepción de acá en adelante le contesta al padre y despierta al
+        # admin. Todo best-effort: un fallo acá no puede tapar el error real.
+        try:
+            _fallback = obtener_mensaje_error()
+            await proveedor.enviar_mensaje(telefono, _fallback)
+            await guardar_mensaje(telefono, "assistant", _fallback)
+        except Exception as _e_fb:
+            logger.error(f"[WEBHOOK] Tampoco pude mandar el fallback a {telefono}: {_e_fb}")
+        try:
+            _admin_err = os.getenv("ADMIN_PHONE", "")
+            if _admin_err and _admin_err != telefono:
+                await proveedor.enviar_mensaje(
+                    _admin_err,
+                    f"🚨 ERROR procesando el mensaje de https://wa.me/{telefono}\n"
+                    f"{type(e).__name__}: {str(e)[:200]}\n\n"
+                    f"Le mandé el mensaje de error. Revisá los logs de Railway.",
+                )
+        except Exception as _e_adm:
+            logger.error(f"[WEBHOOK] No pude alertar al admin: {_e_adm}")
 
 
 async def _procesar_confirmacion_reserva(

@@ -469,6 +469,12 @@ class ProveedorMeta(ProveedorWhatsApp):
         if not self.access_token or not self.phone_number_id:
             logger.warning("META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados")
             return False
+        # Texto vacío: _partir_mensaje devuelve [] → el for no itera y esto
+        # devolvía True SIN haber mandado nada. El caller lo daba por
+        # respondido y el padre quedaba en silencio. Ahora se dice la verdad.
+        if not (mensaje or "").strip():
+            logger.error(f"[META] enviar_mensaje con texto VACÍO para {telefono} — no se envía nada")
+            return False
         ok = True
         for parte in _partir_mensaje(mensaje):
             payload = {
