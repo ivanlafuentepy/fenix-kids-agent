@@ -118,6 +118,11 @@ def mundo_exterior(enviados):
         patch.object(main, "enviar_a_topic", AsyncMock(return_value=None)),
         patch.object(main, "obtener_o_crear_topic", AsyncMock(return_value=None)),
         patch.object(main, "_delay_humano", AsyncMock(return_value=None)),
+        # De 23:00 a 06:00 el agente contesta el mensaje de "fuera de servicio" y
+        # encola al lead para las 07:00 (night_mode). Sin fijar esto, la suite
+        # entera pasaba de día y fallaba de noche — que es cuando Iván trabaja:
+        # 14 tests en rojo a las 23:30 sin que nadie hubiera tocado el código.
+        patch.object(main, "es_horario_nocturno", lambda *a, **kw: False),
     ]
     for p in parches:
         p.start()
