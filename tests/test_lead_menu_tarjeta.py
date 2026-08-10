@@ -29,6 +29,7 @@ class _ProveedorFalso:
     def __init__(self):
         self.textos: list[tuple[str, str]] = []
         self.botones: list[tuple[str, list]] = []
+        self.imagenes: list[tuple[str, int, str]] = []
 
     async def enviar_mensaje(self, telefono, texto):
         self.textos.append((telefono, texto))
@@ -37,6 +38,10 @@ class _ProveedorFalso:
     async def enviar_botones(self, telefono, texto, botones):
         self.botones.append((telefono, botones))
         self.textos.append((telefono, texto))
+        return True
+
+    async def enviar_imagen_bytes(self, telefono, contenido, mime):
+        self.imagenes.append((telefono, len(contenido), mime))
         return True
 
 
@@ -93,11 +98,12 @@ def test_no_confunde_una_pregunta_normal():
 # ── El flujo completo ────────────────────────────────────────────────────────
 
 def test_el_primer_contacto_desde_la_web_no_recibe_el_saludo_de_venta(prov):
-    """El bug del endpoint 10/08 04:31: contestaba SALUDO_AURORA + menú."""
+    """El bug del endpoint 10/08 04:31: contestaba el saludo de venta + menú."""
     r = _procesar(prov, TEXTO_WEB, es_primer_contacto=True)
     assert r == "[tarjeta: saludo + cuántos hijos]"
     enviado = prov.textos[0][1]
-    assert menu.SALUDO_AURORA not in enviado, "no se le vuelve a vender la academia"
+    assert "Reservar lugar" not in enviado, "no se le vuelve a vender el campus"
+    assert prov.imagenes == [], "tampoco la foto del saludo de venta"
     assert "tarjeta" in enviado.lower()
     titulos = [b["title"] for b in prov.botones[0][1]]
     assert titulos == ["1 hijo", "2 hermanos", "3 hermanos"]
@@ -141,5 +147,5 @@ def test_el_lead_normal_sigue_recibiendo_el_menu_de_siempre(prov):
     """El camino de tarjeta no puede robarle el primer contacto a nadie más."""
     r = _procesar(prov, "Hola", es_primer_contacto=True)
     assert r == "[saludo + menú principal]"
-    assert menu.SALUDO_AURORA in prov.textos[0][1]
+    assert "DESAFÍO FENIX" in prov.textos[0][1]
     assert prov.flags["menu_estado"] == "menu"

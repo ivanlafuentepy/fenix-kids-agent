@@ -3,9 +3,9 @@
 # Flujo del lead: TODO se navega por botones hasta que toca "Hablar con Aurora".
 # Mientras tanto NO entra el cerebro conversacional — solo botones.
 #
-#   1. Saludo cortado de Aurora + 3 botones:
-#        [Info sobre clases] · [Agendar prueba] · [Hablar con Aurora]
-#   2. "Info sobre clases" → lista: Precios / Horarios / Ubicación / Agendar / Hablar
+#   1. Foto de La Casona + el relato del DESAFÍO FENIX + 3 botones:
+#        [📅 Info y precios] · [🎯 Reservar lugar] · [📞 Agendar llamada]
+#   2. "Info y precios" → lista: Precios / Horarios / Ubicación / Agendar / Hablar
 #   3. Precios / Horarios / Ubicación → muestran el contenido (afiche + texto) y
 #      terminan SIEMPRE con botones: [Agendar prueba] · [Hablar con Aurora] · [Ver más info]
 #   4. "Agendar prueba" / "Hablar con Aurora" → recién acá pasa a modo conversacional
@@ -39,26 +39,35 @@ from agent.envio_seguro import enviar_al_padre, enviar_botones_al_padre
 
 # ── Contenido del menú ───────────────────────────────────────────────────────
 
-# Saludo cortado de Aurora (versión recortada del mensaje FASE 1 del profe Iván,
-# rebrandeado a Aurora y sin la pregunta final — ahora la hacen los botones).
-SALUDO_AURORA = (
-    "Hola! Te saluda Aurora 🌟\n\n"
-    "Te resumo rápido qué es Fenix Kids Academy.\n\n"
-    "Es tu hijo trepando árboles, enfrentando desafíos reales, aprendiendo a superar "
-    "miedos y desarrollando confianza a través de experiencias transformadoras.\n\n"
-    "Todo esto sucede en nuestra mansión de más de 3.000 m2, rodeada de naturaleza "
-    "y frente al río, en el barrio Itá Enramada de Asunción, a 10 min del centro.\n\n"
-    "Acá los chicos:\n"
-    "💪 Fortalecen su cuerpo\n"
-    "🧠 Construyen autoestima y confianza real\n"
-    "⚡ Aprenden a adaptarse y resolver situaciones por sí mismos 🌳"
-)
+# Foto de La Casona que acompaña al saludo: el padre ve DÓNDE entrena su hijo
+# antes de leer nada (es el mismo mapa que muestra la web).
+_CASONA_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "casona.jpg")
+
+
+def saludo_desafio() -> str:
+    """Primer contacto: cuenta el DESAFÍO FENIX, no la academia en general.
+
+    Es función y no constante porque lleva las fechas del campus vigente, que
+    se mueven cada semana — una constante congelaba el campus del deploy.
+    Mismo relato que la landing: descubrir / superar / conquistar.
+    """
+    from agent.desafio import proximo_campus, label_campus
+    return (
+        "Hola! Te saluda Aurora 🌟\n\n"
+        "Te cuento del DESAFÍO FENIX, nuestro campus de 3 días: viernes descubre, "
+        "sábado supera y domingo conquista, con el Gran Desafío y el almuerzo en familia.\n\n"
+        "Son 3 días donde tu hijo trepa, cruza obstáculos, se cae y se levanta, y se "
+        "anima a cosas que no creía poder hacer 🧗\n\n"
+        "Todo en La Casona Lafuente, más de 3.000 m² frente al río 🌳\n\n"
+        f"📅 Próximo campus: {label_campus(proximo_campus())}"
+    )
+
 
 # Botones del menú principal (Meta soporta máximo 3). Títulos <= 20 chars.
 _BOTONES_MENU_PRINCIPAL = [
-    {"id": "lead_info", "title": "📋 Info sobre clases"},
+    {"id": "lead_info", "title": "📅 Info y precios"},
     {"id": "lead_agendar", "title": "🎯 Reservar lugar"},
-    {"id": "lead_aurora", "title": "💬 Hablar con Aurora"},
+    {"id": "lead_llamada", "title": "📞 Agendar llamada"},
 ]
 _TEXTO_BOTONES = "¿Qué te gustaría hacer? 👇"
 
@@ -178,7 +187,38 @@ _ID_A_OPCION = {
     "lead_combo_hermanos": "combo_hermanos",
     "lead_agendar": "agendar",
     "lead_aurora": "aurora",
+    "lead_llamada": "llamada",
 }
+
+
+# ── Pedido de llamada ────────────────────────────────────────────────────────
+# El padre que prefiere hablar antes que escribir. No se le pregunta la hora
+# (decisión de Iván 10/08): se le pide el nombre y el profe lo contacta. A Iván
+# le llega el aviso con un link de wa.me que ya trae el saludo escrito, así el
+# contacto es un clic y no tiene que buscar el número ni acordarse del nombre.
+PEDIDO_NOMBRE_LLAMADA = (
+    "¡Perfecto! 📞 El profe Iván te contacta en breve.\n\n"
+    "¿Cuál es tu nombre?"
+)
+CONFIRMACION_LLAMADA = (
+    "¡Listo {nombre}! Le paso tu contacto al profe Iván, te escribe en un rato 😊\n\n"
+    "Mientras tanto, si querés algo más, contame."
+)
+
+# Prefijos que el padre suele anteponer al decir su nombre. Se recortan para que
+# a Iván no le llegue "soy marta" — no es un parser de intención, es cosmética.
+_PREFIJOS_NOMBRE = ("soy ", "me llamo ", "mi nombre es ", "hola soy ", "es ")
+
+
+def _limpiar_nombre(texto: str) -> str:
+    """El nombre tal como lo escribió el padre, sin prefijos ni exceso de largo."""
+    limpio = " ".join((texto or "").split())
+    bajo = limpio.lower()
+    for prefijo in _PREFIJOS_NOMBRE:
+        if bajo.startswith(prefijo):
+            limpio = limpio[len(prefijo):]
+            break
+    return limpio.strip(" .,!¡").title()[:40]
 
 
 # ── Camino directo: el botón "pagar con tarjeta" de la web ───────────────────
@@ -296,10 +336,45 @@ async def _enviar_contenido_con_botones(
 async def _enviar_saludo_y_botones(
     telefono: str, proveedor, topic_id: int | None, tg_group: int
 ):
-    """Primer contacto: saludo cortado de Aurora + botones del menú principal."""
-    await enviar_botones_al_padre(proveedor, telefono, f"{SALUDO_AURORA}\n\n{_TEXTO_BOTONES}", _BOTONES_MENU_PRINCIPAL)
-    await guardar_mensaje(telefono, "assistant", SALUDO_AURORA)
-    await _espejar_telegram(telefono, f"{SALUDO_AURORA}\n[botones: Info / Agendar / Hablar]", topic_id, tg_group)
+    """Primer contacto: foto de La Casona + el Desafío + botones del menú.
+
+    La foto va primero y es best-effort: si no sale, el saludo se manda igual.
+    """
+    await _enviar_afiche(telefono, proveedor, _CASONA_PATH)
+    saludo = saludo_desafio()
+    await enviar_botones_al_padre(proveedor, telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_MENU_PRINCIPAL)
+    await guardar_mensaje(telefono, "assistant", saludo)
+    await _espejar_telegram(telefono, f"{saludo}\n[botones: Info y precios / Reservar / Llamada]", topic_id, tg_group)
+
+
+async def _avisar_pedido_de_llamada(telefono: str, proveedor, nombre: str) -> bool:
+    """Le manda a Iván el pedido de llamada con el link para contestar de un clic.
+
+    El wa.me lleva el saludo ya escrito: abrir, enviar y listo. Si el aviso no
+    sale, el padre NO puede quedar esperando una llamada que nadie pidió → se
+    devuelve False y el flujo lo escala como cualquier otro fallo.
+    """
+    from urllib.parse import quote
+
+    admin = os.getenv("ADMIN_PHONE", "")
+    if not admin:
+        logger.error("[LLAMADA] ADMIN_PHONE vacío — no puedo avisar del pedido de llamada")
+        return False
+
+    saludo_previo = (f"Hola {nombre}, te saluda el profe Iván de Fenix Kids. "
+                     "¿Te puedo llamar ahora?")
+    link = f"https://wa.me/{telefono}?text={quote(saludo_previo)}"
+    aviso = (
+        "📞 *PEDIDO DE LLAMADA*\n\n"
+        f"*{nombre}* quiere hablar con vos.\n"
+        f"Tel: {telefono}\n\n"
+        f"Escribile de un clic:\n{link}"
+    )
+    try:
+        return bool(await proveedor.enviar_mensaje(admin, aviso))
+    except Exception as e:
+        logger.error(f"[LLAMADA] No pude avisarle a Iván del pedido de {telefono}: {e}")
+        return False
 
 
 async def _enviar_lista_info(
@@ -477,6 +552,32 @@ async def procesar_menu_lead(
         await actualizar_estado_flags(telefono, menu_estado="conversacional")
         return "[tarjeta: link enviado]"
 
+    # ── Pidió llamada: el mensaje que llega es su nombre ──────────────────
+    if menu_estado == "llamada":
+        nombre = "" if es_boton else _limpiar_nombre(texto)
+        if not nombre:
+            await _enviar_y_registrar(
+                telefono, "¿Cuál es tu nombre? Así el profe sabe con quién habla 😊",
+                proveedor, topic_id, tg_group)
+            return "[llamada: repregunta nombre]"
+
+        avisado = await _avisar_pedido_de_llamada(telefono, proveedor, nombre)
+        # El espejo en Telegram es la segunda red: si el WhatsApp al admin no
+        # salió, el pedido igual queda visible en el topic del lead.
+        await _espejar_telegram(
+            telefono,
+            f"📞 PEDIDO DE LLAMADA — {nombre} ({telefono})"
+            f"{'' if avisado else ' ⚠️ NO se pudo avisar por WhatsApp'}",
+            topic_id, tg_group)
+        if not avisado:
+            logger.error(f"[LLAMADA] {telefono} ({nombre}) pidió llamada y el aviso a Iván NO salió")
+
+        await _enviar_y_registrar(
+            telefono, CONFIRMACION_LLAMADA.format(nombre=nombre), proveedor, topic_id, tg_group)
+        await actualizar_estado_flags(telefono, menu_estado="conversacional")
+        logger.info(f"[LLAMADA] {telefono}: pedido de llamada de {nombre} → avisado={avisado}")
+        return "[llamada: pedido enviado]"
+
     # ── Llega desde el botón de la web: se responde por CONTENIDO ─────────
     # Vale en el primer contacto y también si estaba navegando el menú: el que
     # toca "pagar con tarjeta" ya decidió y no hay nada que venderle.
@@ -509,6 +610,14 @@ async def procesar_menu_lead(
         if opcion == "combo_hermanos":
             await _handle_combo_hermanos(telefono, proveedor, topic_id, tg_group)
             return "[combo hermanos + botones]"
+
+        if opcion == "llamada":
+            # No se le pregunta la hora: se le pide el nombre y el profe lo
+            # contacta. Lo único que Iván necesita para escribirle es el nombre.
+            await _enviar_y_registrar(telefono, PEDIDO_NOMBRE_LLAMADA, proveedor, topic_id, tg_group)
+            await actualizar_estado_flags(telefono, menu_estado="llamada")
+            logger.info(f"[LLAMADA] {telefono}: pidió llamada — esperando el nombre")
+            return PEDIDO_NOMBRE_LLAMADA
 
         if opcion in ("agendar", "aurora"):
             # Recién acá pasa a modo conversacional: el cerebro de leads toma el
