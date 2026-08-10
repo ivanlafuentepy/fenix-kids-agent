@@ -186,3 +186,178 @@ async def crear_reservas_campus(nino_ids: list[str], turno_viernes: str, turno_s
     logger.info(f"[DESAFIO] Campus {campus['viernes'].isoformat()}: "
                 f"{len(reservas)} reservas para {len(nino_ids)} niño(s)")
     return reservas
+
+
+# ── Elección de turnos post-pago ─────────────────────────────────────────────
+# El padre paga → completa el formulario → elige turno del VIERNES y del SÁBADO
+# (el domingo es uno solo para todos). Con botones, no con texto libre: el flujo
+# viejo pedía "escribime qué sábado te viene mejor" y había que adivinar la
+# respuesta. El estado vive en flags de DB (Railway reinicia sin aviso).
+
+_BTN_VIERNES = [{"id": "desafio_vie_1700", "title": "Viernes 17:00"},
+                {"id": "desafio_vie_1930", "title": "Viernes 19:30"}]
+_BTN_SABADO = [{"id": "desafio_sab_1100", "title": "Sábado 11:00"},
+               {"id": "desafio_sab_1530", "title": "Sábado 15:30"}]
+_TURNO_POR_BTN = {"desafio_vie_1700": "17:00", "desafio_vie_1930": "19:30",
+                  "desafio_sab_1100": "11:00", "desafio_sab_1530": "15:30"}
+
+
+async def _turnos_ofrecibles(fecha_iso: str, horas: tuple[str, ...]) -> tuple[list[str], bool]:
+    """(horas que se pueden ofrecer, hay_alguna_llena).
+
+    "cerrado" (20) se saca de la lista. "sold_out" (10-19) SÍ se sigue ofreciendo:
+    el número que se comunica es 10, pero el techo real es 20 y la decisión de
+    apretar un turno es de Iván, no del bot.
+    """
+    libres, llena = [], False
+    for hora in horas:
+        estado, _ = await estado_cupo(fecha_iso, hora)
+        if estado == "cerrado":
+            llena = True
+            continue
+        libres.append(hora)
+    return libres, llena
+
+
+async def ofrecer_turnos_viernes(telefono: str, proveedor, topic_id: int | None = None,
+                                 tg_group: int = 0) -> bool:
+    """Primer paso: los turnos del viernes. Deja el flag esperando la respuesta."""
+    from agent.ab_test import actualizar_estado_flags
+    from agent.memory import guardar_mensaje
+
+    campus = proximo_campus()
+    libres, _ = await _turnos_ofrecibles(campus["viernes"].isoformat(), TURNOS_VIERNES)
+    if not libres:
+        await _avisar_sin_cupo(telefono, proveedor, campus, "viernes", topic_id, tg_group)
+        return False
+
+    texto = (f"¡Listo! 🔥 Tu lugar en el DESAFÍO FENIX del {label_campus(campus)} está reservado.\n\n"
+             "Ahora elegí el turno del *viernes* (día 1 — Descubrir) 👇")
+    botones = [b for b in _BTN_VIERNES if _TURNO_POR_BTN[b["id"]] in libres]
+    await proveedor.enviar_botones(telefono, texto, botones)
+    await guardar_mensaje(telefono, "assistant", texto)
+    await actualizar_estado_flags(telefono, desafio_espera_turno="viernes")
+    await _espejar(topic_id, f"{texto}\n[botones: {' / '.join(libres)}]", telefono, tg_group)
+    logger.info(f"[DESAFIO] {telefono}: ofrecidos turnos del viernes {libres}")
+    return True
+
+
+async def _espejar(topic_id: int | None, texto: str, telefono: str, tg_group: int) -> None:
+    """Espejo a Telegram — best-effort, nunca rompe el flujo."""
+    if not topic_id:
+        return
+    try:
+        from agent.telegram_bridge import enviar_a_topic
+        await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {texto}", telefono=telefono, group_override=tg_group)
+    except Exception as e:
+        logger.warning(f"[DESAFIO] No se pudo espejar en Telegram: {e}")
+
+
+async def _avisar_sin_cupo(telefono: str, proveedor, campus: dict, dia: str,
+                           topic_id: int | None, tg_group: int) -> None:
+    """Los dos turnos del día llegaron al techo real (20). Se le dice al padre y
+    se le avisa a Iván: la plata YA entró, así que esto no puede quedar en un log."""
+    from agent.memory import guardar_mensaje
+    import os
+    texto = (f"Uff, los dos turnos del {dia} de este campus ya se llenaron 😅\n"
+             "Dejame hablar con el profe a ver si te hacemos un lugarcito y te confirmo.")
+    try:
+        await proveedor.enviar_mensaje(telefono, texto)
+        await guardar_mensaje(telefono, "assistant", texto)
+    except Exception as e:
+        logger.error(f"[DESAFIO] No pude avisarle del cupo a {telefono}: {e}")
+    await _espejar(topic_id, texto, telefono, tg_group)
+    admin = os.getenv("ADMIN_PHONE", "")
+    if admin:
+        try:
+            await proveedor.enviar_mensaje(
+                admin,
+                f"⚠️ DESAFÍO SIN CUPO\n{telefono} PAGÓ y los dos turnos del {dia} "
+                f"({label_campus(campus)}) están al tope de 20.\nHay que resolverlo a mano.",
+            )
+        except Exception as e:
+            logger.error(f"[DESAFIO] No pude avisarle al admin del cupo lleno: {e}")
+
+
+async def manejar_eleccion_turno(telefono: str, texto: str, btn_id: str | None,
+                                 es_boton: bool, flags: dict, proveedor,
+                                 topic_id: int | None = None, tg_group: int = 0) -> str | None:
+    """Procesa la elección de turno. Devuelve None si no aplica (el flujo sigue).
+
+    Igual que confirmacion_sabado.manejar_respuesta: se intercepta ANTES del menú
+    y del brain para que la respuesta no caiga en el flujo conversacional.
+    """
+    from agent.ab_test import actualizar_estado_flags
+    from agent.memory import guardar_mensaje
+
+    espera = flags.get("desafio_espera_turno")
+    if espera not in ("viernes", "sabado"):
+        return None
+
+    horas_validas = TURNOS_VIERNES if espera == "viernes" else TURNOS_SABADO
+    # Botón primero; si escribió, se acepta la hora textual ("17:00", "11") —
+    # es un match contra valores conocidos, no un detector de intención nuevo.
+    hora = _TURNO_POR_BTN.get(btn_id or "") if es_boton else None
+    if hora not in horas_validas:
+        hora = next((h for h in horas_validas
+                     if h in (texto or "") or h.split(":")[0] in (texto or "").split()), None)
+    if not hora:
+        botones = _BTN_VIERNES if espera == "viernes" else _BTN_SABADO
+        recordatorio = "Tocá uno de los turnos 👇"
+        await proveedor.enviar_botones(telefono, recordatorio, botones)
+        await guardar_mensaje(telefono, "assistant", recordatorio)
+        return "[turno: recordatorio]"
+
+    campus = proximo_campus()
+
+    if espera == "viernes":
+        await actualizar_estado_flags(telefono, desafio_turno_viernes=hora,
+                                      desafio_espera_turno="sabado")
+        libres, _ = await _turnos_ofrecibles(campus["sabado"].isoformat(), TURNOS_SABADO)
+        if not libres:
+            await _avisar_sin_cupo(telefono, proveedor, campus, "sábado", topic_id, tg_group)
+            await actualizar_estado_flags(telefono, desafio_espera_turno=None)
+            return "[turno sábado sin cupo]"
+        pregunta = (f"Genial, viernes {hora} ✅\n\n"
+                    "Ahora el turno del *sábado* (día 2 — Superar) 👇")
+        botones = [b for b in _BTN_SABADO if _TURNO_POR_BTN[b["id"]] in libres]
+        await proveedor.enviar_botones(telefono, pregunta, botones)
+        await guardar_mensaje(telefono, "assistant", pregunta)
+        await _espejar(topic_id, f"{pregunta}\n[botones: {' / '.join(libres)}]", telefono, tg_group)
+        logger.info(f"[DESAFIO] {telefono}: turno viernes {hora}")
+        return "[turno viernes elegido]"
+
+    # espera == "sabado" → ya están los dos turnos: se crean las 3 reservas
+    turno_viernes = flags.get("desafio_turno_viernes") or TURNOS_VIERNES[0]
+    from agent.airtable_client import obtener_grupo_familiar
+    grupo = await obtener_grupo_familiar(telefono)
+    nino_ids = [h["id"] for h in (grupo or {}).get("hijos", []) if h.get("id")]
+    reservas = []
+    if nino_ids:
+        try:
+            reservas = await crear_reservas_campus(nino_ids, turno_viernes, hora, campus)
+        except Exception as e:
+            logger.error(f"[DESAFIO] No pude crear las reservas de {telefono}: {e}")
+    else:
+        logger.error(f"[DESAFIO] {telefono} eligió turnos pero no tiene niños en el grupo")
+
+    await actualizar_estado_flags(telefono, desafio_espera_turno=None,
+                                  desafio_turno_sabado=hora, modo_agenda=False)
+
+    v, s, d = campus["viernes"], campus["sabado"], campus["domingo"]
+    confirmacion = (
+        "¡Listo! Quedó reservado 🔥\n\n"
+        f"📅 *Viernes {v.day}* — {turno_viernes} (Descubrir)\n"
+        f"📅 *Sábado {s.day}* — {hora} (Superar)\n"
+        f"📅 *Domingo {d.day}* — 12:00 Gran Desafío, 13:00 almuerzo en familia, "
+        "15:00 cierre (Conquistar)\n\n"
+        "📍 La Casona Lafuente — Maestras Paraguayas 2056\n"
+        "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb\n\n"
+        "Traé ropa cómoda, zapatillas y agua 🌳"
+    )
+    await proveedor.enviar_mensaje(telefono, confirmacion)
+    await guardar_mensaje(telefono, "assistant", confirmacion)
+    await _espejar(topic_id, confirmacion, telefono, tg_group)
+    logger.info(f"[DESAFIO] {telefono}: campus completo — vie {turno_viernes}, sáb {hora}, "
+                f"{len(reservas)} reservas")
+    return "[campus reservado]"

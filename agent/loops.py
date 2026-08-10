@@ -226,15 +226,15 @@ async def _enviar_recordatorio(rec):
                 logger.info(f"[FORM-RESCATE] Flow re-enviado a {rec.telefono} (+2h)")
             return ok
 
-        # form_rescate_24h: soltar el formulario y caer al flujo de agenda por texto
+        # form_rescate_24h: soltar el formulario y pasar directo a elegir turnos.
+        # El padre ya pagó: si el Flow nunca vuelve, igual tiene que quedar
+        # anotado en los 3 días del campus.
         from agent.ab_test import actualizar_estado_flags
-        from agent.flujo_pagos import _armar_mensaje_agenda_post_pago
-        await actualizar_estado_flags(rec.telefono, esperando_formulario_reserva=False, modo_agenda=True)
-        msg = await _armar_mensaje_agenda_post_pago()
-        ok = await proveedor.enviar_mensaje(rec.telefono, msg)
+        from agent.desafio import ofrecer_turnos_viernes
+        await actualizar_estado_flags(rec.telefono, esperando_formulario_reserva=False)
+        ok = await ofrecer_turnos_viernes(rec.telefono, proveedor)
         if ok:
-            await guardar_mensaje(rec.telefono, "assistant", msg)
-            logger.info(f"[FORM-RESCATE] {rec.telefono} pasado a agenda por texto (+24h)")
+            logger.info(f"[FORM-RESCATE] {rec.telefono} pasado a elegir turnos (+24h)")
         try:
             _grp = await grupo_telegram_para(rec.telefono)
             _topic = await obtener_o_crear_topic(rec.telefono, f"📱 {rec.telefono}", group_override=_grp)

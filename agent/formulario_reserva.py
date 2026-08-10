@@ -286,11 +286,14 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
 
     logger.info(f"[RESERVA-FORM] datos completados: grupo de {telefono} ({len(hijos)} hijos previos)")
 
-    # Cerrar el paso del formulario y activar modo agenda. prueba_creada=True
-    # desarma el detector legacy de main.py (_es_formulario_completo), que el
-    # 25/07 recreó al niño con datos adivinados ENCIMA de los del formulario.
+    # Cerrar el paso del formulario. prueba_creada=True desarma el detector
+    # legacy de main.py (_es_formulario_completo), que el 25/07 recreó al niño
+    # con datos adivinados ENCIMA de los del formulario.
+    # modo_agenda queda en False: fuerza gestionar_prueba en el brain (main.py),
+    # que es la agenda vieja de UN sábado. Ahora el paso siguiente son los
+    # turnos del campus, y los maneja desafio.manejar_eleccion_turno.
     await actualizar_estado_flags(
-        telefono, esperando_formulario_reserva=False, modo_agenda=True, prueba_creada=True,
+        telefono, esperando_formulario_reserva=False, modo_agenda=False, prueba_creada=True,
     )
     # Cancelar el rescate A7 (+2h/+24h) — el formulario ya se completó
     try:
@@ -298,25 +301,23 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
         await cancelar_recordatorios_por_telefono(telefono, tipo="form_rescate")
     except Exception as e:
         logger.warning(f"[RESERVA-FORM] no se pudo cancelar rescate: {e}")
-    # Agenda: no re-ofrecerla si ya estaba activa y el formulario llegó tarde
-    # (rescate +24h ya cayó a agenda por texto → evitar el mensaje duplicado)
-    if not flags.get("esperando_formulario_reserva") and flags.get("modo_agenda"):
-        logger.info(f"[RESERVA-FORM] {telefono}: agenda ya ofrecida — no la repito")
+    # Turnos: no re-ofrecerlos si el paso ya está en curso y el formulario llegó
+    # tarde (el rescate +24h ya los ofreció) → evitar el mensaje duplicado
+    if not flags.get("esperando_formulario_reserva") and flags.get("desafio_espera_turno"):
+        logger.info(f"[RESERVA-FORM] {telefono}: turnos ya ofrecidos — no los repito")
         return
+    # DESAFÍO FENIX: ya no se ofrece "un sábado", se eligen los turnos del
+    # viernes y del sábado del campus (el domingo es uno solo para todos).
     try:
-        msg_agenda = await _armar_mensaje_agenda_post_pago()
-        await guardar_mensaje(telefono, "assistant", msg_agenda)
-        await proveedor.enviar_mensaje(telefono, msg_agenda)
-        # Espejo a Telegram (best-effort — nunca rompe el flujo)
+        from agent.desafio import ofrecer_turnos_viernes
+        _topic = None
+        _grp = 0
         try:
-            from agent.telegram_bridge import (
-                obtener_o_crear_topic, enviar_a_topic, grupo_telegram_para,
-            )
+            from agent.telegram_bridge import obtener_o_crear_topic, grupo_telegram_para
             _grp = await grupo_telegram_para(telefono)
             _topic = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp)
-            if _topic:
-                await enviar_a_topic(_topic, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=_grp)
         except Exception as e:
-            logger.error(f"[RESERVA-FORM] espejo Telegram falló: {e}")
+            logger.error(f"[RESERVA-FORM] no pude resolver el topic de Telegram: {e}")
+        await ofrecer_turnos_viernes(telefono, proveedor, topic_id=_topic, tg_group=_grp)
     except Exception as e:
-        logger.error(f"[RESERVA-FORM] error enviando agenda tras formulario: {e}")
+        logger.error(f"[RESERVA-FORM] error ofreciendo los turnos del campus: {e}")

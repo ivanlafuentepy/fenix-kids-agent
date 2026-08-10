@@ -3282,6 +3282,25 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 logger.info(f"[FACTURA] {telefono}: respuesta de factura interceptada")
                 return {"status": "ok"}
 
+        # ── Turnos del DESAFÍO (post-pago) ────────────────────────────────
+        # El padre pagó y completó el formulario: ahora elige turno del viernes
+        # y del sábado. Se intercepta ANTES del menú y del brain — igual que la
+        # confirmación del sábado en Aurora — para que el botón del turno no
+        # caiga en el flujo conversacional. Solo actúa si el flag está puesto.
+        _flags_turno = await obtener_estado_flags(telefono)
+        if _flags_turno.get("desafio_espera_turno"):
+            from agent.desafio import manejar_eleccion_turno
+            _resp_turno = await manejar_eleccion_turno(
+                telefono, texto,
+                getattr(msg, "btn_id", None),
+                getattr(msg, "es_boton", False),
+                _flags_turno, proveedor,
+                topic_id=topic_id, tg_group=_tg_group,
+            )
+            if _resp_turno is not None:
+                logger.info(f"[DESAFIO] {telefono}: {_resp_turno}")
+                return {"status": "ok"}
+
         # ── Menú de botones para leads nuevos (Aurora, estilo Dorita) ─────
         # Reemplaza la apertura conversacional del lead: primer contacto →
         # saludo cortado + botones [Info / Agendar / Hablar]. El menú decide:

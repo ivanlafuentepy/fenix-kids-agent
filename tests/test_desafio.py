@@ -176,3 +176,119 @@ class TestCrearReservas:
         reservas = await crear_reservas_campus(["nino1"], "17:00", "11:00",
                                                proximo_campus(py(2026, 8, 10)))
         assert len(reservas) == 2
+
+
+class ProveedorFalso:
+    """Captura lo que se le manda al padre, sin tocar la red."""
+
+    def __init__(self):
+        self.mensajes = []
+        self.botones = []
+
+    async def enviar_mensaje(self, telefono, texto, *a, **kw):
+        self.mensajes.append((telefono, texto))
+        return True
+
+    async def enviar_botones(self, telefono, texto, botones, *a, **kw):
+        self.botones.append((telefono, texto, [b["id"] for b in botones]))
+        return True
+
+
+@pytest.fixture
+def sin_mundo_exterior(monkeypatch):
+    """Neutraliza DB, Airtable y Telegram; devuelve los flags que se fueron escribiendo."""
+    from agent import desafio
+    escritos = {}
+
+    async def fake_flags(telefono, **kw):
+        escritos.update(kw)
+
+    async def fake_guardar(*a, **kw):
+        return None
+
+    async def fake_cupo(fecha_iso, hora):
+        return "libre", 0
+
+    async def fake_grupo(telefono):
+        return {"hijos": [{"id": "ninoA"}], "tutores": []}
+
+    async def fake_reservas(nino_ids, tv, ts, campus=None):
+        escritos["_reservas"] = (list(nino_ids), tv, ts)
+        return ["r1", "r2", "r3"]
+
+    import agent.ab_test as ab
+    import agent.memory as mem
+    import agent.airtable_client as ac
+    monkeypatch.setattr(ab, "actualizar_estado_flags", fake_flags)
+    monkeypatch.setattr(mem, "guardar_mensaje", fake_guardar)
+    monkeypatch.setattr(ac, "obtener_grupo_familiar", fake_grupo)
+    monkeypatch.setattr(desafio, "estado_cupo", fake_cupo)
+    monkeypatch.setattr(desafio, "crear_reservas_campus", fake_reservas)
+    return escritos
+
+
+class TestEleccionDeTurno:
+    """El padre pagó: elige turno del viernes y del sábado con botones."""
+
+    @pytest.mark.asyncio
+    async def test_sin_flag_no_intercepta_nada(self, sin_mundo_exterior):
+        from agent.desafio import manejar_eleccion_turno
+        r = await manejar_eleccion_turno("595", "hola", None, False, {}, ProveedorFalso())
+        assert r is None  # el mensaje sigue su curso normal
+
+    @pytest.mark.asyncio
+    async def test_boton_viernes_guarda_y_pregunta_el_sabado(self, sin_mundo_exterior):
+        from agent.desafio import manejar_eleccion_turno
+        p = ProveedorFalso()
+        r = await manejar_eleccion_turno("595", "", "desafio_vie_1930", True,
+                                         {"desafio_espera_turno": "viernes"}, p)
+        assert r == "[turno viernes elegido]"
+        assert sin_mundo_exterior["desafio_turno_viernes"] == "19:30"
+        assert sin_mundo_exterior["desafio_espera_turno"] == "sabado"
+        assert p.botones[-1][2] == ["desafio_sab_1100", "desafio_sab_1530"]
+
+    @pytest.mark.asyncio
+    async def test_boton_sabado_crea_las_tres_reservas_y_confirma(self, sin_mundo_exterior):
+        from agent.desafio import manejar_eleccion_turno
+        p = ProveedorFalso()
+        r = await manejar_eleccion_turno("595", "", "desafio_sab_1100", True,
+                                         {"desafio_espera_turno": "sabado",
+                                          "desafio_turno_viernes": "17:00"}, p)
+        assert r == "[campus reservado]"
+        assert sin_mundo_exterior["_reservas"] == (["ninoA"], "17:00", "11:00")
+        assert sin_mundo_exterior["desafio_espera_turno"] is None
+        confirmacion = p.mensajes[-1][1]
+        for parte in ("17:00", "11:00", "12:00", "Casona"):
+            assert parte in confirmacion
+
+    @pytest.mark.asyncio
+    async def test_texto_con_la_hora_tambien_vale(self, sin_mundo_exterior):
+        from agent.desafio import manejar_eleccion_turno
+        p = ProveedorFalso()
+        r = await manejar_eleccion_turno("595", "prefiero 19:30", None, False,
+                                         {"desafio_espera_turno": "viernes"}, p)
+        assert r == "[turno viernes elegido]"
+        assert sin_mundo_exterior["desafio_turno_viernes"] == "19:30"
+
+    @pytest.mark.asyncio
+    async def test_respuesta_que_no_es_un_turno_reofrece_los_botones(self, sin_mundo_exterior):
+        from agent.desafio import manejar_eleccion_turno
+        p = ProveedorFalso()
+        r = await manejar_eleccion_turno("595", "y el domingo a qué hora?", None, False,
+                                         {"desafio_espera_turno": "viernes"}, p)
+        assert r == "[turno: recordatorio]"
+        assert p.botones[-1][2] == ["desafio_vie_1700", "desafio_vie_1930"]
+
+    @pytest.mark.asyncio
+    async def test_turno_lleno_no_se_ofrece(self, monkeypatch, sin_mundo_exterior):
+        """20 reservas = cerrado: ese botón no aparece."""
+        from agent import desafio
+
+        async def cupo_1700_cerrado(fecha_iso, hora):
+            return ("cerrado", 20) if hora == "17:00" else ("libre", 3)
+
+        monkeypatch.setattr(desafio, "estado_cupo", cupo_1700_cerrado)
+        p = ProveedorFalso()
+        ok = await desafio.ofrecer_turnos_viernes("595", p)
+        assert ok is True
+        assert p.botones[-1][2] == ["desafio_vie_1930"]

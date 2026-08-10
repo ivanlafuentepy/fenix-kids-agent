@@ -328,14 +328,13 @@ async def _procesar_comprobante(
                     await enviar_a_topic(topic_id, "📋 Formulario de reserva enviado al lead", telefono=telefono, group_override=group_override)
                 logger.info(f"[PAGOS] Formulario de reserva enviado a {telefono}")
             else:
-                # Fallback: si el formulario no salió (token/flow), usar el flujo viejo de agenda
-                msg_agenda = await _armar_mensaje_agenda_post_pago()
-                await guardar_mensaje(telefono, "assistant", msg_agenda)
-                await proveedor.enviar_mensaje(telefono, msg_agenda)
-                await actualizar_estado_flags(telefono, modo_agenda=True)
-                if topic_id:
-                    await enviar_a_topic(topic_id, f"👨‍🏫 IVAN: {msg_agenda}", telefono=telefono, group_override=group_override)
-                logger.warning(f"[PAGOS] Formulario no salió — fallback a agenda directa para {telefono}")
+                # Fallback: si el formulario no salió (token/flow), igual hay que
+                # cerrarle los turnos del campus. Antes caía a "elegí un sábado",
+                # que con el Desafío ya no existe.
+                from agent.desafio import ofrecer_turnos_viernes
+                await ofrecer_turnos_viernes(telefono, proveedor,
+                                             topic_id=topic_id, tg_group=group_override)
+                logger.warning(f"[PAGOS] Formulario no salió — voy directo a los turnos para {telefono}")
         except Exception as e:
             logger.error(f"[PAGOS] Error en post-pago (formulario/agenda): {e}")
 
