@@ -1349,6 +1349,11 @@ async def registrar_pago_fenix(
         # El tutor es una fila de ALUMNOS: va en PAGA (ALUMNOS). Escribir el
         # link viejo PAGA (→TUTORES FENIX) con este id tumba el POST entero (422).
         campos_pago["PAGA (ALUMNOS)"] = [tutor_paga_id]
+        # ALUMNO es el MISMO link a ALUMNOS, pero es del que cuelgan la fórmula
+        # NOMBRE PAGO y los rollups CI / LOOKUP NOMBRE. Sin él el pago aparece en
+        # la vista con el nombre del niño y sin CI (los pagos cargados a mano por
+        # la GUI siempre llevan los dos). Mismo linkedTableId → no hay 422.
+        campos_pago["ALUMNO"] = [tutor_paga_id]
     if lead_id:
         campos_pago["LEAD FENIX"] = [lead_id]
     record = await _post(_PAGOS, campos_pago)

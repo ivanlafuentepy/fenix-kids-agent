@@ -571,6 +571,9 @@ async def _ejecutar_inscripcion(
         # tutor_id es una fila de ALUMNOS → va en PAGA (ALUMNOS). El link viejo
         # PAGA (→TUTORES FENIX) con este id tumbaba el POST entero (422).
         _campos_nino_eje["PAGA (ALUMNOS)"] = [tutor_id]
+        # ALUMNO apunta a la misma tabla, pero es el que alimenta la fórmula
+        # NOMBRE PAGO y los rollups CI / LOOKUP NOMBRE de la vista de PAGOS.
+        _campos_nino_eje["ALUMNO"] = [tutor_id]
 
     _metodo_pagos = {
         "SUSCRIPCION": "TRANSFER", "TRANSFER": "TRANSFER",

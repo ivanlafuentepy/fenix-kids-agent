@@ -175,6 +175,9 @@ async def _completar_pago_huerfano(telefono: str, nino_ids: list[str], tutor_id:
             # PAGA (→TUTORES) quedó legacy.
             if tutor_id and not pf.get("PAGA (ALUMNOS)"):
                 campos["PAGA (ALUMNOS)"] = [tutor_id]
+                # ALUMNO (mismo link a ALUMNOS) alimenta NOMBRE PAGO y los
+                # rollups CI / LOOKUP NOMBRE de la vista.
+                campos["ALUMNO"] = [tutor_id]
             await _patch(_PAGOS, p["id"], campos)
             logger.info(f"[RESERVA-FORM] PAGO huérfano {p['id']} linkeado a niños {nino_ids}")
 
