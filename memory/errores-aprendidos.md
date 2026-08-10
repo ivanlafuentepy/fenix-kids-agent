@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-08-10 — El deploy estaba OK y la web se veía vieja: el JS lo servía el cache
+
+**Qué falló:** se publicó la cuenta regresiva en `fenixkidsacademy-web` y Iván insistió tres
+veces en que **no veía los contadores**, mientras la verificación automatizada (Chromium sobre
+el dominio real) daba VERDE en las dos páginas.
+
+**Causa raíz:** el script se cargaba como `assets/campus.js` a secas. Cloudflare Pages sirve el
+**HTML** con `Cache-Control: max-age=0, must-revalidate` — o sea el HTML nuevo siempre llega —
+pero el **JS sin versión lo sirve el cache del navegador**. El visitante que ya había entrado
+antes seguía ejecutando el archivo viejo sobre el HTML nuevo.
+
+Lo peor no fue el bug sino **por qué no lo vi**: yo verificaba con un navegador recién lanzado,
+que nunca tuvo el archivo viejo. Un navegador limpio **no puede** detectar este problema →
+falso OK, tres veces seguidas, mientras el usuario miraba la web rota.
+
+**Cómo se resolvió:** `assets/campus.js?v=2` en `index.html` y `desafio.html` (commit
+`505649b`), con el comentario de subir el número cada vez que cambie el archivo.
+
+**Regla para la próxima:**
+- Todo asset propio (JS/CSS) de las webs estáticas va con `?v=N`, y **N sube en el mismo commit
+  que cambia el archivo**, en TODAS las páginas que lo cargan.
+- "Recargá con Ctrl+F5" **no es un arreglo** — los padres no lo van a hacer.
+- Si el usuario dice que ve algo viejo y mi verificación da verde, **la sospecha va sobre mi
+  método de verificación**, no sobre lo que ve el usuario: un navegador limpio y un navegador
+  con historial no son el mismo test.
+
+---
+
 ## 2026-08-10 — El agente "mudo" que no estaba mudo: `modo padre` muere en cada deploy
 
 **Qué falló:** Iván escribió al agente y no recibió nada. `/conversacion/595982790407` devolvía

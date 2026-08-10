@@ -743,3 +743,18 @@ manda un `wa.me` prellenado para contactar al padre de un clic. Primer test de `
 `modo padre` se pierde en cada deploy — eso último hizo ver al agente como muerto un rato.
 
 Detalle completo → `.claude/handoffs/handoff_20260810_0224.md`
+
+## 2026-08-10 (tarde) — El reloj del Desafío
+
+Sesión entera en el repo web (`fenixkidsacademy-web`, rama `master`); el agente no se tocó.
+La web ahora muestra en vivo cuánto falta para que cierre la reserva anticipada: el plazo
+escrito ("cierra el jueves a las 23:59") y abajo un reloj DÍAS·HORAS·MIN·SEG que corre al
+segundo, en el hero y en dos bandas por página. Todo desde `assets/campus.js`, sin fechas
+hardcodeadas. Commits `57b9dbe`, `bdf55b9`, `505649b`, `c2d3181`.
+
+El error del día: el deploy estaba bien y la web se veía vieja igual, porque el `<script src>`
+iba sin versión y el navegador servía el JS del cache — verificar con un navegador limpio daba
+un falso OK. Se arregló con `?v=2`. Iván pidió además que el botón vaya debajo del reloj y que
+la fecha del hero dejara de capitalizar el "y" y el "de".
+
+Detalle completo → `.claude/handoffs/handoff_20260810_1329.md`
