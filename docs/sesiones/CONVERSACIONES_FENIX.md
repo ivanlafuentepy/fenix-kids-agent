@@ -728,3 +728,18 @@ suite de tests se ponía roja después de las 23:00 por el modo noche.
 22 commits (16 en el agente + 6 en la web), todos deployados y verificados en producción.
 
 Detalle completo → `.claude/handoffs/handoff_20260810_0141.md`
+
+## 2026-08-10 (madrugada) — El primer contacto del Desafío
+
+Los 3 trabajos del plan `docs/PROXIMA-SESION-DESAFIO.md`, un push cada uno, los tres
+deployados SUCCESS: el que llega del botón "pagar con tarjeta" de la web recibe el link
+firmado en vez del saludo de venta (`4f36436`), el primer contacto pasó a contar el campus
+con la foto de La Casona y botones `Info y precios · Reservar lugar · Agendar llamada`
+(`2d314d3`), y "Info y precios" manda todo de una en mensajes separados (`055d99f`).
+
+"Agendar llamada" quedó sin preguntar la hora, por decisión de Iván: pide el nombre y le
+manda un `wa.me` prellenado para contactar al padre de un clic. Primer test de `lead_menu.py`
+(79 → 99). De paso aparecieron dos cosas viejas: los dos afiches son el mismo PNG, y
+`modo padre` se pierde en cada deploy — eso último hizo ver al agente como muerto un rato.
+
+Detalle completo → `.claude/handoffs/handoff_20260810_0224.md`

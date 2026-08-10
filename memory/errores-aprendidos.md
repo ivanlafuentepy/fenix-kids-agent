@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-08-10 — El agente "mudo" que no estaba mudo: `modo padre` muere en cada deploy
+
+**Qué falló:** Iván escribió al agente y no recibió nada. `/conversacion/595982790407` devolvía
+**0 mensajes** — ni siquiera el entrante, que se guarda antes de todo. Parecía el agente caído
+justo después de un push, o sea el peor escenario posible.
+
+**Causa raíz:** `_admin_modo_padre` es un **set en memoria del proceso** (`main.py:157`, se
+llena en `main.py:2357`). Los logs de Railway dieron la secuencia al segundo:
+
+```
+04:53:49  [WA] Modo padre          ← lo procesa el contenedor VIEJO
+04:53:50  Started server process   ← arranca el contenedor NUEVO (deploy)
+04:53:53  Application shutdown     ← muere el viejo, y con él el set
+04:53:55  [WA] Hola
+04:53:55  [ADMIN] Mensaje ignorado (modo secre)
+```
+
+El "Hola" lo atendió el proceso nuevo con el set vacío → cayó en `main.py:2781-2784`, que hace
+`return` silencioso: no responde, no guarda, no loguea error. Ya estaba anotado en
+`docs/estado/AUDITORIA-2026-07-12.md:144` junto con `_fotos_sesion`, `_asistencia_pendiente` e
+`_inscripcion_pendiente`.
+
+**Cómo se resolvió:** volviendo a mandar `modo padre` con el proceso ya estable. El fix de
+fondo (mover el estado a los flags de DB) quedó como pendiente #313.
+
+**Reglas para la próxima:**
+1. **El número de Iván en modo secre se ve idéntico a un agente muerto.** Ante "escribo y no
+   responde" desde 595982790407, buscar `[ADMIN] Mensaje ignorado` en los logs ANTES de
+   sospechar del último push.
+2. **Después de CUALQUIER deploy, mandar `modo padre` de nuevo** antes de probar como padre.
+3. `/conversacion` con 0 mensajes **no prueba** que el webhook no llegó: el modo secre corta
+   antes de guardar. Los logs de Railway son la única fuente.
+4. Estado en memoria del proceso = estado que Railway se lleva puesto sin avisar. Si algo tiene
+   que sobrevivir a un deploy, va a la DB.
+
+---
+
 ## 2026-08-10 — Un HTTP 200 que no probaba nada, y un cobro roto hace un mes
 
 **Qué falló (tres cosas del mismo día, todas de verificación):**
