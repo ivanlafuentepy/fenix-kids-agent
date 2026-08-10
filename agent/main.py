@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from agent.brain import generar_respuesta, extraer_datos_formulario, obtener_mensaje_error
+from agent.envio_seguro import enviar_al_padre, enviar_botones_al_padre
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     crear_recordatorio, obtener_recordatorios_pendientes,
@@ -3044,7 +3045,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 )
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            await enviar_al_padre(proveedor, telefono, respuesta)
             # Alerta al admin (WhatsApp + Telegram) — busca datos en Airtable
             await _alertar_pedido_llamada(telefono, historial_previo, texto)
             # Espejar en Telegram del lead (datos ya están en la alerta)
@@ -3959,12 +3960,12 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
             respuesta = f"Muchas gracias por tus datos! Reserva confirmada ✅{_nombre_part} {_verbo} su lugar{_fecha_part} 🌳\n\nLos esperamos 🔥"
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            await enviar_al_padre(proveedor, telefono, respuesta)
         elif _interceptado:
             # Respuesta interceptada por código — enviar texto + afiches
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            await enviar_al_padre(proveedor, telefono, respuesta)
             # Ejecutar acciones (enviar afiches)
             for _accion in _acciones_interceptadas:
                 if _accion == "afiche_hermanos":
@@ -3986,7 +3987,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
         else:
             await guardar_mensaje(telefono, "assistant", respuesta)
             await _delay_humano(respuesta)
-            await proveedor.enviar_mensaje(telefono, respuesta)
+            await enviar_al_padre(proveedor, telefono, respuesta)
 
         # ── Link de tarjeta junto a los datos bancarios ───────────────────
         # El prompt promete "transferencia o tarjeta (el sistema pasa alias y

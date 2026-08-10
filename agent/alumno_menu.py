@@ -19,6 +19,10 @@ from agent.telegram_bridge import obtener_o_crear_topic, enviar_a_topic
 
 logger = logging.getLogger("agentkit")
 
+# Envío con reintento + fallback a texto plano: si el interactivo no sale, el
+# padre igual recibe las opciones (antes se perdía el primer mensaje del lead).
+from agent.envio_seguro import enviar_al_padre, enviar_botones_al_padre
+
 
 # ── Botones del menú de inscriptos ───────────────────────────────────────────
 _BOTONES_ALUMNO = [
@@ -73,14 +77,14 @@ async def _enviar_saludo_y_botones(
     nombre = _primer_nombre(tutores)
     saludo = f"Hola {nombre}! 🌟 Soy Aurora, tu asistente de Fenix Kids." if nombre \
         else "Hola! 🌟 Soy Aurora, tu asistente de Fenix Kids."
-    await proveedor.enviar_botones(telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO)
+    await enviar_botones_al_padre(proveedor, telefono, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO)
     await guardar_mensaje(telefono, "assistant", saludo)
     await _espejar_telegram(telefono, f"{saludo}\n[botones: Contenido / Hablar con Aurora]", topic_id, tg_group)
 
 
 async def _enviar_botones(telefono: str, proveedor, texto: str, botones: list[dict], topic_id: int | None, tg_group: int):
     """Muestra los botones indicados con un texto arriba."""
-    await proveedor.enviar_botones(telefono, texto, botones)
+    await enviar_botones_al_padre(proveedor, telefono, texto, botones)
     _labels = " / ".join(b["title"].split(" ", 1)[-1] for b in botones)
     await _espejar_telegram(telefono, f"{texto}\n[botones: {_labels}]", topic_id, tg_group)
 
@@ -114,7 +118,7 @@ async def _handle_contenido(
             partes.append(f"{icono} {red}: {perfil}".strip())
 
     msg = "\n".join(partes)
-    await proveedor.enviar_mensaje(telefono, msg)
+    await enviar_al_padre(proveedor, telefono, msg)
     await guardar_mensaje(telefono, "assistant", msg)
     await _espejar_telegram(telefono, msg, topic_id, tg_group)
     # Tras el contenido, ofrecer hablar con Aurora (sin repetir Contenido).
@@ -154,7 +158,7 @@ async def procesar_menu_inscripto(
         if opcion == "aurora":
             # Deja al inscripto escribir; el siguiente mensaje va a Aurora conversacional.
             msg = "¡Dale! Contame, ¿en qué te puedo ayudar? 😊"
-            await proveedor.enviar_mensaje(telefono, msg)
+            await enviar_al_padre(proveedor, telefono, msg)
             await guardar_mensaje(telefono, "assistant", msg)
             await _espejar_telegram(telefono, msg, topic_id, tg_group)
             return "[hablar aurora]"

@@ -26,6 +26,10 @@ from agent.afiches import _AFICHE_PATH, _AFICHE_HORARIOS_PATH
 
 logger = logging.getLogger("agentkit")
 
+# Envío con reintento + fallback a texto plano: si el interactivo no sale, el
+# padre igual recibe las opciones (antes se perdía el primer mensaje del lead).
+from agent.envio_seguro import enviar_al_padre, enviar_botones_al_padre
+
 
 # ── Contenido del menú ───────────────────────────────────────────────────────
 
@@ -162,7 +166,7 @@ async def _enviar_y_registrar(
     telefono: str, texto: str, proveedor, topic_id: int | None, tg_group: int
 ):
     """Envía un texto por WhatsApp, lo guarda como mensaje del agente y lo espeja."""
-    await proveedor.enviar_mensaje(telefono, texto)
+    await enviar_al_padre(proveedor, telefono, texto)
     await guardar_mensaje(telefono, "assistant", texto)
     await _espejar_telegram(telefono, texto, topic_id, tg_group)
 
@@ -185,7 +189,7 @@ async def _enviar_contenido_con_botones(
     """Envía un texto informativo + botones (por defecto los post-info) en un solo mensaje."""
     _botones = botones if botones is not None else _BOTONES_POST_INFO
     body = f"{contenido}\n\n{_TEXTO_POST_INFO}"
-    await proveedor.enviar_botones(telefono, body, _botones)
+    await enviar_botones_al_padre(proveedor, telefono, body, _botones)
     await guardar_mensaje(telefono, "assistant", contenido)
     _labels = " / ".join(b["title"].split(" ", 1)[-1] for b in _botones)
     await _espejar_telegram(
@@ -197,7 +201,7 @@ async def _enviar_saludo_y_botones(
     telefono: str, proveedor, topic_id: int | None, tg_group: int
 ):
     """Primer contacto: saludo cortado de Aurora + botones del menú principal."""
-    await proveedor.enviar_botones(telefono, f"{SALUDO_AURORA}\n\n{_TEXTO_BOTONES}", _BOTONES_MENU_PRINCIPAL)
+    await enviar_botones_al_padre(proveedor, telefono, f"{SALUDO_AURORA}\n\n{_TEXTO_BOTONES}", _BOTONES_MENU_PRINCIPAL)
     await guardar_mensaje(telefono, "assistant", SALUDO_AURORA)
     await _espejar_telegram(telefono, f"{SALUDO_AURORA}\n[botones: Info / Agendar / Hablar]", topic_id, tg_group)
 
@@ -215,7 +219,7 @@ async def _enviar_recordatorio_botones(
     telefono: str, proveedor, topic_id: int | None, tg_group: int
 ):
     """El lead escribió texto libre: se le insiste con los botones del menú principal."""
-    await proveedor.enviar_botones(telefono, _TEXTO_RECORDATORIO, _BOTONES_MENU_PRINCIPAL)
+    await enviar_botones_al_padre(proveedor, telefono, _TEXTO_RECORDATORIO, _BOTONES_MENU_PRINCIPAL)
     await guardar_mensaje(telefono, "assistant", "[recordatorio: tocá una opción]")
     await _espejar_telegram(telefono, "[recordatorio: botones del menú]", topic_id, tg_group)
 
