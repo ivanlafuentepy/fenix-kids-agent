@@ -1,0 +1,13 @@
+# Cloudflare Pages — headers por ruta (direct upload lo respeta igual que git)
+# Motivo (11/07): por defecto Pages sirve TODO con "Cache-Control: max-age=0,
+# must-revalidate". En la TV del tótem eso hace que el navegador RE-PIDA el video
+# (fenix_saludo.mp4) a la red en cada reproducción/reload → tarda, bufferea y se
+# corta al segundo. Los assets (video/imágenes/audio) tienen nombre estable, así
+# que se cachean fuerte: la TV los baja UNA vez y los reproduce del cache.
+#
+# OJO: si reemplazás un asset con el MISMO nombre, la TV puede seguir viendo el
+# viejo hasta 30 días → hacé cache purge en Cloudflare o renombralo (ej _v2).
+# El HTML NO se cachea acá a propósito: el auto-reload kiosk necesita verlo fresco.
+
+/assets/*
+  Cache-Control: public, max-age=2592000

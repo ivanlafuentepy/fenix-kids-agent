@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Defensa de La Casona — Mundo Fénix</title>
+<!--
+  defensa.html — Prototipo D0.5 del videojuego "Defensa de La Casona" (SPEC-DEFENSA-CASONA.md)
+  Vista AÉREA sobre el mapa ilustrado real de La Casona (assets/mapa_casona.jpg).
+  Tu Guardián camina por La Casona (joystick táctil / WASD), la cámara lo sigue.
+  Los avatars invasores entran por las DOS entradas reales:
+    🛣️ el portón de LA CALLE (arriba) y ⚓ el muelle del RÍO (abajo)
+  y marchan hacia La Casona (el Banco de Brasas). Jefe: Pigrus (oleada 5).
+  Beto (labrador negro real) sale a morder invasores. Barricadas construibles
+  en cada entrada. TODO local: plata DEMO — el juego GASTA plata, nunca la emite.
+-->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b1020; font-family:system-ui,-apple-system,'Segoe UI',sans-serif; }
+  canvas { display:block; width:100vw; height:100vh; touch-action:none; }
+
+  /* HUD superior */
+  #hud { position:fixed; top:0; left:0; right:0; display:flex; gap:10px; align-items:center;
+         padding:6px 12px; color:#fff; font-weight:700; font-size:15px; z-index:5;
+         background:linear-gradient(#0b1020ee,#0b102000); pointer-events:none;
+         padding-top:calc(6px + env(safe-area-inset-top)); }
+  #hud span { text-shadow:0 1px 3px #000; white-space:nowrap; }
+  #hud .sep { flex:1; }
+  #btn-sonido { pointer-events:auto; background:none; border:none; font-size:18px; cursor:pointer; }
+
+  /* Pantallas superpuestas */
+  .pantalla { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column;
+              align-items:center; justify-content:center; gap:12px; text-align:center;
+              background:#0b1020f2; color:#fff; padding:16px; overflow-y:auto; }
+  .oculta { display:none; }
+  h1 { font-size:clamp(24px,5.5vw,42px); color:#ffb703;
+       text-shadow:0 0 24px #ff6d00aa; letter-spacing:1px; }
+  .sub { color:#cbd5e1; font-size:clamp(13px,2.8vw,17px); max-width:540px; line-height:1.45; }
+  .boton { background:linear-gradient(#ffb703,#fb8500); color:#1a1a1a; border:none;
+           border-radius:14px; padding:13px 32px; font-size:19px; font-weight:900;
+           cursor:pointer; box-shadow:0 4px 0 #b45309; letter-spacing:.5px; }
+  .boton:active { transform:translateY(3px); box-shadow:0 1px 0 #b45309; }
+  .boton.sec { background:#1e293b; color:#e2e8f0; box-shadow:0 4px 0 #0f172a; font-size:15px; padding:10px 18px; }
+
+  /* Selector de Guardián */
+  #grilla-guardianes { display:grid; grid-template-columns:repeat(5,60px); gap:9px; }
+  #grilla-guardianes img { width:60px; height:60px; object-fit:contain; border-radius:12px;
+      background:#1e293b; border:3px solid transparent; cursor:pointer; }
+  #grilla-guardianes img.elegido { border-color:#ffb703; box-shadow:0 0 14px #ffb703aa; }
+
+  /* Tienda entre oleadas */
+  .item-tienda { display:flex; align-items:center; gap:10px; background:#16213a;
+      border-radius:13px; padding:8px 14px; width:min(420px,94vw); text-align:left; }
+  .item-tienda .info { flex:1; }
+  .item-tienda .nombre { font-weight:800; font-size:15px; }
+  .item-tienda .det { font-size:12px; color:#94a3b8; }
+  #msg-tienda { color:#fca5a5; font-size:14px; min-height:18px; font-weight:600; }
+
+  /* Aviso de orientación */
+  #girar { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+           flex-direction:column; gap:10px; background:#0b1020f8; color:#fff; font-size:20px; text-align:center; }
+  @media (orientation:portrait) { #girar { display:flex; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <span id="hud-vidas"></span>
+  <span id="hud-casona"></span>
+  <span class="sep"></span>
+  <span id="hud-oleada"></span>
+  <span id="hud-puntos"></span>
+  <span id="hud-plata"></span>
+  <button id="btn-sonido" title="sonido">🔊</button>
+</div>
+
+<!-- INICIO -->
+<div id="p-inicio" class="pantalla">
+  <h1>🏰 DEFENSA DE LA CASONA</h1>
+  <p class="sub">Los avatars invasores vienen a robar el Banco de Brasas por las dos entradas reales:<br>
+     🛣️ el <b>portón de la calle</b> y ⚓ el <b>muelle del río</b>.<br>
+     Recorré La Casona, frenalos y defendé tu banco. 🐕 Beto te ayuda.</p>
+  <div id="grilla-guardianes"></div>
+  <button id="btn-jugar" class="boton">¡A DEFENDER!</button>
+  <p class="sub" style="font-size:12px">Joystick: apoyá el dedo y arrastrá. Tu Guardián dispara solo al enemigo más cercano.<br>
+     Prototipo D0.5 · plata DEMO (la de verdad se gana entrenando 💪)</p>
+</div>
+
+<!-- TIENDA entre oleadas -->
+<div id="p-tienda" class="pantalla oculta">
+  <h1 style="font-size:24px">🛡️ ¡Oleada superada!</h1>
+  <p class="sub">Prepará La Casona. Saldo: <b id="tienda-plata"></b> 🥈 <i>(demo)</i></p>
+  <div class="item-tienda"><div style="font-size:26px">❤️</div>
+    <div class="info"><div class="nombre">Vida extra</div><div class="det">Un golpe más para tu Guardián (máx 5)</div></div>
+    <button class="boton sec" data-item="vida">50 🥈</button></div>
+  <div class="item-tienda"><div style="font-size:26px">🔫</div>
+    <div class="info"><div class="nombre">Mejorar arma</div><div class="det" id="det-arma"></div></div>
+    <button class="boton sec" data-item="arma">100 🥈</button></div>
+  <div class="item-tienda"><div style="font-size:26px">🚧</div>
+    <div class="info"><div class="nombre">Barricada en el portón</div><div class="det">Frena a los que vienen por la calle (80 de vida)</div></div>
+    <button class="boton sec" data-item="barricada_calle">150 🥈</button></div>
+  <div class="item-tienda"><div style="font-size:26px">🪵</div>
+    <div class="info"><div class="nombre">Empalizada en el muelle</div><div class="det">Frena a los que vienen por el río (80 de vida)</div></div>
+    <button class="boton sec" data-item="barricada_rio">150 🥈</button></div>
+  <div class="item-tienda"><div style="font-size:26px">🏠</div>
+    <div class="info"><div class="nombre">Reparar La Casona</div><div class="det">+25 de vida (máx 100)</div></div>
+    <button class="boton sec" data-item="reparar">80 🥈</button></div>
+  <p id="msg-tienda"></p>
+  <button id="btn-oleada" class="boton"></button>
+</div>
+
+<!-- FIN -->
+<div id="p-fin" class="pantalla oculta">
+  <h1 id="fin-titulo"></h1>
+  <p class="sub" id="fin-texto"></p>
+  <p class="sub" style="font-size:24px">🏆 <b id="fin-puntos"></b> puntos</p>
+  <p class="sub" id="fin-record" style="color:#ffb703"></p>
+  <button id="btn-reint" class="boton"></button>
+  <button id="btn-menu" class="boton sec">Volver al inicio</button>
+</div>
+
+<div id="girar">🔄<br>Girá el teléfono<br><span style="font-size:14px;color:#94a3b8">La Casona se defiende en horizontal</span></div>
+
+<script>
+'use strict';
+// ============================================================
+// DEFENSA DE LA CASONA — prototipo D0.5 (vista aérea sobre el mapa real)
+// ============================================================
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function redimensionar() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', redimensionar);
+redimensionar();
+
+// ---------- El mundo = el mapa ilustrado de La Casona ----------
+const MUNDO_W = 1672, MUNDO_H = 941;                 // px del mapa_casona.jpg
+const mapa = new Image();
+mapa.src = 'assets/mapa_casona.jpg';
+
+// Puntos reales del mapa (coordenadas en px del mundo)
+const PORTON  = { x: 836, y: 110 };                  // 🛣️ portón de la calle (arriba, centro)
+const MUELLE  = { x: 869, y: 800 };                  // ⚓ muelle del río (abajo, centro)
+const CASONA  = { x: 869, y: 330 };                  // 🏠 La Casona / Banco de Brasas
+const CASA_BETO = { x: 760, y: 430 };                // donde duerme Beto (al lado de la pileta)
+
+// ---------- Constantes de juego ----------
+const GUARDIANES = ['apolo','aura','drakon','flash','furia','maikol','mamba','nina','shakira','sophie'];
+const RUTA_SPRITES = 'assets/guardianes/optim/';
+const COLORES_ENEMIGO = { caminante:'#dc2626', rapido:'#f97316', tirador:'#7c3aed' };
+const PLATA_INICIAL = 500;                           // demo — en D2 viene del ledger real
+const OLEADA_JEFE = 5;                               // Pigrus cada 5 oleadas
+const RANGO_DISPARO = 330;                           // auto-apuntado del héroe
+const ZOOM = 1.75;                                   // cuánto se acerca la cámara
+
+// ---------- Estado global ----------
+let estado = 'inicio';                               // inicio | jugando | tienda | fin
+let spriteElegido = GUARDIANES[5];
+let heroe, balas, balasEnemigas, enemigos, particulas, textos, beto, jefe;
+let oleada, puntos, plata, casonaHP, barricadas, colaSpawns, tSpawn, tBeto, jefeVencidoAlgunaVez;
+let sonidoOn = true;
+let record = Number(localStorage.getItem('defensa_record') || 0);
+
+// ---------- Sprites de guardianes + tinte para invasores ----------
+const imgs = {};
+for (const n of GUARDIANES) { const im = new Image(); im.src = RUTA_SPRITES + n + '.webp'; imgs[n] = im; }
+const cacheTinte = {};
+function spriteTintado(nombre, color) {
+  const clave = nombre + '|' + color;
+  if (cacheTinte[clave]) return cacheTinte[clave];
+  const im = imgs[nombre];
+  if (!im || !im.complete || !im.naturalWidth) return null;
+  const oc = document.createElement('canvas');
+  oc.width = 96; oc.height = 96;
+  const o = oc.getContext('2d');
+  o.drawImage(im, 0, 0, 96, 96);
+  o.globalCompositeOperation = 'source-atop';
+  o.fillStyle = color; o.globalAlpha = 0.62;
+  o.fillRect(0, 0, 96, 96);
+  cacheTinte[clave] = oc;
+  return oc;
+}
+
+// ---------- Sonido (WebAudio mínimo) ----------
+let audioCtx = null;
+function beep(frec, dur, tipo, vol) {
+  if (!sonidoOn) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = tipo || 'square'; o.frequency.value = frec;
+    g.gain.setValueAtTime(vol || 0.04, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) { /* sin audio no pasa nada */ }
+}
+const sfx = {
+  disparo:  () => beep(880, 0.05, 'square', 0.018),
+  impacto:  () => beep(220, 0.08, 'sawtooth', 0.04),
+  explota:  () => beep(110, 0.25, 'sawtooth', 0.06),
+  ladrido:  () => { beep(400, 0.08, 'square', 0.08); setTimeout(() => beep(340, 0.1, 'square', 0.08), 110); },
+  golpe:    () => beep(80, 0.2, 'sine', 0.09),
+  compra:   () => beep(1200, 0.12, 'sine', 0.06),
+  herido:   () => beep(160, 0.3, 'sawtooth', 0.07),
+};
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// ============================================================
+// ENTIDADES
+// ============================================================
+function nuevoHeroe() {
+  return { x: CASONA.x, y: CASONA.y + 130, tam: 58, vel: 230,
+           vidas: 3, arma: 1, tDisparo: 0, invuln: 0, mirando: 1 };
+}
+
+function nuevoEnemigo(tipo, nivel, entrada) {
+  const escala = 1 + Math.max(0, nivel - 1) * 0.12;
+  const origen = entrada === 'rio' ? MUELLE : PORTON;
+  const base = {
+    caminante: { tam: 52, hp: 20, vel: 55,  puntos: 15 },
+    rapido:    { tam: 42, hp: 10, vel: 120, puntos: 10 },
+    tirador:   { tam: 52, hp: 20, vel: 50,  puntos: 20 },
+  }[tipo];
+  return { tipo, entrada, sprite: GUARDIANES[(Math.random() * GUARDIANES.length) | 0],
+           x: origen.x + (Math.random() - 0.5) * 130, y: origen.y + (Math.random() - 0.5) * 50,
+           tam: base.tam, hp: base.hp * escala, hpMax: base.hp * escala,
+           vel: base.vel * (1 + (nivel - 1) * 0.05), puntos: base.puntos,
+           tAtaque: 0, tTiro: 1.5 + Math.random() * 1.5 };
+}
+
+function nuevoPigrus(nivel) {
+  const hp = 400 * (1 + (nivel / OLEADA_JEFE - 1) * 0.5);
+  return { tipo: 'pigrus', entrada: 'calle', x: PORTON.x, y: PORTON.y - 40, tam: 150,
+           hp, hpMax: hp, vel: 26, puntos: 500, tAtaque: 0 };
+}
+
+// ============================================================
+// OLEADAS — entran por las dos entradas reales
+// ============================================================
+function armarOleada(n) {
+  colaSpawns = [];
+  const cant = 4 + n * 2;
+  for (let i = 0; i < cant; i++) {
+    const r = Math.random();
+    let tipo = 'caminante';
+    if (n >= 2 && r < 0.3) tipo = 'rapido';
+    else if (n >= 3 && r < 0.55) tipo = 'tirador';
+    // oleada 1 solo por la calle; después alternan calle y río
+    const entrada = n === 1 ? 'calle' : (Math.random() < 0.5 ? 'calle' : 'rio');
+    colaSpawns.push({ tipo, entrada });
+  }
+  jefe = null;
+  if (n % OLEADA_JEFE === 0) jefe = 'pendiente';
+  tSpawn = 1.2;
+  aviso(n % OLEADA_JEFE === 0 ? '🐉 ¡PIGRUS LLEGÓ AL PORTÓN!'
+        : n === 1 ? `Oleada 1 — ¡vienen por el portón de la calle!`
+        : `Oleada ${n} — ¡calle y río a la vez!`,
+        n % OLEADA_JEFE === 0 ? '#f87171' : '#ffb703');
+}
+
+// ============================================================
+// EFECTOS
+// ============================================================
+function explosion(x, y, color, cant) {
+  for (let i = 0; i < (cant || 12); i++) {
+    const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 180;
+    particulas.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vida: 0.5 + Math.random() * 0.3, color });
+  }
+}
+function textoFlotante(x, y, txt, color, tam) {
+  textos.push({ x, y, txt, color: color || '#fff', vida: 1, tam: tam || 20 });
+}
+let avisoActual = null;
+function aviso(txt, color) { avisoActual = { txt, color: color || '#ffb703', vida: 2.8 }; }
+
+// ============================================================
+// PARTIDA
+// ============================================================
+function nuevaPartida() {
+  heroe = nuevoHeroe();
+  balas = []; balasEnemigas = []; enemigos = []; particulas = []; textos = [];
+  beto = null; jefe = null;
+  barricadas = { calle: 0, rio: 0 };                 // HP de cada barricada (0 = no hay)
+  oleada = 1; puntos = 0; plata = PLATA_INICIAL; casonaHP = 100;
+  tBeto = 25; jefeVencidoAlgunaVez = false;
+  armarOleada(1);
+  estado = 'jugando';
+  mostrarPantalla(null);
+  refrescarHUD();
+}
+
+function finPartida(motivo) {
+  estado = 'fin';
+  const esVictoria = motivo === 'victoria';
+  const nuevoRecord = puntos > record;
+  if (nuevoRecord) { record = puntos; localStorage.setItem('defensa_record', String(record)); }
+  document.getElementById('fin-titulo').textContent =
+    esVictoria ? '🏆 ¡LA CASONA ESTÁ A SALVO!' :
+    motivo === 'casona' ? '💥 ¡SAQUEARON EL BANCO DE BRASAS!' : '😵 Tu Guardián cayó';
+  document.getElementById('fin-texto').innerHTML =
+    esVictoria ? '¡Venciste a <b>Pigrus</b>, el dragón de la Pereza!<br>Pero sus hermanos Timor, Khaos y Dubius siguen ahí afuera…' :
+    'Los invasores fueron demasiados esta vez.<br>¡Entrená más fuerte y volvé a defenderla!';
+  document.getElementById('fin-puntos').textContent = puntos;
+  document.getElementById('fin-record').textContent =
+    nuevoRecord ? '⭐ ¡NUEVO RÉCORD!' : `Tu récord: ${record}`;
+  document.getElementById('btn-reint').textContent = esVictoria ? '¡Seguir defendiendo!' : 'Reintentar';
+  document.getElementById('btn-reint').dataset.modo = esVictoria ? 'continuar' : 'nueva';
+  mostrarPantalla('p-fin');
+}
+
+// ============================================================
+// ACTUALIZACIÓN
+// ============================================================
+function actualizar(dt) {
+  // --- héroe: joystick / teclado ---
+  let mx = 0, my = 0;
+  if (joy.activo) { mx = joy.dx; my = joy.dy; }
+  if (teclas.ArrowUp || teclas.w) my -= 1;
+  if (teclas.ArrowDown || teclas.s) my += 1;
+  if (teclas.ArrowLeft || teclas.a) mx -= 1;
+  if (teclas.ArrowRight || teclas.d) mx += 1;
+  const m = Math.hypot(mx, my);
+  if (m > 0.15) {
+    heroe.x += mx / m * heroe.vel * dt * Math.min(1, m);
+    heroe.y += my / m * heroe.vel * dt * Math.min(1, m);
+    if (Math.abs(mx) > 0.2) heroe.mirando = mx > 0 ? 1 : -1;
+  }
+  heroe.x = Math.max(30, Math.min(MUNDO_W - 30, heroe.x));
+  heroe.y = Math.max(30, Math.min(MUNDO_H - 30, heroe.y));
+  if (heroe.invuln > 0) heroe.invuln -= dt;
+
+  // --- disparo automático al enemigo más cercano ---
+  heroe.tDisparo -= dt;
+  if (heroe.tDisparo <= 0) {
+    let cerca = null, dMin = RANGO_DISPARO;
+    for (const e of enemigos) { const d = dist(e, heroe); if (d < dMin) { dMin = d; cerca = e; } }
+    if (cerca) {
+      const cadencia = heroe.arma >= 2 ? 0.22 : 0.32;
+      heroe.tDisparo = cadencia;
+      const a = Math.atan2(cerca.y - heroe.y, cerca.x - heroe.x);
+      const nb = heroe.arma >= 4 ? 3 : (heroe.arma >= 3 ? 2 : 1);
+      for (let i = 0; i < nb; i++) {
+        const desvio = nb === 1 ? 0 : (i - (nb - 1) / 2) * 0.14;
+        balas.push({ x: heroe.x, y: heroe.y, vx: Math.cos(a + desvio) * 560, vy: Math.sin(a + desvio) * 560, dmg: 10, vida: 0.8 });
+      }
+      heroe.mirando = Math.cos(a) >= 0 ? 1 : -1;
+      sfx.disparo();
+    }
+  }
+
+  // --- spawns ---
+  tSpawn -= dt;
+  if (tSpawn <= 0 && colaSpawns.length) {
+    const s = colaSpawns.shift();
+    enemigos.push(nuevoEnemigo(s.tipo, oleada, s.entrada));
+    tSpawn = Math.max(0.35, 1.4 - oleada * 0.08);
+  }
+  if (jefe === 'pendiente' && colaSpawns.length <= 2) {
+    jefe = nuevoPigrus(oleada); enemigos.push(jefe);
+    sfx.explota();
+  }
+
+  // --- Beto al rescate ---
+  tBeto -= dt;
+  if (tBeto <= 0 && !beto && enemigos.length >= 3) {
+    beto = { x: CASA_BETO.x, y: CASA_BETO.y, vel: 300, objetivo: null, tVida: 8 };
+    tBeto = 35;
+    aviso('🐕 ¡BETO AL RESCATE!', '#4ade80');
+    sfx.ladrido();
+  }
+  if (beto) {
+    beto.tVida -= dt;
+    // persigue al enemigo más cercano a él
+    if (!beto.objetivo || beto.objetivo.hp <= 0) {
+      beto.objetivo = null; let dMin = 1e9;
+      for (const e of enemigos) { if (e.tipo === 'pigrus') continue; const d = dist(e, beto); if (d < dMin) { dMin = d; beto.objetivo = e; } }
+    }
+    if (beto.objetivo) {
+      const o = beto.objetivo, d = dist(o, beto);
+      if (d > 4) { beto.x += (o.x - beto.x) / d * beto.vel * dt; beto.y += (o.y - beto.y) / d * beto.vel * dt; }
+      if (d < 40) { o.hp = 0; textoFlotante(o.x, o.y, '¡GUAU! 🦷', '#4ade80'); sfx.ladrido(); }
+    }
+    if (beto.tVida <= 0 || (!beto.objetivo && enemigos.length === 0)) beto = null;   // vuelve a dormir
+  }
+
+  // --- balas del héroe ---
+  for (const b of balas) { b.x += b.vx * dt; b.y += b.vy * dt; b.vida -= dt; }
+  balas = balas.filter(b => b.vida > 0);
+
+  // --- enemigos: barricada de su entrada → después La Casona ---
+  for (const e of enemigos) {
+    const barr = barricadas[e.entrada] > 0;
+    const objetivo = barr ? (e.entrada === 'rio' ? { x: MUELLE.x, y: MUELLE.y - 90 } : { x: PORTON.x, y: PORTON.y + 90 })
+                          : CASONA;
+    const d = dist(objetivo, e);
+    const alcance = e.tipo === 'pigrus' ? 100 : 46;
+    if (d > alcance) {
+      e.x += (objetivo.x - e.x) / d * e.vel * dt;
+      e.y += (objetivo.y - e.y) / d * e.vel * dt;
+    } else {
+      // atacar barricada o La Casona
+      e.tAtaque -= dt;
+      if (e.tAtaque <= 0) {
+        e.tAtaque = e.tipo === 'pigrus' ? 1.1 : 1.0;
+        const golpe = e.tipo === 'pigrus' ? 8 : 2;
+        if (barr) {
+          barricadas[e.entrada] -= golpe * 2;          // las barricadas aguantan menos
+          explosion(objetivo.x, objetivo.y, '#a16207', 6);
+          if (barricadas[e.entrada] <= 0) { barricadas[e.entrada] = 0; aviso(e.entrada === 'rio' ? '🪵 ¡Cayó la empalizada del muelle!' : '🚧 ¡Cayó la barricada del portón!', '#f87171'); }
+        } else {
+          casonaHP -= golpe;
+          explosion(CASONA.x, CASONA.y + 40, '#fbbf24', 6);
+          sfx.golpe();
+          if (casonaHP <= 0) { casonaHP = 0; refrescarHUD(); finPartida('casona'); return; }
+        }
+      }
+    }
+    // tiradores disparan al héroe si lo tienen cerca
+    if (e.tipo === 'tirador' && dist(e, heroe) < 320) {
+      e.tTiro -= dt;
+      if (e.tTiro <= 0) {
+        e.tTiro = 2.2 + Math.random();
+        const a = Math.atan2(heroe.y - e.y, heroe.x - e.x);
+        balasEnemigas.push({ x: e.x, y: e.y, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, vida: 2 });
+      }
+    }
+    // choque con el héroe
+    if (heroe.invuln <= 0 && dist(e, heroe) < (e.tam + heroe.tam) / 2 - 8) {
+      lastimarHeroe();
+      if (estado !== 'jugando') return;
+    }
+  }
+
+  // --- balas enemigas ---
+  for (const b of balasEnemigas) { b.x += b.vx * dt; b.y += b.vy * dt; b.vida -= dt; }
+  balasEnemigas = balasEnemigas.filter(b => b.vida > 0);
+  if (heroe.invuln <= 0) {
+    for (const b of balasEnemigas) {
+      if (Math.hypot(b.x - heroe.x, b.y - heroe.y) < heroe.tam / 2 - 2) {
+        b.vida = 0; lastimarHeroe();
+        if (estado !== 'jugando') return;
+        break;
+      }
+    }
+  }
+
+  // --- colisiones bala → enemigo ---
+  for (const b of balas) {
+    for (const e of enemigos) {
+      if (e.hp > 0 && Math.abs(b.x - e.x) < e.tam / 2 && Math.abs(b.y - e.y) < e.tam / 2) {
+        e.hp -= b.dmg; b.vida = 0;
+        sfx.impacto();
+        if (e.hp <= 0) {
+          puntos += e.puntos;
+          explosion(e.x, e.y, COLORES_ENEMIGO[e.tipo] || '#f87171', e.tipo === 'pigrus' ? 40 : 14);
+          textoFlotante(e.x, e.y, '+' + e.puntos, '#ffb703');
+          sfx.explota();
+          if (e.tipo === 'pigrus') { jefe = 'vencido'; aviso('🐉💀 ¡PIGRUS VENCIDO!', '#4ade80'); }
+        }
+        break;
+      }
+    }
+  }
+  enemigos = enemigos.filter(e => e.hp > 0);
+
+  // --- efectos ---
+  for (const p of particulas) { p.x += p.vx * dt; p.y += p.vy * dt; p.vida -= dt; }
+  particulas = particulas.filter(p => p.vida > 0);
+  for (const t of textos) { t.y -= 40 * dt; t.vida -= dt; }
+  textos = textos.filter(t => t.vida > 0);
+  if (avisoActual) { avisoActual.vida -= dt; if (avisoActual.vida <= 0) avisoActual = null; }
+
+  // --- ¿oleada superada? ---
+  if (!colaSpawns.length && !enemigos.length && jefe !== 'pendiente') {
+    if (jefe === 'vencido' && !jefeVencidoAlgunaVez) {
+      jefeVencidoAlgunaVez = true;
+      finPartida('victoria');
+    } else {
+      abrirTienda();
+    }
+    return;
+  }
+  refrescarHUD();
+}
+
+function lastimarHeroe() {
+  heroe.vidas--; heroe.invuln = 1.6;
+  explosion(heroe.x, heroe.y, '#60a5fa', 16);
+  sfx.herido();
+  refrescarHUD();
+  if (heroe.vidas <= 0) finPartida('vidas');
+}
+
+// ============================================================
+// CÁMARA + DIBUJO
+// ============================================================
+function camara() {
+  const esc = Math.max(W / MUNDO_W, H / MUNDO_H) * ZOOM;
+  const vw = W / esc, vh = H / esc;
+  const cx = Math.max(0, Math.min(MUNDO_W - vw, heroe.x - vw / 2));
+  const cy = Math.max(0, Math.min(MUNDO_H - vh, heroe.y - vh / 2));
+  return { esc, cx, cy, vw, vh };
+}
+
+function dibujar() {
+  const cam = heroe ? camara() : { esc: Math.max(W / MUNDO_W, H / MUNDO_H), cx: 0, cy: 0 };
+  ctx.fillStyle = '#0b1020'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.scale(cam.esc, cam.esc);
+  ctx.translate(-cam.cx, -cam.cy);
+
+  // el mundo: el mapa real de La Casona
+  if (mapa.complete && mapa.naturalWidth) ctx.drawImage(mapa, 0, 0);
+  else { ctx.fillStyle = '#14331f'; ctx.fillRect(0, 0, MUNDO_W, MUNDO_H); }
+
+  // marcadores de las entradas
+  ctx.textAlign = 'center';
+  ctx.font = '700 15px system-ui';
+  ctx.fillStyle = '#ffffffcc';
+  ctx.fillText('🛣️ LA CALLE', PORTON.x, PORTON.y - 46);
+  ctx.fillText('⚓ EL RÍO', MUELLE.x, MUELLE.y + 52);
+
+  // barricadas construidas
+  if (barricadas && barricadas.calle > 0) dibujarBarricada(PORTON.x, PORTON.y + 90, barricadas.calle, '🚧');
+  if (barricadas && barricadas.rio > 0) dibujarBarricada(MUELLE.x, MUELLE.y - 90, barricadas.rio, '🪵');
+
+  // vida de La Casona (barra sobre la casa)
+  if (casonaHP !== undefined) {
+    ctx.fillStyle = '#000000aa'; ctx.fillRect(CASONA.x - 70, CASONA.y - 95, 140, 13);
+    ctx.fillStyle = casonaHP > 50 ? '#4ade80' : casonaHP > 25 ? '#facc15' : '#f87171';
+    ctx.fillRect(CASONA.x - 68, CASONA.y - 93, 136 * (casonaHP / 100), 9);
+    ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui';
+    ctx.fillText('🏦 BANCO DE BRASAS', CASONA.x, CASONA.y - 102);
+  }
+
+  // balas
+  ctx.fillStyle = '#fde047';
+  for (const b of balas) { ctx.beginPath(); ctx.arc(b.x, b.y, 4.5, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#f87171';
+  for (const b of balasEnemigas) { ctx.beginPath(); ctx.arc(b.x, b.y, 5.5, 0, 7); ctx.fill(); }
+
+  // enemigos
+  for (const e of enemigos || []) {
+    if (e.tipo === 'pigrus') {
+      ctx.save();
+      ctx.font = e.tam + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🐉', e.x, e.y);
+      ctx.fillStyle = '#000000aa'; ctx.fillRect(e.x - 80, e.y - e.tam / 2 - 26, 160, 14);
+      ctx.fillStyle = '#4ade80'; ctx.fillRect(e.x - 78, e.y - e.tam / 2 - 24, 156 * (e.hp / e.hpMax), 10);
+      ctx.fillStyle = '#fff'; ctx.font = '700 14px system-ui'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('PIGRUS — dragón de la Pereza', e.x, e.y - e.tam / 2 - 34);
+      ctx.restore();
+      continue;
+    }
+    const sp = spriteTintado(e.sprite, COLORES_ENEMIGO[e.tipo]);
+    const haciaIzq = heroe && e.x > heroe.x;
+    if (sp) {
+      ctx.save(); ctx.translate(e.x, e.y);
+      if (haciaIzq) ctx.scale(-1, 1);
+      ctx.drawImage(sp, -e.tam / 2, -e.tam / 2, e.tam, e.tam);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = COLORES_ENEMIGO[e.tipo];
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.tam / 2, 0, 7); ctx.fill();
+    }
+    if (e.hp < e.hpMax) {
+      ctx.fillStyle = '#000a'; ctx.fillRect(e.x - 18, e.y - e.tam / 2 - 10, 36, 5);
+      ctx.fillStyle = '#f87171'; ctx.fillRect(e.x - 17, e.y - e.tam / 2 - 9, 34 * (e.hp / e.hpMax), 3);
+    }
+  }
+
+  // Beto (labrador negro — emoji oscurecido)
+  if (beto) {
+    ctx.save();
+    ctx.filter = 'brightness(0.3) saturate(0.4)';
+    ctx.font = '46px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🐕', beto.x, beto.y);
+    ctx.restore();
+    ctx.fillStyle = '#4ade80'; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('BETO', beto.x, beto.y - 30);
+  }
+
+  // héroe
+  if (heroe && (heroe.invuln <= 0 || Math.floor(heroe.invuln * 10) % 2 === 0)) {
+    const im = imgs[spriteElegido];
+    ctx.save(); ctx.translate(heroe.x, heroe.y);
+    if (heroe.mirando < 0) ctx.scale(-1, 1);
+    if (im && im.complete && im.naturalWidth) ctx.drawImage(im, -heroe.tam / 2, -heroe.tam / 2, heroe.tam, heroe.tam);
+    else { ctx.fillStyle = '#60a5fa'; ctx.beginPath(); ctx.arc(0, 0, heroe.tam / 2, 0, 7); ctx.fill(); }
+    ctx.restore();
+    // anillo de alcance sutil
+    ctx.strokeStyle = '#ffffff22'; ctx.beginPath(); ctx.arc(heroe.x, heroe.y, RANGO_DISPARO, 0, 7); ctx.stroke();
+  }
+
+  // partículas y textos flotantes
+  for (const p of particulas || []) {
+    ctx.globalAlpha = Math.max(0, p.vida * 2);
+    ctx.fillStyle = p.color; ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+  }
+  ctx.globalAlpha = 1;
+  for (const t of textos || []) {
+    ctx.globalAlpha = Math.max(0, t.vida);
+    ctx.fillStyle = t.color; ctx.font = '900 ' + t.tam + 'px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(t.txt, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // ---- capa de pantalla (no afectada por la cámara) ----
+  if (avisoActual) {
+    ctx.globalAlpha = Math.min(1, avisoActual.vida);
+    ctx.fillStyle = avisoActual.color; ctx.font = '900 ' + Math.min(28, W * 0.032) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(avisoActual.txt, W / 2, 84);
+    ctx.globalAlpha = 1;
+  }
+  dibujarMinimapa();
+  dibujarJoystick();
+}
+
+function dibujarBarricada(x, y, hp, emoji) {
+  ctx.font = '34px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, x - 30, y); ctx.fillText(emoji, x + 2, y); ctx.fillText(emoji, x + 34, y);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#000a'; ctx.fillRect(x - 30, y - 34, 60, 6);
+  ctx.fillStyle = '#a3e635'; ctx.fillRect(x - 29, y - 33, 58 * (hp / 80), 4);
+}
+
+// Minimapa (esquina inferior izquierda)
+function dibujarMinimapa() {
+  if (!heroe) return;
+  const mw = 150, mh = mw * MUNDO_H / MUNDO_W;
+  const mx = 12, my = H - mh - 12;
+  ctx.globalAlpha = 0.9;
+  if (mapa.complete && mapa.naturalWidth) ctx.drawImage(mapa, mx, my, mw, mh);
+  else { ctx.fillStyle = '#14331f'; ctx.fillRect(mx, my, mw, mh); }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#ffb703'; ctx.strokeRect(mx, my, mw, mh);
+  const px = x => mx + x / MUNDO_W * mw, py = y => my + y / MUNDO_H * mh;
+  ctx.fillStyle = '#f87171';
+  for (const e of enemigos) { ctx.beginPath(); ctx.arc(px(e.x), py(e.y), e.tipo === 'pigrus' ? 4 : 2.5, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#4ade80'; ctx.beginPath(); ctx.arc(px(heroe.x), py(heroe.y), 3.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffb703'; ctx.beginPath(); ctx.arc(px(CASONA.x), py(CASONA.y), 3, 0, 7); ctx.fill();
+}
+
+// ============================================================
+// HUD / PANTALLAS
+// ============================================================
+function refrescarHUD() {
+  document.getElementById('hud-vidas').textContent = '❤️'.repeat(Math.max(0, heroe ? heroe.vidas : 0));
+  document.getElementById('hud-casona').textContent = '🏠 ' + Math.max(0, Math.round(casonaHP)) + '%';
+  document.getElementById('hud-oleada').textContent = '🌊 ' + oleada;
+  document.getElementById('hud-puntos').textContent = '⭐ ' + puntos;
+  document.getElementById('hud-plata').textContent = '🥈 ' + plata;
+}
+function mostrarPantalla(id) {
+  for (const p of ['p-inicio', 'p-tienda', 'p-fin'])
+    document.getElementById(p).classList.toggle('oculta', p !== id);
+}
+
+function abrirTienda() {
+  estado = 'tienda';
+  document.getElementById('tienda-plata').textContent = plata;
+  document.getElementById('det-arma').textContent =
+    heroe.arma >= 4 ? 'Nivel máximo ⚡⚡⚡' : `Nivel ${heroe.arma} → ${heroe.arma + 1} (más rápido / más balas)`;
+  document.getElementById('msg-tienda').textContent = '';
+  document.getElementById('btn-oleada').textContent = `¡Oleada ${oleada + 1}!` + ((oleada + 1) % OLEADA_JEFE === 0 ? ' 🐉' : '');
+  mostrarPantalla('p-tienda');
+}
+
+document.getElementById('p-tienda').addEventListener('click', ev => {
+  const item = ev.target.dataset && ev.target.dataset.item;
+  if (!item) return;
+  const msg = document.getElementById('msg-tienda');
+  const precios = { vida: 50, arma: 100, barricada_calle: 150, barricada_rio: 150, reparar: 80 };
+  if (item === 'vida' && heroe.vidas >= 5) { msg.textContent = 'Ya tenés el máximo de vidas.'; return; }
+  if (item === 'arma' && heroe.arma >= 4) { msg.textContent = 'Tu arma ya es la mejor.'; return; }
+  if (item === 'barricada_calle' && barricadas.calle > 0) { msg.textContent = 'Ya hay barricada en el portón.'; return; }
+  if (item === 'barricada_rio' && barricadas.rio > 0) { msg.textContent = 'Ya hay empalizada en el muelle.'; return; }
+  if (item === 'reparar' && casonaHP >= 100) { msg.textContent = 'La Casona está perfecta.'; return; }
+  if (plata < precios[item]) { msg.textContent = '¡Sin plata! La plata se gana ENTRENANDO 💪'; return; }
+  plata -= precios[item];
+  if (item === 'vida') heroe.vidas++;
+  if (item === 'arma') heroe.arma++;
+  if (item === 'barricada_calle') barricadas.calle = 80;
+  if (item === 'barricada_rio') barricadas.rio = 80;
+  if (item === 'reparar') casonaHP = Math.min(100, casonaHP + 25);
+  sfx.compra();
+  abrirTienda();
+  refrescarHUD();
+});
+
+document.getElementById('btn-oleada').addEventListener('click', () => {
+  oleada++;
+  armarOleada(oleada);
+  estado = 'jugando';
+  mostrarPantalla(null);
+});
+
+document.getElementById('btn-reint').addEventListener('click', ev => {
+  if (ev.target.dataset.modo === 'continuar') {
+    oleada++;
+    armarOleada(oleada);
+    estado = 'jugando';
+    mostrarPantalla(null);
+  } else {
+    nuevaPartida();
+  }
+});
+document.getElementById('btn-menu').addEventListener('click', () => {
+  estado = 'inicio'; mostrarPantalla('p-inicio');
+});
+
+// Selector de guardián
+const grilla = document.getElementById('grilla-guardianes');
+for (const n of GUARDIANES) {
+  const im = document.createElement('img');
+  im.src = RUTA_SPRITES + n + '.webp';
+  im.alt = n; im.title = n;
+  im.className = n === spriteElegido ? 'elegido' : '';
+  im.addEventListener('click', () => {
+    spriteElegido = n;
+    for (const otro of grilla.children) otro.classList.remove('elegido');
+    im.classList.add('elegido');
+    beep(700, 0.06, 'sine', 0.04);
+  });
+  grilla.appendChild(im);
+}
+document.getElementById('btn-jugar').addEventListener('click', nuevaPartida);
+
+document.getElementById('btn-sonido').addEventListener('click', ev => {
+  sonidoOn = !sonidoOn;
+  ev.target.textContent = sonidoOn ? '🔊' : '🔇';
+});
+
+// ============================================================
+// ENTRADA — joystick flotante + teclado
+// ============================================================
+const joy = { activo: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+cv.addEventListener('pointerdown', ev => {
+  if (estado !== 'jugando' || joy.activo) return;
+  joy.activo = true; joy.id = ev.pointerId;
+  joy.ox = ev.clientX; joy.oy = ev.clientY; joy.dx = 0; joy.dy = 0;
+  cv.setPointerCapture(ev.pointerId);
+});
+cv.addEventListener('pointermove', ev => {
+  if (!joy.activo || ev.pointerId !== joy.id) return;
+  const R = 60;
+  let dx = ev.clientX - joy.ox, dy = ev.clientY - joy.oy;
+  const d = Math.hypot(dx, dy);
+  if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+  joy.dx = dx / R; joy.dy = dy / R;
+});
+function soltarJoy(ev) { if (joy.activo && ev.pointerId === joy.id) { joy.activo = false; joy.dx = 0; joy.dy = 0; } }
+cv.addEventListener('pointerup', soltarJoy);
+cv.addEventListener('pointercancel', soltarJoy);
+
+function dibujarJoystick() {
+  if (!joy.activo) return;
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(joy.ox, joy.oy, 60, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#ffb703';
+  ctx.beginPath(); ctx.arc(joy.ox + joy.dx * 60, joy.oy + joy.dy * 60, 24, 0, 7); ctx.fill();
+  ctx.globalAlpha = 1; ctx.lineWidth = 1;
+}
+
+const teclas = {};
+window.addEventListener('keydown', e => { teclas[e.key] = true; });
+window.addEventListener('keyup',   e => { teclas[e.key] = false; });
+
+// ============================================================
+// BUCLE PRINCIPAL
+// ============================================================
+let tPrev = performance.now();
+function bucle(t) {
+  requestAnimationFrame(bucle);
+  const dt = Math.min(0.05, (t - tPrev) / 1000);
+  tPrev = t;
+  const enVertical = matchMedia('(orientation: portrait)').matches;
+  if (estado === 'jugando' && !document.hidden && !enVertical) actualizar(dt);
+  if (estado === 'jugando' || estado === 'tienda') dibujar();
+}
+requestAnimationFrame(bucle);
+</script>
+</body>
+</html>

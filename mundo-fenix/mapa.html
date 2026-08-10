@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mapa Vivo — La Casona</title>
+<!--
+  MAPA VIVO DE LA CASONA — segunda TV del Mundo Fenix
+  ====================================================
+  Muestra a cada Guardián (avatar) parado en el último fuego que encendió,
+  moviéndose por el mapa cuando toca la siguiente estación (NFC).
+
+  FUENTES DE EVENTOS (en orden de prioridad):
+   1. Backend real: setear CONFIG.API_URL → polling GET /juego/eventos?since={id} cada 2s
+      (mismo canal que el Modo TV — ver SPEC-TOTEM-Y-PROFE.md y SPEC-NFC-CIRCUITO.md)
+   2. localStorage cross-ventana (demo/local): claves "mf_tv_event" y "mf_mapa_event"
+      formato: {t:"llegada"|"estacion"|"vuelta", n:"Benja", g:"furia", e:"arco", ts:...}
+   3. ?demo → simulación completa en loop (niños que llegan, recorren y cierran vueltas)
+
+  Esta pantalla es MUDA a propósito: la voz de George vive en la TV principal.
+  Igual que index.html/totem.html: NO se commitea al repo del agente (repo propio en F2).
+-->
+<style>
+  :root{
+    --ash:#0d0a12; --smoke:#1c1626; --cream:#fde9d2; --muted:#8c7d93;
+    --ember:#ff6a1a; --flame:#e23a2e; --gold:#ffc24b; --good:#6fd08a;
+    --line:rgba(255,178,120,.14);
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--ash);color:var(--cream);font-family:var(--sans)}
+
+  /* ---------- layout TV ---------- */
+  #hdr{position:fixed;top:0;left:0;right:0;height:64px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 28px;z-index:30;
+    background:linear-gradient(180deg,rgba(13,10,18,.92),rgba(13,10,18,0))}
+  #hdr h1{font-family:var(--serif);font-size:26px;letter-spacing:.5px;color:var(--gold);
+    text-shadow:0 0 24px rgba(255,106,26,.35)}
+  #hdr .temp{font-size:15px;color:var(--muted)}
+  #stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+  #mapbox{position:relative;aspect-ratio:16/9;max-width:100vw;max-height:100vh;width:100%;}
+
+  /* ---------- ticker ---------- */
+  #ticker{position:fixed;bottom:0;left:0;right:0;height:44px;line-height:44px;z-index:30;
+    background:rgba(13,10,18,.88);border-top:1px solid var(--line);
+    white-space:nowrap;overflow:hidden;font-size:16px;color:var(--cream)}
+  #ticker span{display:inline-block;padding-left:100vw;animation:tick 38s linear infinite}
+  @keyframes tick{to{transform:translateX(-100%)}}
+
+  /* ---------- fuegos de estación ---------- */
+  .est{position:absolute;transform:translate(-50%,-58%);text-align:center;z-index:10;width:120px}
+  .est .fire{font-size:34px;filter:grayscale(1) brightness(.45) drop-shadow(0 2px 6px rgba(0,0,0,.8));transition:filter .5s}
+  .est.lit .fire{filter:drop-shadow(0 0 14px rgba(255,106,26,.9));animation:flick .9s infinite alternate}
+  @keyframes flick{from{transform:scale(1)}to{transform:scale(1.14)}}
+  .est .lbl{display:inline-block;font-size:13px;font-weight:700;color:var(--cream);margin-top:2px;
+    letter-spacing:.4px;padding:2px 9px;border-radius:999px;
+    background:rgba(13,10,18,.78);border:1px solid var(--line)}
+  .est.lit .lbl{color:var(--gold);border-color:rgba(255,194,75,.5)}
+  .est .ring{position:absolute;left:50%;top:26%;width:70px;height:70px;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;opacity:0}
+  .est.flare .ring{opacity:1;animation:ringy 1.2s ease-out forwards;
+    border:3px solid var(--gold);box-shadow:0 0 30px 6px rgba(255,106,26,.55)}
+  @keyframes ringy{from{transform:translate(-50%,-50%) scale(.4);opacity:1}
+                   to{transform:translate(-50%,-50%) scale(2.2);opacity:0}}
+
+  /* ---------- tótem ---------- */
+  #totem{position:absolute;transform:translate(-50%,-50%);text-align:center;z-index:11}
+  #totem .ico{font-size:46px;filter:drop-shadow(0 0 18px rgba(255,106,26,.85)) drop-shadow(0 3px 8px rgba(0,0,0,.7));
+    animation:breathe 2.6s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  #totem .lbl{display:inline-block;font-size:14px;color:var(--gold);letter-spacing:1px;font-weight:700;
+    padding:2px 12px;border-radius:999px;background:rgba(13,10,18,.78);border:1px solid rgba(255,194,75,.4)}
+
+  /* ---------- avatares (los Guardianes) ---------- */
+  .kid{position:absolute;width:92px;margin-left:-46px;margin-top:-84px;text-align:center;z-index:20;
+    transition:left 2.8s cubic-bezier(.45,.05,.35,1), top 2.8s cubic-bezier(.45,.05,.35,1),
+               opacity .8s, filter .8s}
+  .kid img{width:76px;height:76px;object-fit:contain;
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,.6));animation:bob 1.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .kid.moving img{animation:run .35s ease-in-out infinite}
+  @keyframes run{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-9px) rotate(4deg)}}
+  .kid .tag{display:inline-block;margin-top:-6px;padding:2px 10px;border-radius:999px;
+    background:rgba(28,22,38,.9);border:1px solid var(--line);
+    font-size:13px;font-weight:700;color:var(--cream);white-space:nowrap}
+  .kid .fuegos{font-size:12px;color:var(--gold);margin-top:2px;letter-spacing:2px;min-height:14px}
+  .kid.idlefade{opacity:.35;filter:grayscale(.8)}
+  .kid.pop{animation:pop .7s ease-out}
+  @keyframes pop{0%{transform:scale(.2);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+  .kid .crown{position:absolute;left:50%;top:-26px;transform:translateX(-50%);font-size:26px;
+    opacity:0;pointer-events:none}
+  .kid.vuelta .crown{animation:crowny 3s ease-out forwards}
+  @keyframes crowny{0%{opacity:0;transform:translateX(-50%) translateY(14px) scale(.4)}
+    20%{opacity:1;transform:translateX(-50%) translateY(0) scale(1.2)}
+    80%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-16px)}}
+
+  /* ---------- burst de monedas en vuelta ---------- */
+  .coin{position:absolute;font-size:20px;z-index:25;pointer-events:none;animation:coinfly 1.5s ease-out forwards}
+  @keyframes coinfly{from{opacity:1;transform:translate(0,0) scale(1)}
+                     to{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.4)}}
+  /* monedas que VIAJAN de cada estación a la casa (vuelta reclamada) */
+  .coinvia{position:absolute;font-size:22px;z-index:24;pointer-events:none;
+    filter:drop-shadow(0 0 8px rgba(255,194,75,.85));
+    transition:left 1.5s cubic-bezier(.45,-.15,.55,1), top 1.5s cubic-bezier(.35,.15,.3,1),
+               transform 1.5s ease-in, opacity .3s}
+
+  /* ---------- vacío ---------- */
+  #empty{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;align-items:center;
+    justify-content:center;z-index:5;color:var(--muted);font-size:20px;transition:opacity .8s}
+  #empty.off{opacity:0}
+  #empty .z{font-size:52px;animation:breathe 3s infinite}
+
+  /* ---------- MODO LIMPIO (pedido 11/07): el mapa pelado, sin textos ----------
+     La TV lo usa de pantalla de reposo: solo ilustración + sendero + fuegos + avatares.
+     Se oculta por CSS (no borrar el HTML: el JS referencia #tickertxt/#empty/#totem). */
+  #hdr{display:none}            /* "MAPA VIVO · LA CASONA" + "Isla de los Piratas" */
+  #ticker{display:none}         /* ticker inferior */
+  #totem{display:none}          /* el 🔥 FENIX del centro */
+  #empty{display:none}          /* "Esperando Guardianes en el circuito…" */
+  .est .lbl{display:none}       /* etiquetas de estaciones (Ninja Warrior, Básquet…) */
+  #capa-kids{display:none}      /* avatares+nombres flotando (pedido 11/07) — el mapa queda pelado;
+                                   reactivar cuando el circuito NFC mueva de verdad a los niños */
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <h1>🗺️ MAPA VIVO · LA CASONA</h1>
+  <div class="temp" id="temporada">🏴‍☠️ Isla de los Piratas</div>
+</div>
+
+<div id="stage"><div id="mapbox">
+  <!-- ================= EL MAPA (ilustración real de La Casona) ================= -->
+  <img id="arte" src="assets/mapa_casona.jpg" alt=""
+       style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill">
+  <!-- sendero del circuito superpuesto (tótem → estaciones → tótem) -->
+  <svg id="mapa" viewBox="0 0 1600 900" preserveAspectRatio="none"
+       style="position:absolute;inset:0;width:100%;height:100%">
+    <path id="sendero" d="M800,324 C640,300 360,240 240,297 C160,370 260,540 430,630
+                          C580,705 700,745 832,738 C980,720 1010,560 1072,468
+                          C1130,505 1270,545 1360,513 C1440,478 1370,330 1280,270
+                          C1180,215 950,290 800,324"
+          fill="none" stroke="var(--gold)" stroke-width="4" stroke-dasharray="4 16"
+          stroke-linecap="round" opacity=".4">
+      <animate attributeName="stroke-dashoffset" from="0" to="-200" dur="6s" repeatCount="indefinite"/>
+    </path>
+  </svg>
+
+  <!-- estaciones (coords en % del mapbox — editar STATIONS abajo mueve esto) -->
+  <div id="capa-est"></div>
+  <!-- tótem -->
+  <div id="totem"><div class="ico">🔥</div><div class="lbl">FENIX</div></div>
+  <!-- Guardianes -->
+  <div id="capa-kids"></div>
+
+  <div id="empty"><div class="z">🗺️</div><div>Esperando Guardianes en el circuito…</div></div>
+</div></div>
+
+<div id="ticker"><span id="tickertxt">🔥 Encendé todos los fuegos y volvé al Fenix a reclamar tu vuelta · </span></div>
+
+<script>
+/* ============================ CONFIG ============================ */
+const CONFIG = {
+  API_URL: "https://fenix-kids-agent-production.up.railway.app",  // vacío = solo localStorage/demo
+  POLL_MS: 2000,
+  IDLE_FADE_MIN: 6,     // sin actividad N min → el avatar se atenúa
+  BYE_MIN: 25,          // sin actividad N min → desaparece del mapa
+};
+
+/* Estaciones del circuito — id debe matchear estacion_id del backend/ESP32.
+   x,y en % del mapa (sobre assets/mapa_casona.jpg). Cambiar acá = se mueve en pantalla.
+   Referencias del arte: gym ninja (púrpura) izq-arriba · volley izq · piscina centro ·
+   quincho der de la piscina · basket der · casa del árbol der-arriba · muelle abajo */
+const STATIONS = [
+  {id:"ninja",   nombre:"Ninja Warrior 🥷", x:15, y:33},  // pared ninja púrpura (izq)
+  {id:"arbol",   nombre:"Casa del Árbol 🌳", x:80, y:30}, // casa del árbol (der-arriba)
+  {id:"basket",  nombre:"Básquet 🏀",        x:85, y:57}, // cancha azul/naranja (der)
+  {id:"quincho", nombre:"Quincho 🍖",        x:67, y:52}, // gazebo al lado de la piscina
+  {id:"muelle",  nombre:"Muelle ⚓",         x:52, y:82}, // muelle pirata (abajo)
+];
+/* La CASA: acá se reclama la vuelta (los niños están DENTRO, donde vive la TV/Fenix).
+   Las monedas de cada estación vuelan hasta acá. */
+const TOTEM = {x:50, y:36};
+
+const AVATAR = g => `assets/guardianes/optim/${g}.webp`;
+const GUARDS = ["mamba","sophie","apolo","furia","maikol","nina","drakon","flash","shakira","aura"];
+
+/* ============================ ESTADO ============================ */
+/* kids: nombre → {g, x, y, fuegos:Set, vueltas, lastTs, el} */
+const kids = new Map();
+const $ = s => document.querySelector(s);
+const estCapa = $("#capa-est"), kidCapa = $("#capa-kids"), mapbox = $("#mapbox");
+
+/* pinta estaciones */
+STATIONS.forEach(st => {
+  const d = document.createElement("div");
+  d.className = "est"; d.id = "est-" + st.id;
+  d.style.left = st.x + "%"; d.style.top = st.y + "%";
+  d.innerHTML = `<div class="ring"></div><div class="fire">🔥</div><div class="lbl">${st.nombre}</div>`;
+  estCapa.appendChild(d);
+});
+const totemEl = $("#totem");
+totemEl.style.left = TOTEM.x + "%"; totemEl.style.top = TOTEM.y + "%";
+
+function flare(stId){
+  const el = $("#est-" + stId); if (!el) return;
+  el.classList.add("lit");
+  el.classList.remove("flare"); void el.offsetWidth; el.classList.add("flare");
+  clearTimeout(el._off);
+  el._off = setTimeout(()=>el.classList.remove("lit"), 90_000); // el fuego queda vivo un rato
+}
+
+function ensureKid(n, g){
+  if (kids.has(n)) { const k = kids.get(n); if (g) k.g = g; return k; }
+  const k = { g: g || GUARDS[kids.size % GUARDS.length], fuegos:new Set(), vueltas:0, lastTs:Date.now() };
+  const el = document.createElement("div");
+  el.className = "kid pop";
+  el.innerHTML = `<div class="crown">👑</div><img alt=""><div class="tag"></div><div class="fuegos"></div>`;
+  kidCapa.appendChild(el);
+  k.el = el; kids.set(n, k);
+  paintKid(n, k); moveKid(k, TOTEM.x, TOTEM.y, true);
+  $("#empty").classList.add("off");
+  return k;
+}
+function paintKid(n, k){
+  k.el.querySelector("img").src = AVATAR(k.g);
+  k.el.querySelector(".tag").textContent = n;
+  k.el.querySelector(".fuegos").textContent = "🔥".repeat(k.fuegos.size);
+}
+function moveKid(k, x, y, instant){
+  if (instant) k.el.style.transition = "none";
+  k.el.style.left = x + "%"; k.el.style.top = y + "%";
+  if (instant) { void k.el.offsetWidth; k.el.style.transition = ""; }
+  else { k.el.classList.add("moving"); clearTimeout(k._mv); k._mv = setTimeout(()=>k.el.classList.remove("moving"), 2800); }
+}
+function coinBurst(xPct, yPct){
+  for (let i=0;i<14;i++){
+    const c = document.createElement("div");
+    c.className = "coin"; c.textContent = Math.random()<.5 ? "🪙" : "🥈";
+    c.style.left = xPct+"%"; c.style.top = yPct+"%";
+    c.style.setProperty("--dx", (Math.random()*260-130)+"px");
+    c.style.setProperty("--dy", (-40 - Math.random()*220)+"px");
+    mapbox.appendChild(c); setTimeout(()=>c.remove(), 1600);
+  }
+}
+
+/* LA escena de la vuelta: cada estación se enciende y le MANDA sus monedas a la casa.
+   Todas convergen donde está el niño. */
+function coinsDesdeEstaciones(onDone){
+  STATIONS.forEach((st, si) => {
+    setTimeout(()=>flare(st.id), si*220);              // la estación "despide" sus monedas
+    for (let i=0;i<6;i++){
+      const c = document.createElement("div");
+      c.className = "coinvia"; c.textContent = i%2 ? "🪙" : "🥈";
+      c.style.left = (st.x + (Math.random()*4-2)) + "%";
+      c.style.top  = (st.y + (Math.random()*3-1.5)) + "%";
+      mapbox.appendChild(c);
+      const salida = 120 + si*220 + i*110;             // salen en fila desde cada fuego
+      setTimeout(()=>{
+        c.style.left = (TOTEM.x + (Math.random()*2.4-1.2)) + "%";
+        c.style.top  = (TOTEM.y - 1.5 + (Math.random()*2-1)) + "%";
+        c.style.transform = "scale(.55)";
+      }, salida);
+      setTimeout(()=>{ c.style.opacity = "0"; }, salida + 1450);
+      setTimeout(()=>c.remove(), salida + 1800);
+    }
+  });
+  const ultima = 120 + (STATIONS.length-1)*220 + 5*110 + 1500;
+  setTimeout(onDone, ultima);                          // cuando llegó la última → festejo
+}
+
+/* ============================ EVENTOS ============================ */
+/* Acepta ambos formatos:
+   - prototipo:  {t:"llegada"|"estacion"|"vuelta", n, g, e}
+   - backend:    {tipo, nino_nombre, guardian, payload:{estacion_id}}  */
+function onEvent(ev){
+  const t = ev.t || ev.tipo;
+  const n = ev.n || ev.nino_nombre; if (!t || !n) return;
+  const g = ev.g || ev.guardian;
+  const e = ev.e || (ev.payload && ev.payload.estacion_id);
+  const k = ensureKid(n, g);
+  k.lastTs = Date.now(); k.el.classList.remove("idlefade");
+
+  if (t === "llegada"){ moveKid(k, TOTEM.x, TOTEM.y); }
+  else if (t === "estacion" && e){
+    const st = STATIONS.find(s => s.id === e); if (!st) return;
+    k.fuegos.add(e); moveKid(k, st.x, st.y);
+    setTimeout(()=>flare(e), 2400); // el fuego prende cuando el avatar "llega"
+    paintKid(n, k);
+    ticker();
+  }
+  else if (t === "vuelta"){
+    moveKid(k, TOTEM.x, TOTEM.y);          // el niño entra a la casa a reclamar
+    setTimeout(()=>{
+      coinsDesdeEstaciones(()=>{           // los fuegos le mandan sus monedas
+        k.vueltas = ev.v || (k.vueltas + 1); k.fuegos.clear(); paintKid(n, k);
+        k.el.classList.remove("vuelta"); void k.el.offsetWidth; k.el.classList.add("vuelta");
+        coinBurst(TOTEM.x, TOTEM.y - 3);   // y explotan en él
+        ticker(`⚡ ¡${n} completó la vuelta ${k.vueltas}!`);
+      });
+    }, 2700);
+  }
+}
+
+/* ticker: estado del circuito */
+let tickerFlash = null;
+function ticker(flash){
+  if (flash){ tickerFlash = flash; setTimeout(()=>{ tickerFlash = null; ticker(); }, 15000); }
+  const parts = [...kids.entries()]
+    .filter(([,k]) => k.fuegos.size || k.vueltas)
+    .map(([n,k]) => `${n} ${"🔥".repeat(k.fuegos.size) || ""}${k.vueltas ? " ⚡"+k.vueltas : ""}`);
+  $("#tickertxt").textContent = (tickerFlash ? tickerFlash + "  ·  " : "") +
+    (parts.length ? parts.join("  ·  ") : "🔥 Encendé todos los fuegos y volvé al Fenix a reclamar tu vuelta") + "  ·  ";
+}
+
+/* atenuar/retirar inactivos */
+setInterval(()=>{
+  const now = Date.now();
+  for (const [n,k] of kids){
+    const min = (now - k.lastTs)/60000;
+    if (min > CONFIG.BYE_MIN){ k.el.remove(); kids.delete(n); }
+    else if (min > CONFIG.IDLE_FADE_MIN) k.el.classList.add("idlefade");
+  }
+  if (!kids.size) $("#empty").classList.remove("off");
+}, 30_000);
+
+/* ---------- fuente 1: localStorage cross-ventana ---------- */
+window.addEventListener("storage", e=>{
+  if ((e.key === "mf_mapa_event" || e.key === "mf_tv_event") && e.newValue){
+    try{ onEvent(JSON.parse(e.newValue)); }catch(err){}
+  }
+});
+
+/* ---------- fuente 2: polling del backend real ---------- */
+let lastId = 0;
+async function poll(){
+  try{
+    const r = await fetch(`${CONFIG.API_URL}/juego/eventos?since=${lastId}`);
+    if (r.ok){
+      const d = await r.json();
+      if (lastId === 0){ lastId = d.ultimo || 0; }   // arranca desde "ahora", sin replay
+      else {
+        for (const ev of (d.eventos || [])){ if (ev.id > lastId) lastId = ev.id; onEvent(ev); }
+        if (d.ultimo) lastId = Math.max(lastId, d.ultimo);
+      }
+    }
+  }catch(e){}
+  setTimeout(poll, CONFIG.POLL_MS);
+}
+if (CONFIG.API_URL) poll();
+
+/* ---------- fuente 3: modo demo (?demo) ---------- */
+if (new URLSearchParams(location.search).has("demo")){
+  const DEMO = [
+    {n:"Mateo", g:"mamba"}, {n:"Lola", g:"aura"}, {n:"Benja", g:"furia"},
+    {n:"Emma", g:"flash"}, {n:"Valen", g:"sophie"}, {n:"Thiago", g:"drakon"},
+  ];
+  const rnd = (a,b)=>a+Math.random()*(b-a);
+  function vida(kid, delay){
+    setTimeout(()=>{
+      onEvent({t:"llegada", ...kid});
+      let orden = [...STATIONS].sort(()=>Math.random()-.5);
+      let i = 0;
+      (function paso(){
+        if (i < orden.length){
+          onEvent({t:"estacion", ...kid, e:orden[i++].id});
+          setTimeout(paso, rnd(5000, 12000));
+        } else {
+          setTimeout(()=>{ onEvent({t:"vuelta", ...kid}); setTimeout(()=>{ orden=[...STATIONS].sort(()=>Math.random()-.5); i=0; paso(); }, rnd(8000,16000)); }, rnd(4000,7000));
+        }
+      })();
+    }, delay);
+  }
+  DEMO.forEach((kid,i)=>vida(kid, 1200 + i*4200));
+}
+</script>
+</body>
+</html>

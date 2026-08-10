@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardianes de Hoy — Mundo Fenix</title>
+<!--
+  GUARDIANES DE HOY — TV lista del Mundo Fenix
+  =============================================
+  Tabla de honor del día: cada niño que llegó a La Casona con sus vueltas del
+  circuito, las monedas que ganó HOY y su tesoro total.
+
+  Fuente: GET {API_URL}/juego/dia (público con CORS) — se repinta cada 30s.
+  Igual que mapa.html/totem.html vive en Cloudflare Pages (mundo-fenix.pages.dev)
+  y trae el auto-reload kiosk de 10 min (la TV nunca ve una versión vieja).
+
+  LAYOUT: TODOS los niños entran SIEMPRE en pantalla (sin scroll). El grid reparte
+  el alto disponible entre las filas (grid-auto-rows:1fr) y el JS elige columnas
+  según cuántos son, para que ninguna fila quede demasiado apretada.
+-->
+<style>
+  :root{
+    --ash:#0d0a12; --smoke:#1c1626; --cream:#fde9d2; --muted:#8c7d93;
+    --ember:#ff6a1a; --flame:#e23a2e; --gold:#ffc24b; --good:#6fd08a;
+    --line:rgba(255,178,120,.14);
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--ash);color:var(--cream);font-family:var(--sans);
+    display:flex;flex-direction:column}
+
+  /* ---------- header ---------- */
+  #hdr{display:flex;align-items:center;gap:18px;padding:14px 30px 8px;flex:none;
+    background:linear-gradient(180deg,rgba(255,106,26,.10),rgba(13,10,18,0))}
+  #hdr img.logo{height:clamp(46px,6vh,68px);filter:drop-shadow(0 0 18px rgba(255,106,26,.55))}
+  #hdr .tit h1{font-family:var(--serif);font-size:clamp(26px,3.4vh,38px);letter-spacing:1px;
+    color:var(--gold);text-shadow:0 0 26px rgba(255,106,26,.4);line-height:1.05}
+  #hdr .tit .sub{font-size:clamp(11px,1.5vh,15px);color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+  #hdr .der{margin-left:auto;text-align:right}
+  #hdr .der .fecha{font-size:clamp(13px,1.8vh,18px);color:var(--cream);text-transform:capitalize}
+  #hdr .der .cont{font-size:clamp(11px,1.4vh,15px);color:var(--gold);margin-top:2px}
+
+  /* ---------- lista: llena el alto y reparte filas ---------- */
+  #lista{flex:1;min-height:0;overflow:hidden;padding:8px 26px 14px;
+    display:grid;gap:clamp(6px,1vh,12px) 20px;grid-auto-rows:minmax(0,1fr)}
+  body.c1 #lista{grid-template-columns:1fr;max-width:1200px;margin:0 auto;width:100%}
+  body.c2 #lista{grid-template-columns:repeat(2,1fr)}
+  body.c3 #lista{grid-template-columns:repeat(3,1fr)}
+  body.c4 #lista{grid-template-columns:repeat(4,1fr)}
+
+  .fila{display:flex;align-items:center;gap:clamp(8px,1.4vh,16px);min-height:0;overflow:hidden;
+    padding:0 clamp(10px,1.4vw,18px);border-radius:16px;
+    background:var(--smoke);border:1px solid var(--line);box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .fila.top1{border-color:rgba(255,194,75,.65);background:linear-gradient(90deg,rgba(255,194,75,.14),var(--smoke) 55%)}
+  .fila.top2{border-color:rgba(255,194,75,.32)}
+  .fila.top3{border-color:rgba(255,178,120,.26)}
+  .fila.cambio{animation:glow 1.6s ease-out}
+  @keyframes glow{0%{box-shadow:0 0 0 3px rgba(255,194,75,.8),0 0 34px rgba(255,106,26,.6)}
+                  100%{box-shadow:0 4px 14px rgba(0,0,0,.3)}}
+
+  .rank{width:clamp(30px,3.4vw,46px);text-align:center;font-family:var(--serif);
+    font-size:clamp(18px,3vh,28px);color:var(--muted);flex:none}
+  .top1 .rank,.top2 .rank,.top3 .rank{font-size:clamp(22px,3.6vh,32px)}
+
+  .ava{height:clamp(40px,7.2vh,66px);aspect-ratio:1;flex:none;border-radius:50%;
+    background:rgba(13,10,18,.6);border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .ava img{width:88%;height:88%;object-fit:contain;
+    filter:drop-shadow(0 3px 6px rgba(0,0,0,.6));animation:bob 2.2s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  .ava .ph{font-size:clamp(20px,4vh,34px);filter:grayscale(.4)}
+  .top1 .ava{border-color:rgba(255,194,75,.7);box-shadow:0 0 16px rgba(255,194,75,.35)}
+
+  .nom{flex:1;min-width:0}
+  .nom .n{font-size:clamp(16px,3vh,27px);font-weight:800;letter-spacing:.3px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .nom .n .ape{font-weight:600;opacity:.8}
+  .nom .g{font-size:clamp(10px,1.4vh,13px);color:var(--muted);letter-spacing:1.5px;
+    text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .stats{display:flex;gap:clamp(6px,.8vw,10px);flex:none;align-items:center}
+  .chip{text-align:center;padding:clamp(3px,.7vh,7px) clamp(8px,.9vw,14px);border-radius:12px;
+    background:rgba(13,10,18,.55);border:1px solid var(--line)}
+  .chip .v{font-size:clamp(14px,2.4vh,22px);font-weight:800;line-height:1.1;white-space:nowrap}
+  .chip .l{font-size:clamp(8px,1.1vh,11px);color:var(--muted);letter-spacing:1.2px;
+    text-transform:uppercase;margin-top:1px}
+  .chip.vueltas .v{color:var(--good)}
+  .chip.hoy .v{color:var(--gold)}
+  .chip.total .v{color:var(--cream)}
+  /* en 3-4 columnas el espacio manda: se ocultan las etiquetas y el subtítulo del guardián */
+  body.c3 .chip .l,body.c4 .chip .l{display:none}
+  body.c4 .nom .g{display:none}
+  body.c4 .chip.total{display:none}
+
+  /* ---------- vacío ---------- */
+  #empty{position:fixed;inset:0;display:none;flex-direction:column;gap:14px;align-items:center;
+    justify-content:center;color:var(--muted);font-size:24px;text-align:center;padding:0 30px}
+  body.vacio #empty{display:flex}
+  body.vacio #lista{display:none}
+  #empty .z{font-size:70px;animation:breathe 3s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+
+  #pie{padding:6px 30px 10px;flex:none;font-size:clamp(10px,1.4vh,13px);color:var(--muted);
+    display:flex;justify-content:space-between}
+</style>
+</head>
+<body class="c1 vacio">
+
+<div id="hdr">
+  <img class="logo" src="assets/escudo.png" alt="FENIX">
+  <div class="tit">
+    <h1>GUARDIANES DE HOY</h1>
+    <div class="sub">Mundo Fenix · La Casona</div>
+  </div>
+  <div class="der">
+    <div class="fecha" id="fecha">—</div>
+    <div class="cont" id="contador"></div>
+  </div>
+</div>
+
+<div id="lista"></div>
+
+<div id="empty">
+  <div class="z">🔥</div>
+  <div>Todavía no llegó ningún Guardián hoy…<br>¡El Fenix los está esperando!</div>
+</div>
+
+<div id="pie">
+  <span>⚡ vueltas del circuito · 🥇 oro (por venir) · 🥈 plata (por jugar)</span>
+  <span id="reloj"></span>
+</div>
+
+<script>
+/* ============================ CONFIG ============================ */
+const CONFIG = {
+  API_URL: "https://fenix-kids-agent-production.up.railway.app",
+  POLL_MS: 30000,
+};
+const AVATAR = g => `assets/guardianes/optim/${g}.webp`;
+const $ = s => document.querySelector(s);
+
+/* fecha del header en español */
+const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio",
+               "agosto","septiembre","octubre","noviembre","diciembre"];
+function pintarFecha(){
+  const d = new Date();
+  $("#fecha").textContent = `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`;
+  $("#reloj").textContent = d.toLocaleTimeString("es-PY",{hour:"2-digit",minute:"2-digit"});
+}
+setInterval(pintarFecha, 15000); pintarFecha();
+
+/* columnas según cantidad: apunta a ≤7 filas por columna para que nada quede apretado */
+function columnasPara(n){
+  if (n <= 7) return 1;
+  if (n <= 14) return 2;
+  if (n <= 24) return 3;
+  return 4;
+}
+
+/* ============================ RENDER ============================ */
+let prev = new Map();   // nino_id → firma (para el destello al cambiar)
+
+function render(ninos){
+  document.body.classList.toggle("vacio", !ninos.length);
+  document.body.classList.remove("c1","c2","c3","c4");
+  document.body.classList.add("c" + columnasPara(ninos.length));
+  $("#contador").textContent = ninos.length
+    ? `${ninos.length} Guardián${ninos.length === 1 ? "" : "es"} en La Casona`
+    : "";
+
+  const cont = $("#lista");
+  cont.innerHTML = "";
+  ninos.forEach((k, i) => {
+    const key = k.nino_id || k.nombre;
+    const firma = `${k.vueltas_hoy}|${k.oro_hoy}|${k.plata_hoy}|${k.oro_total}|${k.plata_total}`;
+    const cambio = prev.has(key) && prev.get(key) !== firma;
+    prev.set(key, firma);
+
+    const fila = document.createElement("div");
+    fila.className = "fila" + (i < 3 ? ` top${i+1}` : "") + (cambio ? " cambio" : "");
+    const rank = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i+1) + "º";
+    const hoyTxt = [k.oro_hoy ? `+${k.oro_hoy}🥇` : "", k.plata_hoy ? `+${k.plata_hoy}🥈` : ""]
+                   .filter(Boolean).join(" ") || "—";
+    const ape = (k.apellido || "").trim();
+    fila.innerHTML = `
+      <div class="rank">${rank}</div>
+      <div class="ava">${k.robot
+          ? `<img src="${AVATAR(k.robot)}" alt="">`
+          : `<span class="ph">🔥</span>`}</div>
+      <div class="nom">
+        <div class="n">${k.nombre}${ape ? ` <span class="ape">${ape}</span>` : ""}</div>
+        <div class="g">${k.robot || "sin guardián aún"}</div>
+      </div>
+      <div class="stats">
+        <div class="chip vueltas"><div class="v">⚡ ${k.vueltas_hoy}</div><div class="l">vueltas</div></div>
+        <div class="chip hoy"><div class="v">${hoyTxt}</div><div class="l">hoy</div></div>
+        <div class="chip total"><div class="v">🥇${k.oro_total} 🥈${k.plata_total}</div><div class="l">tesoro</div></div>
+      </div>`;
+    cont.appendChild(fila);
+  });
+}
+
+/* ============================ POLLING ============================ */
+async function cargar(){
+  try{
+    const r = await fetch(`${CONFIG.API_URL}/juego/dia`, {cache:"no-store"});
+    if (r.ok){
+      const d = await r.json();
+      if (d.ok) render(d.ninos || []);
+    }
+  }catch(e){}
+  setTimeout(cargar, CONFIG.POLL_MS);
+}
+cargar();
+
+/* ══ AUTO-RELOAD kiosk (regla 11/07): la TV vive con la página abierta días ══
+   Pages NO manda ETag en el HTML → se compara un hash del texto completo. */
+let _verActual = null;
+function _hashTxt(t){ let h=0; for(let i=0;i<t.length;i++){ h=(h*31+t.charCodeAt(i))|0; } return h+":"+t.length; }
+async function _chequearVersion(){
+  try{
+    const r = await fetch(location.pathname, {cache:"no-store"});
+    if(!r.ok) return;
+    const v = _hashTxt(await r.text());
+    if(_verActual === null){ _verActual = v; return; }
+    if(v !== _verActual) location.reload();
+  }catch(e){}
+}
+setInterval(_chequearVersion, 600000);
+_chequearVersion();
+</script>
+</body>
+</html>

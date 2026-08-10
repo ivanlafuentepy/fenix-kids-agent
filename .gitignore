@@ -61,3 +61,8 @@ contactos/
 AGENTS.md
 .agents/
 .codex/
+
+# Media del juego (62 MB: 187 voces de George, guardianes, videos).
+# No va a git — se sirve desde Cloudflare Pages (mundo-fenix.pages.dev/assets/)
+# y el respaldo vive en R2. Git guardaría cada versión entera de cada binario.
+mundo-fenix/assets/
