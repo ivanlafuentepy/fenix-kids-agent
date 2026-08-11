@@ -14,6 +14,7 @@ los `curl` con los que se verificó el circuito por hardware real.
 | Carpeta | Fase | Qué hace |
 |---|---|---|
 | `banco_lector/` | **N0** | Lee el UID de una pulsera y lo imprime por serial. Sin WiFi. Confirma que el hardware lee. |
+| `diagnostico_rc522/` | — | Interroga los registros del lector (versión, bus real, drivers de antena, autotest). Sirve para separar "cableado malo" de "antena que no enciende". ⚠️ **No decide si el módulo sirve** — ver abajo. |
 | `estacion/` | **N2** | Lo mismo + WiFi + `POST /juego/estacion` a Railway + LED y buzzer de feedback local. Credenciales y `ESTACION_ID` en `config.h` (fuera de git). |
 
 Estaciones armadas hasta hoy: `quincho` y `basket`. El `estacion_id` de cada una debe estar
@@ -109,6 +110,28 @@ El sketch de banco imprime `RC522 VersionReg` al arrancar:
 |---|---|
 | `0x91` / `0x92` | Lector OK (v1.0 / v2.0) |
 | `0x00` o `0xFF` | No responde → cableado, alimentación o header sin soldar |
+
+---
+
+## ⚠️ Si una estación no lee: el orden que funciona
+
+Verificado a los golpes el 07/08 y el 11/08. Seguirlo en este orden ahorra horas:
+
+1. **Power cycle** — desenchufar el USB 10 segundos. El botón `EN` reinicia el ESP32 pero
+   **no le corta la corriente al RC522**, así que un estado trabado sobrevive a reinicios,
+   reflasheos y hasta cambios de firmware.
+2. **`banco_lector` + un tag QUE YA SEPAS QUE FUNCIONA** (probado en otra estación). Nunca
+   diagnosticar con un tag nuevo sin estrenar: puede ser el tag.
+3. **Si no lee, cambiar el módulo.** Un RC522 fallado de fábrica pasa TODO lo medible por
+   software: `VersionReg = 0x92`, escritura/lectura de registros OK, y `TxControlReg` yendo
+   de `0x80` a `0x83` al encender la antena. Y aun así no lee nada.
+
+**El autotest interno NO es criterio.** `PCD_PerformSelfTest()` falla igual en un módulo que
+no lee y en uno que lee perfecto, porque los packs baratos traen clones (FM17522 y similares)
+con otra firma de ROM. **Nunca cambiar un módulo por ese test.**
+
+Corolario de compra: de un pack de 6, contar con que alguno viene fallado. Conviene probar
+cada módulo con `banco_lector` **antes** de soldarle el header y montarlo.
 
 ---
 
