@@ -764,3 +764,29 @@ bucket R2 `mundo-fenix-assets`, verificados 215/215 por tamaño y md5. Los asset
 `.gitignore`: se sirven desde Pages y git guardaría cada versión entera de cada binario.
 
 Detalle completo → `.claude/handoffs/handoff_20260810_1329.md`
+
+---
+
+## 2026-08-11 (madrugada) — Gym armada y el RC522 mentiroso
+
+El circuito pasó a **4 estaciones** (`arbol` → `gym`, sale `muelle` porque quedó dentro del
+recorrido de gym) y la TV ahora muestra el progreso de la vuelta en curso: `/juego/dia` expone
+qué estaciones encendió y cuáles le faltan a cada chico, y `lista.html` lo pinta con un ícono
+grande por estación (`46bae62`, `34604c2`, `d4d6409`). Verificado con Chromium sobre 2, 6, 12
+y 16 chicos, y en producción por contenido.
+
+**Estación `gym` armada y verificada** — 5 lecturas, 4 tags distintos, uno de ellos un NTAG213
+real de 7 bytes. Falta habilitarla en `JUEGO_ESTACIONES` (recién cuando esté montada: con `gym`
+activa, una vuelta exige las tres).
+
+El grueso de la sesión se fue en un **RC522 que vino fallado de fábrica**: no leía ni un tag
+pero pasaba todos los tests de software. Y el sketch de diagnóstico que escribí para dirimirlo
+dio un veredicto **falso** ("chip dañado") porque el autotest interno falla igual en los
+módulos buenos — son clones. La regla que queda: el único criterio válido es **¿lee un tag que
+ya sabés que funciona?**
+
+También se decidió **no implementar** el doble check-in/check-out por estación que se evaluó
+para medir tiempos: duplica los taps, crea estados huérfanos y el servidor ya sella la hora de
+cada pasada.
+
+Detalle completo → `.claude/handoffs/handoff_20260811_0129.md`

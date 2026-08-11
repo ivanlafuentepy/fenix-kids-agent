@@ -212,6 +212,39 @@ no detecta nada — el cruce bueno es contra los números que **realmente escrib
 
 ---
 
+## 2026-08-11 — Un RC522 puede venir FALLADO y pasar todos los tests menos el que importa
+
+**Qué pasó:** armando la estación `gym`, el lector nuevo no leía **ningún** tag. Se probaron
+la tarjeta S50 y dos llaveros — los tres funcionando en las otras estaciones. Se hizo power
+cycle, se rehicieron los 7 cables desde cero (con cables nuevos en `3.3V` y `GND`) y se
+descartó el firmware (mismo binario que lee en basket). Nada.
+
+**Causa raíz:** el módulo RC522 venía fallado de fábrica. Al cambiarlo por otro del pack,
+leyó 4 tags distintos al primer intento — incluido un NTAG213 de 7 bytes (pulsera real).
+
+**Lo engañoso:** un RC522 fallado puede pasar TODO lo que se puede medir por software:
+- `VersionReg = 0x92` ✅
+- escritura/lectura de registros ✅ (o sea, el bus SPI anda de verdad, no es parásito)
+- `TxControlReg` pasa de `0x80` a `0x83` al pedir `PCD_AntennaOn()` ✅ — **la antena
+  "enciende" según el registro y aun así no genera campo útil**
+
+**⚠️ El autotest interno NO sirve como veredicto en nuestro hardware.** Se escribió
+`firmware/diagnostico_rc522/` para dirimir esto y su primer veredicto fue **equivocado**:
+dijo "chip dañado" porque `PCD_PerformSelfTest()` falla. Después el módulo **bueno** falló
+ese mismo test *y leyó perfecto* → los packs baratos traen clones (FM17522 y similares) cuya
+firma de ROM no coincide con la del MFRC522 original. **Nunca cambiar un módulo por ese test.**
+
+**Regla para la próxima:** el único criterio válido es **¿lee un tag que sabés que funciona?**
+Orden de diagnóstico ante una estación que no lee:
+1. **Power cycle** (desenchufar el USB) — ver la entrada del 07/08
+2. `banco_lector` + **un tag ya probado en otra estación** (no uno nuevo)
+3. Si no lee: **cambiar el módulo**, sin perder tiempo en registros ni multímetro
+
+`firmware/diagnostico_rc522/` sigue siendo útil para separar "cableado malo" de "antena que
+no enciende", pero su salida ya aclara que pasar los tests **no** garantiza que lea.
+
+---
+
 ## 2026-08-07 (noche) — El RC522 mudo: "Lector OK" y cero detecciones durante 2 horas
 
 **Qué pasó:** armando la estación `basket`, el RC522 leyó perfecto varias veces y de golpe dejó
@@ -1005,3 +1038,42 @@ ahora lleva "🚨 EL PAGO NO SE REGISTRÓ EN AIRTABLE" cuando el POST falla (`ae
   PAGO creado por código es del 25/07" mirando la tabla, no leyendo el código.
 - Los campos con nombre "(ALUMNOS)" son los vivos; los pelados (`PAGA`, `TUTOR`, `TUTOR RUC`) son
   legacy y mueren cuando se borre `TUTORES FENIX LEGACY`.
+
+---
+
+## 2026-08-10 — Texto con tildes/emojis a curl por línea de comandos = llega roto
+
+**Síntoma:** mandé por WhatsApp la lista de tomas de un video con
+`curl --data-urlencode 'msg=...'` en Git Bash. A Iván le llegaron dos mensajes con
+caracteres corruptos ("caracteres no soportados"). Tuve que reenviar todo.
+
+**Causa raíz:** Git Bash tiene el texto en UTF-8, pero al invocar `curl.exe` el argumento
+pasa por la conversión de argv de Windows y se degrada a cp1252. Tildes, ñ, guiones largos,
+viñetas y emojis se rompen ANTES de que curl los percent-encodee. El servidor recibe basura
+y la reenvía tal cual a Meta.
+
+**Por qué no lo detecté:** verifiqué el camino equivocado. Probé
+`py -3 -c "print(repr(sys.argv[1]))" 'pizarrón 🎬'` y Python recibió el string intacto,
+así que di un OK falso. **Python en Windows lee argv por la API wide (`GetCommandLineW`);
+curl.exe no.** Probar con un binario distinto al que va a correr no prueba nada.
+Tampoco sirve mirar el JSON que devuelve el endpoint: la consola cp1252 muestra `?` y `?`
+aunque los bytes estén bien, así que el eco es ambiguo en las dos direcciones.
+
+**Fix:** el texto NUNCA va por la línea de comandos. Se escribe a un archivo UTF-8 sin BOM
+(con la herramienta Write) y curl lo lee del archivo:
+
+```bash
+curl -s -G "$URL/test-envio/$TEL" -H "X-ADMIN-KEY: $KEY" \
+  --data-urlencode "msg@/ruta/al/mensaje.txt"
+```
+
+Verificado end-to-end el 10/08: con archivo llegan bien tildes, ñ, —, •, ⭐, ⚠️, ·  y emojis.
+
+**How to apply:**
+- Cualquier envío de texto no-ASCII (WhatsApp, Telegram, Airtable por curl) → **archivo + `@`**,
+  nunca `msg=texto` inline.
+- Antes de mandar un texto largo a un número real, **mandar UNA línea de prueba con los
+  caracteres sospechosos numerados** y pedir confirmación. Cuesta 10 segundos y evita
+  reenviar 3 mensajes.
+- **La única verificación válida de encoding es que el humano lo vea en el destino.**
+  Ni el eco de la terminal ni un test con otro binario cuentan como prueba.
