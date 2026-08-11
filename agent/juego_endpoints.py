@@ -710,7 +710,7 @@ async def _juego_reto_video_inner(payload: dict):
 
 # Config del circuito — editable por env var sin tocar código
 ESTACIONES_ACTIVAS = [e.strip() for e in os.getenv(
-    "JUEGO_ESTACIONES", "ninja,arbol,basket,quincho,muelle").split(",") if e.strip()]
+    "JUEGO_ESTACIONES", "ninja,gym,basket,quincho").split(",") if e.strip()]
 TIEMPO_MIN_SEG = int(os.getenv("JUEGO_TIEMPO_MIN_SEG", "60"))       # anti tap-tap-tap
 COOLDOWN_LLEGADA_MIN = 5                                             # no duplicar llegadas
 PLATA_VUELTA = 100                                                   # PLAN-MAESTRO 6
