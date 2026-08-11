@@ -1343,6 +1343,7 @@ async def juego_dia():
             "apellido": "",
             "robot": f.get("ROBOT") or None,
             "vueltas_hoy": 0, "oro_hoy": 0, "plata_hoy": 0,
+            "estaciones_vuelta": [],      # las que ya encendió en la vuelta EN CURSO
             "oro_total": int(f.get("ORO") or 0),
             "plata_total": int(f.get("PLATA") or 0),
         }
@@ -1398,9 +1399,36 @@ async def juego_dia():
             if item:
                 item["vueltas_hoy"] += 1
 
+        # 4) Estaciones de la vuelta EN CURSO — lo que la TV muestra como
+        #    "en la 5ª ya encendió básquet y quincho". Una pasada queda con
+        #    vuelta_id NULL hasta que el tótem cierra la vuelta y las sella,
+        #    así que las abiertas de hoy SON la vuelta en curso.
+        abiertas = (await session.execute(
+            select(JuegoPasada).where(
+                JuegoPasada.vuelta_id.is_(None),
+                JuegoPasada.valida == True,  # noqa: E712
+                JuegoPasada.estacion_id != "_llegada",
+                JuegoPasada.timestamp >= _hoy0_utc(),
+            ).order_by(JuegoPasada.timestamp.asc()))).scalars().all()
+
+        nino_de_uid: dict[str, str | None] = {}   # una consulta por pulsera, no por pasada
+        for pas in abiertas:
+            if pas.uid not in nino_de_uid:
+                pu = await _pulsera_por_uid(session, pas.uid)
+                nino_de_uid[pas.uid] = pu.nino_airtable_id if pu else None
+            item = por_nino_id.get(nino_de_uid[pas.uid] or "")
+            if item and pas.estacion_id not in item["estaciones_vuelta"]:
+                item["estaciones_vuelta"].append(pas.estacion_id)
+
+    for item in ninos.values():
+        item["vuelta_actual"] = item["vueltas_hoy"] + 1        # la que está corriendo ahora
+        item["faltan_vuelta"] = [e for e in ESTACIONES_ACTIVAS
+                                 if e not in item["estaciones_vuelta"]]
+
     lista = sorted(ninos.values(),
                    key=lambda x: (-(x["oro_hoy"] + x["plata_hoy"]), -x["vueltas_hoy"], x["nombre"]))
-    return JSONResponse(content={"ok": True, "fecha": hoy, "ninos": lista}, headers=_CORS)
+    return JSONResponse(content={"ok": True, "fecha": hoy, "estaciones": ESTACIONES_ACTIVAS,
+                                 "ninos": lista}, headers=_CORS)
 
 
 @router.get("/juego/eventos")
