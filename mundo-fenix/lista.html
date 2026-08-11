@@ -89,10 +89,37 @@
   .chip.vueltas .v{color:var(--good)}
   .chip.hoy .v{color:var(--gold)}
   .chip.total .v{color:var(--cream)}
+  /* ---------- fuegos de la vuelta EN CURSO ---------- */
+  /* Un ícono por estación activa del circuito (los manda el backend en `estaciones`):
+     encendido = ya la completó en esta vuelta, apagado = le falta. Sin texto a propósito:
+     se mira de lejos y muchos de los chicos todavía no leen. */
+  .circuito{flex:none;text-align:center;padding:0 clamp(4px,.6vw,10px)}
+  .circuito .vn{font-size:clamp(9px,1.3vh,14px);color:var(--muted);letter-spacing:1.2px;
+    text-transform:uppercase;margin-bottom:3px;white-space:nowrap}
+  .fuegos{display:flex;gap:clamp(6px,.9vw,14px);align-items:center;justify-content:center}
+  /* grandes a propósito: es lo primero que el chico busca al pasar frente a la TV */
+  .fuegos span{font-size:clamp(22px,4.6vh,46px);line-height:1;transition:filter .3s,opacity .3s}
+  .fuegos .off{filter:grayscale(1);opacity:.32}
+  .fuegos .on{filter:drop-shadow(0 0 7px rgba(255,194,75,.85))}
+
   /* en 3-4 columnas el espacio manda: se ocultan las etiquetas y el subtítulo del guardián */
   body.c3 .chip .l,body.c4 .chip .l{display:none}
   body.c4 .nom .g{display:none}
-  body.c4 .chip.total{display:none}
+  /* el tesoro acumulado es el dato menos urgente y el chip más ancho (162px, no se encoge):
+     con 3 columnas se oculta para que entren los fuegos y, sobre todo, para que el NOMBRE
+     vuelva a verse — medido: con él puesto, .nom quedaba en 0px */
+  body.c2 .chip.total,body.c3 .chip.total,body.c4 .chip.total{display:none}
+  /* con muchas columnas la etiqueta queda en "5ª" (la palabra completa era más ancha que
+     los propios íconos y le comía el lugar al nombre del chico) */
+  body.c3 .circuito .vn .lg,body.c4 .circuito .vn .lg{display:none}
+  body.c3 .circuito,body.c4 .circuito{padding:0 4px}
+  /* los fuegos se achican con las columnas: a 46px entran en 1-2 columnas, pero con 16
+     chicos (3 columnas) se comen media fila y la desbordan */
+  body.c2 .fuegos span{font-size:clamp(18px,3.6vh,36px)}
+  body.c3 .fuegos span{font-size:clamp(14px,2.3vh,23px)}
+  body.c3 .fuegos{gap:clamp(3px,.4vw,6px)}
+  body.c4 .fuegos span{font-size:clamp(12px,1.9vh,19px)}
+  body.c4 .fuegos{gap:3px}
 
   /* ---------- vacío ---------- */
   #empty{position:fixed;inset:0;display:none;flex-direction:column;gap:14px;align-items:center;
@@ -163,7 +190,12 @@ function columnasPara(n){
 /* ============================ RENDER ============================ */
 let prev = new Map();   // nino_id → firma (para el destello al cambiar)
 
-function render(ninos){
+/* Ícono por estación. Las claves son los `estacion_id` reales del backend
+   (ver ESTACIONES_ACTIVAS en agent/juego_endpoints.py). Una estación nueva sin
+   ícono acá cae al 🔥 genérico — no rompe la fila. */
+const ICONO_EST = {ninja:"🥷", gym:"💪", basket:"🏀", quincho:"🍖", muelle:"⚓"};
+
+function render(ninos, estaciones){
   document.body.classList.toggle("vacio", !ninos.length);
   document.body.classList.remove("c1","c2","c3","c4");
   document.body.classList.add("c" + columnasPara(ninos.length));
@@ -175,7 +207,9 @@ function render(ninos){
   cont.innerHTML = "";
   ninos.forEach((k, i) => {
     const key = k.nino_id || k.nombre;
-    const firma = `${k.vueltas_hoy}|${k.oro_hoy}|${k.plata_hoy}|${k.oro_total}|${k.plata_total}`;
+    // las estaciones entran en la firma: encender un fuego hace destellar la fila al instante
+    const hechas = k.estaciones_vuelta || [];
+    const firma = `${k.vueltas_hoy}|${k.oro_hoy}|${k.plata_hoy}|${k.oro_total}|${k.plata_total}|${hechas.join(",")}`;
     const cambio = prev.has(key) && prev.get(key) !== firma;
     prev.set(key, firma);
 
@@ -185,6 +219,15 @@ function render(ninos){
     const hoyTxt = [k.oro_hoy ? `+${k.oro_hoy}🥇` : "", k.plata_hoy ? `+${k.plata_hoy}🥈` : ""]
                    .filter(Boolean).join(" ") || "—";
     const ape = (k.apellido || "").trim();
+    // vuelta_actual la manda el backend; el fallback cubre una TV abierta contra una versión vieja
+    const nVuelta = k.vuelta_actual || (k.vueltas_hoy || 0) + 1;
+    const fuegos = (estaciones && estaciones.length) ? `
+      <div class="circuito">
+        <div class="vn">${nVuelta}ª<span class="lg"> vuelta</span></div>
+        <div class="fuegos">${estaciones.map(e =>
+          `<span class="${hechas.includes(e) ? "on" : "off"}">${ICONO_EST[e] || "🔥"}</span>`
+        ).join("")}</div>
+      </div>` : "";
     fila.innerHTML = `
       <div class="rank">${rank}</div>
       <div class="ava">${k.robot
@@ -194,6 +237,7 @@ function render(ninos){
         <div class="n">${k.nombre}${ape ? ` <span class="ape">${ape}</span>` : ""}</div>
         <div class="g">${k.robot || "sin guardián aún"}</div>
       </div>
+      ${fuegos}
       <div class="stats">
         <div class="chip vueltas"><div class="v">⚡ ${k.vueltas_hoy}</div><div class="l">vueltas</div></div>
         <div class="chip hoy"><div class="v">${hoyTxt}</div><div class="l">hoy</div></div>
@@ -209,7 +253,7 @@ async function cargar(){
     const r = await fetch(`${CONFIG.API_URL}/juego/dia`, {cache:"no-store"});
     if (r.ok){
       const d = await r.json();
-      if (d.ok) render(d.ninos || []);
+      if (d.ok) render(d.ninos || [], d.estaciones || []);
     }
   }catch(e){}
   setTimeout(cargar, CONFIG.POLL_MS);
