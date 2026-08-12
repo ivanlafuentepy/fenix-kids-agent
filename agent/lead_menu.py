@@ -49,16 +49,19 @@ def saludo_desafio() -> str:
 
     Es función y no constante porque lleva las fechas del campus vigente, que
     se mueven cada semana — una constante congelaba el campus del deploy.
-    Mismo relato que la landing: descubrir / superar / conquistar.
+    Mismo copy que "Una experiencia transformadora" de la web (decisión de
+    Iván 12/08): si cambia allá, cambia acá.
     """
     from agent.desafio import proximo_campus, label_campus
     return (
         "Hola! Te saluda Aurora 🌟\n\n"
-        "Te cuento del DESAFÍO FENIX, nuestro campus de 3 días: viernes descubre, "
-        "sábado supera y domingo conquista, con el Gran Desafío y el almuerzo en familia.\n\n"
-        "Son 3 días donde tu hijo trepa, cruza obstáculos, se cae y se levanta, y se "
-        "anima a cosas que no creía poder hacer 🧗\n\n"
-        "Todo en La Casona Lafuente, más de 3.000 m² frente al río 🌳\n\n"
+        "Te cuento: el DESAFÍO FENIX es una experiencia transformadora.\n\n"
+        "En 3 días tu hijo vive todo lo que hacemos en FENIX: trepa, corre, se cuelga, "
+        "cruza obstáculos, se cae y se levanta, se anima a cosas que no creía poder "
+        "hacer — y hace amigos en el camino 🧗\n\n"
+        "Conoce el lugar, conoce a los entrenadores y conoce, sobre todo, de qué es capaz.\n\n"
+        "Son 3 días que serán el comienzo visible de una transformación profunda 🌳\n\n"
+        "El campus se realiza todos los fines de semana.\n"
         f"📅 Próximo campus: {label_campus(proximo_campus())}"
     )
 

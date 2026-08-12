@@ -85,11 +85,16 @@ def _al_admin(prov):
 # ── El saludo ────────────────────────────────────────────────────────────────
 
 def test_el_saludo_cuenta_el_campus_y_no_la_academia_en_general():
+    """Desde el 12/08 el saludo usa el copy de la web ("Una experiencia
+    transformadora"), no el relato descubre/supera/conquista."""
     s = menu.saludo_desafio()
     assert "DESAFÍO FENIX" in s
     assert "3 días" in s
-    for palabra in ("descubre", "supera", "conquista"):
-        assert palabra in s.lower(), f"falta el relato de los 3 días: {palabra}"
+    assert "experiencia transformadora" in s
+    for frase in ("trepa, corre, se cuelga", "hace amigos en el camino",
+                  "de qué es capaz", "transformación profunda",
+                  "todos los fines de semana"):
+        assert frase in s, f"falta el copy de la web: {frase}"
     assert "trepando árboles" not in s, "ese era el saludo viejo de la academia"
 
 
