@@ -10,6 +10,7 @@ import pytest
 from agent.desafio import (
     proximo_campus, es_anticipada, precio_desafio, turnos_del_campus,
     label_campus, crear_reservas_campus,
+    turnos_viernes_de, turnos_sabado_de, aviso_horario_especial, dias_especiales_proximos,
     PRECIO_ANTICIPADA, PRECIO_NORMAL, TURNOS_VIERNES, TURNOS_SABADO, HORA_DOMINGO,
 )
 
@@ -106,11 +107,12 @@ class TestPrecio:
 class TestTurnosYLabel:
 
     def test_cinco_slots_en_orden(self):
-        slots = turnos_del_campus(proximo_campus(py(2026, 8, 10)))
+        # Un fin de semana normal (el 14/08 corre con turno único, ver TestTurnosEspeciales)
+        slots = turnos_del_campus(proximo_campus(py(2026, 8, 17)))
         assert slots == [
-            ("2026-08-14", "17:00"), ("2026-08-14", "19:30"),
-            ("2026-08-15", "11:00"), ("2026-08-15", "15:30"),
-            ("2026-08-16", "12:00"),
+            ("2026-08-21", "17:00"), ("2026-08-21", "19:30"),
+            ("2026-08-22", "11:00"), ("2026-08-22", "15:30"),
+            ("2026-08-23", "12:00"),
         ]
 
     def test_label_mismo_mes(self):
@@ -123,6 +125,58 @@ class TestTurnosYLabel:
                   "domingo": date(2026, 9, 1)}
         label = label_campus(campus)
         assert "agosto" in label and "septiembre" in label
+
+
+class TestTurnosEspeciales:
+    """El feriado del 14 y 15 de agosto corre con un solo turno por día.
+
+    La excepción va por FECHA, así que se apaga sola: el campus siguiente
+    vuelve a tener los dos turnos sin que nadie toque el código.
+    """
+
+    CAMPUS_FERIADO = {"viernes": date(2026, 8, 14), "sabado": date(2026, 8, 15),
+                      "domingo": date(2026, 8, 16)}
+
+    def test_el_viernes_feriado_tiene_un_solo_turno(self):
+        assert turnos_viernes_de(self.CAMPUS_FERIADO) == ("17:00",)
+
+    def test_el_sabado_feriado_tiene_un_solo_turno(self):
+        assert turnos_sabado_de(self.CAMPUS_FERIADO) == ("11:00",)
+
+    def test_el_campus_siguiente_vuelve_a_los_dos_turnos(self):
+        c = proximo_campus(py(2026, 8, 17))
+        assert turnos_viernes_de(c) == TURNOS_VIERNES
+        assert turnos_sabado_de(c) == TURNOS_SABADO
+
+    def test_el_finde_feriado_tiene_tres_slots_y_no_cinco(self):
+        assert turnos_del_campus(self.CAMPUS_FERIADO) == [
+            ("2026-08-14", "17:00"), ("2026-08-15", "11:00"), ("2026-08-16", "12:00"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_no_se_puede_reservar_un_turno_que_no_corre_ese_finde(self):
+        with pytest.raises(ValueError):
+            await crear_reservas_campus(["recX"], "19:30", "11:00", self.CAMPUS_FERIADO)
+        with pytest.raises(ValueError):
+            await crear_reservas_campus(["recX"], "17:00", "15:30", self.CAMPUS_FERIADO)
+
+    def test_el_aviso_aparece_los_dias_previos(self):
+        aviso = aviso_horario_especial(date(2026, 8, 12))
+        assert aviso and "17:00" in aviso and "11:00" in aviso
+        assert "NO hay turno de 19:30" in aviso and "NO hay turno de 15:30" in aviso
+
+    def test_el_aviso_sigue_vigente_el_sabado_a_la_mañana(self):
+        # proximo_campus() ese día ya apunta al finde siguiente, pero la mamá que
+        # pregunta "¿hay entrenamiento hoy?" tiene que escuchar 11:00.
+        aviso = aviso_horario_especial(date(2026, 8, 15))
+        assert aviso and "11:00" in aviso
+
+    def test_el_aviso_desaparece_solo_cuando_pasa_el_finde(self):
+        assert aviso_horario_especial(date(2026, 8, 17)) is None
+        assert dias_especiales_proximos(date(2026, 8, 17)) == []
+
+    def test_el_aviso_no_aparece_con_mucha_anticipacion(self):
+        assert aviso_horario_especial(date(2026, 7, 20)) is None
 
 
 class TestCrearReservas:
@@ -153,13 +207,13 @@ class TestCrearReservas:
         monkeypatch.setattr(ac, "obtener_o_crear_horario", fake_horario)
         monkeypatch.setattr(ac, "crear_reserva", fake_reserva)
 
-        campus = proximo_campus(py(2026, 8, 10))
+        campus = proximo_campus(py(2026, 8, 17))   # finde normal, dos turnos por día
         reservas = await crear_reservas_campus(["nino1", "nino2"], "19:30", "15:30", campus)
 
         assert len(reservas) == 6  # 2 niños × 3 días
-        assert pedidos[:3] == [("2026-08-14", "19:30"),
-                               ("2026-08-15", "15:30"),
-                               ("2026-08-16", HORA_DOMINGO)]
+        assert pedidos[:3] == [("2026-08-21", "19:30"),
+                               ("2026-08-22", "15:30"),
+                               ("2026-08-23", HORA_DOMINGO)]
 
     @pytest.mark.asyncio
     async def test_si_falla_un_horario_los_otros_dos_dias_igual_se_reservan(self, monkeypatch):
@@ -194,11 +248,24 @@ class ProveedorFalso:
         return True
 
 
+CAMPUS_NORMAL = {"viernes": date(2026, 8, 21), "sabado": date(2026, 8, 22),
+                 "domingo": date(2026, 8, 23)}
+CAMPUS_FERIADO = {"viernes": date(2026, 8, 14), "sabado": date(2026, 8, 15),
+                  "domingo": date(2026, 8, 16)}
+
+
 @pytest.fixture
 def sin_mundo_exterior(monkeypatch):
-    """Neutraliza DB, Airtable y Telegram; devuelve los flags que se fueron escribiendo."""
+    """Neutraliza DB, Airtable y Telegram; devuelve los flags que se fueron escribiendo.
+
+    Congela además el campus en uno NORMAL: si no, estos tests prueban la mecánica
+    de elección de turnos contra el calendario real y se rompen solos cuando cae un
+    fin de semana con turno único (pasó con el feriado del 14/08).
+    """
     from agent import desafio
     escritos = {}
+
+    monkeypatch.setattr(desafio, "proximo_campus", lambda *a, **kw: CAMPUS_NORMAL)
 
     async def fake_flags(telefono, **kw):
         escritos.update(kw)
@@ -292,3 +359,27 @@ class TestEleccionDeTurno:
         ok = await desafio.ofrecer_turnos_viernes("595", p)
         assert ok is True
         assert p.botones[-1][2] == ["desafio_vie_1930"]
+
+    @pytest.mark.asyncio
+    async def test_el_finde_feriado_ofrece_un_solo_boton(self, monkeypatch, sin_mundo_exterior):
+        """14/08: el padre ve un botón, no dos, y el texto le explica por qué."""
+        from agent import desafio
+
+        monkeypatch.setattr(desafio, "proximo_campus", lambda *a, **kw: CAMPUS_FERIADO)
+        p = ProveedorFalso()
+        ok = await desafio.ofrecer_turnos_viernes("595", p)
+        assert ok is True
+        assert p.botones[-1][2] == ["desafio_vie_1700"]
+        assert "un solo turno" in p.botones[-1][1]
+
+    @pytest.mark.asyncio
+    async def test_el_finde_feriado_no_acepta_el_turno_que_no_corre(self, monkeypatch, sin_mundo_exterior):
+        """Si el padre escribe "19:30" ese viernes, se le reofrece el único turno."""
+        from agent import desafio
+
+        monkeypatch.setattr(desafio, "proximo_campus", lambda *a, **kw: CAMPUS_FERIADO)
+        p = ProveedorFalso()
+        r = await desafio.manejar_eleccion_turno("595", "prefiero 19:30", None, False,
+                                                 {"desafio_espera_turno": "viernes"}, p)
+        assert r == "[turno: recordatorio]"
+        assert p.botones[-1][2] == ["desafio_vie_1700"]

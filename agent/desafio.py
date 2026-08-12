@@ -31,6 +31,16 @@ TURNOS_VIERNES = ("17:00", "19:30")
 TURNOS_SABADO = ("11:00", "15:30")
 HORA_DOMINGO = "12:00"
 
+# Excepciones por fecha: días que corren con otros turnos que los de arriba.
+# La clave es la fecha ISO del día, así que la excepción se apaga SOLA cuando ese
+# campus pasa — nadie tiene que acordarse de revertir nada el lunes. Las constantes
+# de arriba nunca se tocan: siguen siendo la regla general.
+TURNOS_ESPECIALES: dict[str, tuple[str, ...]] = {
+    "2026-08-14": ("17:00",),   # feriado: un solo turno
+    "2026-08-15": ("11:00",),   # feriado: un solo turno (también el entrenamiento regular)
+}
+MOTIVO_ESPECIAL = "es feriado"
+
 # El campus en curso se deja de vender cuando arranca el turno 1 del viernes.
 _INICIO_VIERNES = time(17, 0)
 
@@ -96,13 +106,34 @@ def precio_desafio(hijos: int = 1, ahora: datetime | None = None,
     return base + EXTRA_HERMANO * (hijos - 1), anticipada
 
 
+def turnos_de(fecha_iso: str, normales: tuple[str, ...]) -> tuple[str, ...]:
+    """Los turnos que corren ESE día: la excepción si la hay, si no los de siempre."""
+    return TURNOS_ESPECIALES.get(fecha_iso, normales)
+
+
+def turnos_viernes_de(campus: dict | None = None) -> tuple[str, ...]:
+    """Turnos del viernes de ese campus (puede ser uno solo si es feriado)."""
+    campus = campus or proximo_campus()
+    return turnos_de(campus["viernes"].isoformat(), TURNOS_VIERNES)
+
+
+def turnos_sabado_de(campus: dict | None = None) -> tuple[str, ...]:
+    """Turnos del sábado de ese campus (puede ser uno solo si es feriado)."""
+    campus = campus or proximo_campus()
+    return turnos_de(campus["sabado"].isoformat(), TURNOS_SABADO)
+
+
 def turnos_del_campus(campus: dict | None = None) -> list[tuple[str, str]]:
-    """Los 5 slots (fecha_iso, hora) del campus, en orden cronológico."""
+    """Los slots (fecha_iso, hora) del campus, en orden cronológico.
+
+    Normalmente son 5; un fin de semana con turno único tiene menos.
+    """
     campus = campus or proximo_campus()
     v, s, d = campus["viernes"].isoformat(), campus["sabado"].isoformat(), campus["domingo"].isoformat()
-    return [(v, TURNOS_VIERNES[0]), (v, TURNOS_VIERNES[1]),
-            (s, TURNOS_SABADO[0]), (s, TURNOS_SABADO[1]),
-            (d, HORA_DOMINGO)]
+    slots = [(v, h) for h in turnos_viernes_de(campus)]
+    slots += [(s, h) for h in turnos_sabado_de(campus)]
+    slots.append((d, HORA_DOMINGO))
+    return slots
 
 
 def label_campus(campus: dict | None = None) -> str:
@@ -117,6 +148,65 @@ def label_campus(campus: dict | None = None) -> str:
         return f"viernes {v.day}, sábado {s.day} y domingo {d.day} de {_MESES[v.month - 1]}"
     return (f"viernes {v.day} de {_MESES[v.month - 1]}, sábado {s.day} de {_MESES[s.month - 1]} "
             f"y domingo {d.day} de {_MESES[d.month - 1]}")
+
+
+_DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+
+
+def _label_dia(d: date) -> str:
+    """"sábado 15" — para nombrar un día suelto en los avisos."""
+    return f"{_DIAS[d.weekday()]} {d.day}"
+
+
+def dias_especiales_proximos(hoy: date | None = None, dentro_de: int = 7) -> list[tuple[date, tuple[str, ...]]]:
+    """Los días con turno especial que todavía no pasaron, ordenados.
+
+    Se mira por FECHA y no por campus a propósito: el sábado a la mañana
+    proximo_campus() ya devuelve el fin de semana siguiente, y justo ese sábado
+    es cuando una mamá pregunta "¿hay entrenamiento hoy?".
+    """
+    hoy = hoy or ahora_py().date()
+    dias = []
+    for fecha_iso, turnos in TURNOS_ESPECIALES.items():
+        try:
+            d = date.fromisoformat(fecha_iso)
+        except ValueError:
+            logger.error(f"[DESAFIO] Fecha inválida en TURNOS_ESPECIALES: {fecha_iso!r}")
+            continue
+        if 0 <= (d - hoy).days <= dentro_de:
+            dias.append((d, turnos))
+    return sorted(dias)
+
+
+def aviso_horario_especial(hoy: date | None = None) -> str | None:
+    """El bloque que se le inyecta al LLM cuando hay días con turno especial.
+
+    Devuelve None si no hay ninguno cerca — así el aviso aparece y desaparece
+    solo, sin tocar el prompt (que además está cacheado).
+    """
+    dias = dias_especiales_proximos(hoy)
+    if not dias:
+        return None
+
+    lineas = []
+    for d, turnos in dias:
+        normales = TURNOS_VIERNES if d.weekday() == 4 else TURNOS_SABADO if d.weekday() == 5 else ()
+        caidos = [h for h in normales if h not in turnos]
+        linea = f"· {_label_dia(d)}: SOLO {' y '.join(turnos)}"
+        if caidos:
+            linea += f" (NO hay turno de {' ni de '.join(caidos)} ese día)"
+        lineas.append(linea)
+
+    return (
+        f"[SISTEMA — HORARIO ESPECIAL, {MOTIVO_ESPECIAL}. Esto MANDA sobre cualquier "
+        "horario que figure en tus instrucciones:\n"
+        + "\n".join(lineas)
+        + "\nEl domingo no cambia. Aplica tanto al DESAFÍO FENIX como al entrenamiento "
+        "regular de las familias inscriptas.\n"
+        "Si un padre pregunta si hay entrenamiento ese día, la respuesta es SÍ: hay uno "
+        "solo, en el horario de arriba. NUNCA ofrezcas ni menciones los turnos que no "
+        "corren ese día.]"
+    )
 
 
 async def estado_cupo(fecha_iso: str, hora: str) -> tuple[str, int]:
@@ -159,12 +249,13 @@ async def crear_reservas_campus(nino_ids: list[str], turno_viernes: str, turno_s
     """
     from agent.airtable_client import obtener_o_crear_horario, crear_reserva
 
-    if turno_viernes not in TURNOS_VIERNES:
-        raise ValueError(f"Turno de viernes inválido: {turno_viernes!r} (esperaba {TURNOS_VIERNES})")
-    if turno_sabado not in TURNOS_SABADO:
-        raise ValueError(f"Turno de sábado inválido: {turno_sabado!r} (esperaba {TURNOS_SABADO})")
-
     campus = campus or proximo_campus()
+    _validos_v, _validos_s = turnos_viernes_de(campus), turnos_sabado_de(campus)
+    if turno_viernes not in _validos_v:
+        raise ValueError(f"Turno de viernes inválido: {turno_viernes!r} (esperaba {_validos_v})")
+    if turno_sabado not in _validos_s:
+        raise ValueError(f"Turno de sábado inválido: {turno_sabado!r} (esperaba {_validos_s})")
+
     jornadas = [
         (campus["viernes"].isoformat(), turno_viernes),
         (campus["sabado"].isoformat(), turno_sabado),
@@ -226,13 +317,16 @@ async def ofrecer_turnos_viernes(telefono: str, proveedor, topic_id: int | None 
     from agent.memory import guardar_mensaje
 
     campus = proximo_campus()
-    libres, _ = await _turnos_ofrecibles(campus["viernes"].isoformat(), TURNOS_VIERNES)
+    libres, _ = await _turnos_ofrecibles(campus["viernes"].isoformat(), turnos_viernes_de(campus))
     if not libres:
         await _avisar_sin_cupo(telefono, proveedor, campus, "viernes", topic_id, tg_group)
         return False
 
-    texto = (f"¡Listo! 🔥 Tu lugar en el DESAFÍO FENIX del {label_campus(campus)} está reservado.\n\n"
-             "Ahora elegí el turno del *viernes* (día 1 — Descubrir) 👇")
+    texto = f"¡Listo! 🔥 Tu lugar en el DESAFÍO FENIX del {label_campus(campus)} está reservado.\n\n"
+    texto += (f"Este *viernes*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
+              "(día 1 — Descubrir). Confirmalo 👇"
+              if len(libres) == 1 else
+              "Ahora elegí el turno del *viernes* (día 1 — Descubrir) 👇")
     botones = [b for b in _BTN_VIERNES if _TURNO_POR_BTN[b["id"]] in libres]
     await proveedor.enviar_botones(telefono, texto, botones)
     await guardar_mensaje(telefono, "assistant", texto)
@@ -294,7 +388,8 @@ async def manejar_eleccion_turno(telefono: str, texto: str, btn_id: str | None,
     if espera not in ("viernes", "sabado"):
         return None
 
-    horas_validas = TURNOS_VIERNES if espera == "viernes" else TURNOS_SABADO
+    campus = proximo_campus()
+    horas_validas = turnos_viernes_de(campus) if espera == "viernes" else turnos_sabado_de(campus)
     # Botón primero; si escribió, se acepta la hora textual ("17:00", "11") —
     # es un match contra valores conocidos, no un detector de intención nuevo.
     hora = _TURNO_POR_BTN.get(btn_id or "") if es_boton else None
@@ -302,24 +397,26 @@ async def manejar_eleccion_turno(telefono: str, texto: str, btn_id: str | None,
         hora = next((h for h in horas_validas
                      if h in (texto or "") or h.split(":")[0] in (texto or "").split()), None)
     if not hora:
-        botones = _BTN_VIERNES if espera == "viernes" else _BTN_SABADO
-        recordatorio = "Tocá uno de los turnos 👇"
+        _todos = _BTN_VIERNES if espera == "viernes" else _BTN_SABADO
+        botones = [b for b in _todos if _TURNO_POR_BTN[b["id"]] in horas_validas]
+        recordatorio = "Tocá uno de los turnos 👇" if len(botones) > 1 else "Tocá el turno 👇"
         await proveedor.enviar_botones(telefono, recordatorio, botones)
         await guardar_mensaje(telefono, "assistant", recordatorio)
         return "[turno: recordatorio]"
 
-    campus = proximo_campus()
-
     if espera == "viernes":
         await actualizar_estado_flags(telefono, desafio_turno_viernes=hora,
                                       desafio_espera_turno="sabado")
-        libres, _ = await _turnos_ofrecibles(campus["sabado"].isoformat(), TURNOS_SABADO)
+        libres, _ = await _turnos_ofrecibles(campus["sabado"].isoformat(), turnos_sabado_de(campus))
         if not libres:
             await _avisar_sin_cupo(telefono, proveedor, campus, "sábado", topic_id, tg_group)
             await actualizar_estado_flags(telefono, desafio_espera_turno=None)
             return "[turno sábado sin cupo]"
-        pregunta = (f"Genial, viernes {hora} ✅\n\n"
-                    "Ahora el turno del *sábado* (día 2 — Superar) 👇")
+        pregunta = f"Genial, viernes {hora} ✅\n\n"
+        pregunta += (f"Este *sábado*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
+                     "(día 2 — Superar). Confirmalo 👇"
+                     if len(libres) == 1 else
+                     "Ahora el turno del *sábado* (día 2 — Superar) 👇")
         botones = [b for b in _BTN_SABADO if _TURNO_POR_BTN[b["id"]] in libres]
         await proveedor.enviar_botones(telefono, pregunta, botones)
         await guardar_mensaje(telefono, "assistant", pregunta)
