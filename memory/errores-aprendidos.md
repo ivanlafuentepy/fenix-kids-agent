@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-08-12 — El aviso que corregía al prompt perdía contra el prompt
+
+**Qué falló:** por el feriado, el campus del 14/08 corre con un turno por día. Se inyectó al
+LLM un bloque `[SISTEMA — HORARIO ESPECIAL … NO hay turno de 19:30 ese día]` y el prompt
+mantuvo su lista de siempre (`VIERNES: 17:00 o 19:30`). Ante *"no puedo el viernes temprano,
+¿hay algo más tarde?"* el agente **ofreció las 19:30 igual, 2 de 2 veces**. Con la salvedad
+agregada a la objeción del prompt, siguió fallando.
+
+**Causa raíz:** un dato que cambia no puede estar escrito en `prompts.yaml`. El modelo trata
+la lista del prompt como el hecho y el aviso del contexto como una nota al pie; cuando el
+padre pide una alternativa, va a buscar la lista. No es un problema de redacción del aviso.
+
+**Cómo se resolvió:** los horarios salieron del prompt (`bloque_turnos_vigentes()` en
+`agent/desafio.py`) y se inyectan **siempre** por `contexto_extra`, con el prompt diciendo
+explícitamente "los horarios no los sabés de memoria, tomalos del contexto". Es la misma
+solución que ya se había aplicado a las fechas del campus.
+
+**Regla para la próxima:**
+- Dato que cambia (horarios, fechas, cupos, precios de temporada) → **calculado e inyectado
+  siempre**, nunca escrito en el prompt. Ni siquiera "por las dudas": la copia del prompt gana.
+- Inyectarlo SIEMPRE, no solo cuando hay excepción — si aparece únicamente cuando algo cambia,
+  el modelo no aprende a buscarlo ahí.
+- Esto **pytest no lo detecta**. Antes de dar por bueno un cambio de prompt hay que llamar a
+  `generar_respuesta` y leer las respuestas, incluida la pregunta incómoda ("¿hay algo más
+  tarde?", "¿y a la tarde?"), que es la que destapa el problema.
+
+---
+
 ## 2026-08-10 — El deploy estaba OK y la web se veía vieja: el JS lo servía el cache
 
 **Qué falló:** se publicó la cuenta regresiva en `fenixkidsacademy-web` y Iván insistió tres
