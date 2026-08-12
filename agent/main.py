@@ -67,7 +67,7 @@ from agent.tools.detectores import (
     padre_pregunta_devolucion, padre_pregunta_efectivo, padre_dice_ya_transfiri,
     padre_pregunta_alias,
 )
-from agent.desafio import aviso_horario_especial
+from agent.desafio import aviso_horario_especial, bloque_turnos_vigentes
 from agent.tool_definitions import TOOLS_IVAN, TOOLS_AURORA
 from agent.tool_executor import ejecutar_tool
 
@@ -3645,14 +3645,20 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 elif agent_actual == "aurora" and (_keywords_reserva or _responde_horario):
                     _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
                     logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
-                # Días con turno especial (feriados): el aviso pisa los horarios
-                # que los dos prompts tienen escritos. Va por acá y no en el YAML
-                # porque aparece y se apaga solo con la fecha, y porque el bloque
-                # dinámico queda FUERA del prompt cacheado.
-                _aviso_horarios = aviso_horario_especial()
-                if _aviso_horarios:
-                    contexto_extra = (f"{contexto_extra}\n\n{_aviso_horarios}"
-                                      if contexto_extra else _aviso_horarios)
+                # Horarios: el prompt NO los lleva escritos (los inventaba al pedirle
+                # alternativas). Al lead se le inyectan los turnos vigentes del campus;
+                # a la familia, solo el aviso de feriado — sus horarios salen de tools.
+                # Va acá y no en el YAML porque el bloque dinámico queda FUERA del
+                # prompt cacheado y porque se apaga solo con la fecha.
+                try:
+                    _horarios_ctx = (bloque_turnos_vigentes() if agent_actual == "ivan"
+                                     else aviso_horario_especial())
+                except Exception as e:   # nunca dejar mudo al webhook por esto
+                    logger.error(f"[HORARIOS] No pude armar el bloque de turnos: {e}")
+                    _horarios_ctx = None
+                if _horarios_ctx:
+                    contexto_extra = (f"{contexto_extra}\n\n{_horarios_ctx}"
+                                      if contexto_extra else _horarios_ctx)
 
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,

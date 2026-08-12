@@ -209,8 +209,39 @@ def aviso_horario_especial(hoy: date | None = None) -> str | None:
         "regular de las familias inscriptas.\n"
         "Si un padre pregunta si hay entrenamiento ese día, la respuesta es SÍ: hay uno "
         "solo, en el horario de arriba. NUNCA ofrezcas ni menciones los turnos que no "
-        "corren ese día.]"
+        "corren ese día.\n"
+        "Si el padre dice que ese horario no le sirve, NO le inventes otro turno de ese "
+        "mismo día: no existe. Ofrecele el fin de semana siguiente, que corre normal.]"
     )
+
+
+def bloque_turnos_vigentes(campus: dict | None = None) -> str:
+    """Los turnos REALES del campus que se está vendiendo, para inyectar SIEMPRE.
+
+    El prompt no lleva la lista de horarios escrita, igual que no lleva las fechas:
+    con la lista adentro, Haiku la usaba para ofrecer "otro turno más tarde" aunque
+    el contexto dijera que ese día corre uno solo (probado el 12/08: fallaba 2 de 2).
+    """
+    campus = campus or proximo_campus()
+    v, s, d = campus["viernes"], campus["sabado"], campus["domingo"]
+    tv, ts = turnos_viernes_de(campus), turnos_sabado_de(campus)
+
+    def _rangos(turnos: tuple[str, ...]) -> str:
+        return " o ".join(RANGO_TURNO.get(h, h) for h in turnos)
+
+    bloque = (
+        f"[SISTEMA — TURNOS VIGENTES del campus del {label_campus(campus)}. Son los ÚNICOS "
+        "que existen: NO ofrezcas ni menciones ningún otro horario, aunque lo recuerdes.\n"
+        f"· {_label_dia(v)} (Descubrir): {_rangos(tv)}\n"
+        f"· {_label_dia(s)} (Superar): {_rangos(ts)}\n"
+        f"· {_label_dia(d)} (Conquistar): 12:00 Gran Desafío · 13:00 almuerzo en familia "
+        "· 15:00 cierre\n"
+    )
+    if len(tv) == 1 or len(ts) == 1:
+        bloque += (f"Los días con un solo turno son así porque {MOTIVO_ESPECIAL}. Si al padre "
+                   "no le sirve ese horario, NO hay otro ese día: ofrecele el fin de semana "
+                   "siguiente, que corre normal.\n")
+    return bloque + "]"
 
 
 async def estado_cupo(fecha_iso: str, hora: str) -> tuple[str, int]:
