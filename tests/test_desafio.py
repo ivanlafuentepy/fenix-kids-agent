@@ -379,6 +379,9 @@ class TestEleccionDeTurno:
         ok = await desafio.ofrecer_turnos_viernes("595", p)
         assert ok is True
         assert p.botones[-1][2] == ["desafio_vie_1930"]
+        # Quedó UN turno por cupo, no por feriado: el texto no puede decir feriado
+        assert "feriado" not in p.botones[-1][1]
+        assert "un solo turno con lugar" in p.botones[-1][1]
 
     @pytest.mark.asyncio
     async def test_el_finde_feriado_ofrece_un_solo_boton(self, monkeypatch, sin_mundo_exterior):

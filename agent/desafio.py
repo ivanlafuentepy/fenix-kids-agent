@@ -358,10 +358,16 @@ async def ofrecer_turnos_viernes(telefono: str, proveedor, topic_id: int | None 
         return False
 
     texto = f"¡Listo! 🔥 Tu lugar en el DESAFÍO FENIX del {label_campus(campus)} está reservado.\n\n"
-    texto += (f"Este *viernes*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
-              "(día 1 — Descubrir). Confirmalo 👇"
-              if len(libres) == 1 else
-              "Ahora elegí el turno del *viernes* (día 1 — Descubrir) 👇")
+    # "es feriado" solo si el día DE VERDAD tiene turno único: libres también
+    # queda en 1 cuando el otro turno se cerró por cupo, y eso no es un feriado.
+    if len(turnos_viernes_de(campus)) == 1:
+        texto += (f"Este *viernes*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
+                  "(día 1 — Descubrir). Confirmalo 👇")
+    elif len(libres) == 1:
+        texto += (f"Del *viernes* queda un solo turno con lugar: {libres[0]} "
+                  "(día 1 — Descubrir). Confirmalo 👇")
+    else:
+        texto += "Ahora elegí el turno del *viernes* (día 1 — Descubrir) 👇"
     botones = [b for b in _BTN_VIERNES if _TURNO_POR_BTN[b["id"]] in libres]
     await proveedor.enviar_botones(telefono, texto, botones)
     await guardar_mensaje(telefono, "assistant", texto)
@@ -384,11 +390,14 @@ async def _espejar(topic_id: int | None, texto: str, telefono: str, tg_group: in
 
 async def _avisar_sin_cupo(telefono: str, proveedor, campus: dict, dia: str,
                            topic_id: int | None, tg_group: int) -> None:
-    """Los dos turnos del día llegaron al techo real (20). Se le dice al padre y
-    se le avisa a Iván: la plata YA entró, así que esto no puede quedar en un log."""
+    """Todos los turnos del día llegaron al techo real (20). Se le dice al padre y
+    se le avisa a Iván: la plata YA entró, así que esto no puede quedar en un log.
+
+    "los turnos", sin número: un feriado corre con un turno único y "los dos" mentiría.
+    """
     from agent.memory import guardar_mensaje
     import os
-    texto = (f"Uff, los dos turnos del {dia} de este campus ya se llenaron 😅\n"
+    texto = (f"Uff, los turnos del {dia} de este campus ya se llenaron 😅\n"
              "Dejame hablar con el profe a ver si te hacemos un lugarcito y te confirmo.")
     try:
         await proveedor.enviar_mensaje(telefono, texto)
@@ -401,7 +410,7 @@ async def _avisar_sin_cupo(telefono: str, proveedor, campus: dict, dia: str,
         try:
             await proveedor.enviar_mensaje(
                 admin,
-                f"⚠️ DESAFÍO SIN CUPO\n{telefono} PAGÓ y los dos turnos del {dia} "
+                f"⚠️ DESAFÍO SIN CUPO\n{telefono} PAGÓ y los turnos del {dia} "
                 f"({label_campus(campus)}) están al tope de 20.\nHay que resolverlo a mano.",
             )
         except Exception as e:
@@ -448,10 +457,15 @@ async def manejar_eleccion_turno(telefono: str, texto: str, btn_id: str | None,
             await actualizar_estado_flags(telefono, desafio_espera_turno=None)
             return "[turno sábado sin cupo]"
         pregunta = f"Genial, viernes {hora} ✅\n\n"
-        pregunta += (f"Este *sábado*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
-                     "(día 2 — Superar). Confirmalo 👇"
-                     if len(libres) == 1 else
-                     "Ahora el turno del *sábado* (día 2 — Superar) 👇")
+        # Mismo criterio que el viernes: "feriado" solo si el turno único es real.
+        if len(turnos_sabado_de(campus)) == 1:
+            pregunta += (f"Este *sábado*, como {MOTIVO_ESPECIAL}, hay un solo turno: {libres[0]} "
+                         "(día 2 — Superar). Confirmalo 👇")
+        elif len(libres) == 1:
+            pregunta += (f"Del *sábado* queda un solo turno con lugar: {libres[0]} "
+                         "(día 2 — Superar). Confirmalo 👇")
+        else:
+            pregunta += "Ahora el turno del *sábado* (día 2 — Superar) 👇"
         botones = [b for b in _BTN_SABADO if _TURNO_POR_BTN[b["id"]] in libres]
         await proveedor.enviar_botones(telefono, pregunta, botones)
         await guardar_mensaje(telefono, "assistant", pregunta)
