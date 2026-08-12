@@ -111,11 +111,16 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
     if not hora_nueva and not fecha_nueva:
         opciones = [h for h in _horarios_de(fecha_actual) if h != hora_actual]
         info_txt = "\n".join(f"• {r['hijo']} → {r['fecha']} {r['hora']}" for r in reservas_info)
+        # Sin opciones (día de turno único): decirlo explícito, no dejar la
+        # lista vacía para que el LLM la rellene solo.
+        _disp = (f"Horarios disponibles: {' | '.join(opciones)}" if opciones else
+                 f"Ese día no hay otro horario (turno único el {fecha_actual}); "
+                 "se puede cambiar de fecha.")
         return {
             "reservas_actuales": info_txt,
             "horarios_disponibles": opciones,
             "reagendado": False,
-            "texto": f"Reserva actual:\n{info_txt}\n\nHorarios disponibles: {' | '.join(opciones)}",
+            "texto": f"Reserva actual:\n{info_txt}\n\n{_disp}",
         }
 
     # Validar hora (solo si vino: puede reagendar cambiando solo la fecha).
