@@ -810,3 +810,21 @@ reagendar). De yapa, el saludo del primer contacto pasó al copy de la web.
 Commits `807e81a`→`bec64a0` + `4c549b2` en la web.
 
 Detalle completo → `.claude/handoffs/handoff_20260812_1330.md`
+
+## 2026-08-12 — la web entra a Google
+
+Iván preguntó cómo hacer para que `fenixkidsacademy.com` aparezca en Google. La respuesta
+corta: no aparecía porque nunca se lo enviamos, y porque `robots.txt` y `sitemap.xml` no
+existían — pero devolvían HTTP 200, que es la trampa de Cloudflare Pages (sirve el index como
+fallback). Se sumaron los dos, más canonical, Open Graph absoluto y un JSON-LD con dirección,
+teléfono, edades y los 4 turnos de 90 min. El logo bajó de 2.79 MB a 187 KB. Decisión de Iván:
+la home sigue siendo la landing del Desafío — no se reescribe, solo cambia el title.
+
+Search Console, la Redirect Rule de `www` y la ficha de Maps las hizo él con Claude Chrome,
+con un prompt armado acá. Dos cosas salieron de eso: el `_redirects` de Pages **no matchea el
+host** (la regla nunca se aplicó y el archivo quedaba aparentando funcionar, se borró), y la
+ficha de Google publicaba **el número personal de Iván** y la dirección equivocada. De paso se
+compactó `MEMORY.md` de 19.7 a 14.0 KB sin borrar ninguna memoria.
+Commits `9a53cbf`→`eeb5f60`, todos en `fenixkidsacademy-web`.
+
+Detalle completo → `.claude/handoffs/handoff_20260812_1601.md`

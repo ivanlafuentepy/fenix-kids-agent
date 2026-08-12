@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-08-12 — El archivo de config que no hace nada: `_redirects` de Pages ignora el dominio
+
+**Qué falló:** para que `www.fenixkidsacademy.com` redirigiera al dominio pelado (dos URLs con
+el mismo contenido dividían la señal de Google) se creó un `_redirects` en el repo con la regla
+`https://www.fenixkidsacademy.com/* https://fenixkidsacademy.com/:splat 301`. Commiteó, deployó,
+**sin un solo error**. Y `www` siguió respondiendo `200` sin `Location`.
+
+**Causa raíz:** el `_redirects` de Cloudflare Pages **evalúa solo la ruta, no el host**. Una
+regla con hostname en el source no falla ni avisa: simplemente nunca matchea. El archivo queda
+en el repo aparentando resolver un problema que sigue vivo.
+
+**Cómo se resolvió:** se borró el archivo en vez de dejarlo puesto (commit `272789f`). El
+redirect real es una **Redirect Rule a nivel de zona** (Cloudflare → dominio → Rules → Redirect
+Rules), que la creó Iván por dashboard: el `CLOUDFLARE_API_TOKEN` del entorno **lee zonas pero
+NO rulesets** (`Authentication error` en
+`/zones/{id}/rulesets/phases/http_request_dynamic_redirect/entrypoint`). Verificado después con
+curl: `301`, un solo salto, path y query preservados.
+
+**La regla para la próxima:** un archivo de configuración que no hace nada es peor que no
+tenerlo — se asume resuelto y el problema sigue. Después de deployar cualquier `_redirects`,
+verificar con `curl -o /dev/null -w "%{http_code} %{redirect_url}"`: si no hay un 301/308 con
+`Location`, la regla **no se aplicó**. Aplica a los 5 sitios en Pages. Para SEO, el
+`<link rel="canonical">` sí está bajo control del repo y consolida la señal igual — ponerlo
+primero. Mismo patrón que `feedback_verificar_por_contenido`: en Pages, un `200` no prueba nada.
+
+---
+
 ## 2026-08-12 — La excepción tapada por la fuente de datos: slots que no corren, ofrecidos igual
 
 **Qué falló:** con el turno único del feriado ya implementado y verificado (botones, textos,
