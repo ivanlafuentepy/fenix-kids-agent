@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-08-12 — La excepción tapada por la fuente de datos: slots que no corren, ofrecidos igual
+
+**Qué falló:** con el turno único del feriado ya implementado y verificado (botones, textos,
+prompt, validación), `obtener_horarios_disponibles()` seguía devolviendo los slots que NO
+corren. Existen en Airtable, vacíos, y esa función alimenta **cuatro** caminos vivos: el
+mensaje post-pago de `afiches.py`, el post-formulario, el contexto de disponibilidad que ve
+Aurora en `main.py` y la rama sin-fecha de `consultar_disponibilidad`. Cualquiera podía
+mostrarle a un padre "Sábado 15 — 11:00h | 15:30h".
+
+**Causa raíz:** la excepción se aplicó en los consumidores que se estaban tocando, no en la
+**fuente** que produce la lista. El resto del cambio quedó impecable y aun así el dato viejo
+salía por otro caño.
+
+**Cómo se resolvió:** el filtro se movió a `obtener_horarios_disponibles()` — un arreglo,
+cuatro consumidores cubiertos. Lo encontró una revisión posterior del código, no los tests.
+
+**Regla para la próxima:** al introducir una excepción o filtro sobre un dato, buscar la
+**función que produce la lista**, no solo los lugares donde uno la está mostrando:
+`grep` de la fuente y revisar TODOS sus call sites. Si la excepción tiene que repetirse en
+más de un consumidor, está en el nivel equivocado.
+
+Dos hermanos menores de la misma revisión: un texto afirmaba "es feriado" en un caso donde el
+turno único era por **cupo lleno** (el motivo se afirmaba desde `len(libres)==1`, que no
+distingue), y una lista de opciones quedaba **vacía** —invitando al LLM a rellenarla— cuando
+el día no tenía alternativa. Cuando un mensaje afirma un MOTIVO, verificar el motivo, no un
+síntoma que coincide.
+
+---
+
 ## 2026-08-12 — El aviso que corregía al prompt perdía contra el prompt
 
 **Qué falló:** por el feriado, el campus del 14/08 corre con un turno por día. Se inyectó al

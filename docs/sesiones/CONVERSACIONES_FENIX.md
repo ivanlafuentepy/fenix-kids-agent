@@ -790,3 +790,23 @@ para medir tiempos: duplica los taps, crea estados huérfanos y el servidor ya s
 cada pasada.
 
 Detalle completo → `.claude/handoffs/handoff_20260811_0129.md`
+
+## 2026-08-12 — fix feriado
+
+El 14 y 15 de agosto son feriado y el campus corre con un turno por día (viernes 17:00,
+sábado 11:00; el domingo sin cambio). Entró en el agente y en la web como una tabla
+`TURNOS_ESPECIALES` con las fechas explícitas: se apaga sola cuando pasa el finde, así que
+no hay nada que revertir. Cubre los botones post-pago, los textos del lead, el aviso de
+Aurora y la validación real — Aurora no puede agendar a las 15:30 ese sábado. Antes de
+tocar nada se verificó en Airtable que los turnos caídos no tenían ninguna reserva, así
+que no salió ningún mensaje: Aurora solo responde si le preguntan.
+
+El hallazgo del día apareció probando las respuestas reales: el agente ofrecía las 19:30
+igual, 2 de 2 veces, pese al aviso. Un dato escrito en el prompt le gana a cualquier
+corrección del contexto, así que los horarios salieron de `prompts.yaml` y ahora los
+inyecta el sistema siempre. Una revisión posterior con Fable cazó 3 bugs más (slots
+fantasma de Airtable, el "es feriado" que también salía por cupo lleno, la lista vacía al
+reagendar). De yapa, el saludo del primer contacto pasó al copy de la web.
+Commits `807e81a`→`bec64a0` + `4c549b2` en la web.
+
+Detalle completo → `.claude/handoffs/handoff_20260812_1330.md`
