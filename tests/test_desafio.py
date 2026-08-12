@@ -178,6 +178,26 @@ class TestTurnosEspeciales:
     def test_el_aviso_no_aparece_con_mucha_anticipacion(self):
         assert aviso_horario_especial(date(2026, 7, 20)) is None
 
+    @pytest.mark.asyncio
+    async def test_horarios_disponibles_no_ofrece_el_turno_caido(self, monkeypatch):
+        """El slot del turno que no corre EXISTE en Airtable (vacío): la lista
+        de horarios disponibles tiene que saltearlo, no ofrecerlo."""
+        import agent.airtable_client as ac
+
+        async def fake_get_records(tabla, formula=None, max_records=None, **kw):
+            return [
+                {"id": "r1", "fields": {"FECHA": "2026-08-15", "HORA": "11:00"}},
+                {"id": "r2", "fields": {"FECHA": "2026-08-15", "HORA": "15:30"}},  # feriado: no corre
+                {"id": "r3", "fields": {"FECHA": "2026-08-22", "HORA": "15:30"}},  # normal: sí
+            ]
+
+        monkeypatch.setattr(ac, "_get_records", fake_get_records)
+        horarios = await ac.obtener_horarios_disponibles()
+        slots = [(h["fecha"], h["hora"]) for h in horarios]
+        assert ("2026-08-15", "11:00") in slots
+        assert ("2026-08-15", "15:30") not in slots
+        assert ("2026-08-22", "15:30") in slots
+
 
 class TestCrearReservas:
     """Tres reservas por niño; un turno inventado no se adivina."""

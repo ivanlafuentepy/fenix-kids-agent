@@ -925,6 +925,7 @@ async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from agent.desafio import TURNOS_ESPECIALES
     # Hora de Paraguay, NO la del server (Railway corre en UTC)
     hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
     # fecha >= hoy — incluye hoy (IS_AFTER lo excluía y rechazaba agendar en el día)
@@ -933,11 +934,18 @@ async def obtener_horarios_disponibles(max_horarios: int = 8) -> list[dict]:
     resultado = []
     for r in records:
         f = r.get("fields", {})
+        fecha, hora = f.get("FECHA", ""), f.get("HORA", "")
+        # Un día con turnos especiales (feriado) solo ofrece esos: el slot del
+        # turno que no corre EXISTE en Airtable (vacío) y sin este filtro se les
+        # ofrecía a todos los consumidores (post-pago, Aurora, disponibilidad).
+        especiales = TURNOS_ESPECIALES.get(fecha)
+        if especiales is not None and hora not in especiales:
+            continue
         resultado.append({
             "id": r["id"],
             "horario": f.get("HORARIO", ""),
-            "fecha": f.get("FECHA", ""),
-            "hora": f.get("HORA", ""),
+            "fecha": fecha,
+            "hora": hora,
             "dia": f.get("DÍA", ""),
         })
     return resultado
