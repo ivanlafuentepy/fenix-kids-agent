@@ -137,13 +137,24 @@ def texto_hermanos() -> str:
 
 
 def texto_horarios() -> str:
-    """Los 3 días del campus con sus turnos."""
-    from agent.desafio import proximo_campus, label_campus
+    """Los 3 días del campus con sus turnos.
+
+    Los turnos salen de desafio.py y no están escritos acá: un fin de semana
+    feriado corre con turno único y este texto es lo primero que ve el lead.
+    """
+    from agent.desafio import (proximo_campus, label_campus, turnos_viernes_de,
+                               turnos_sabado_de, RANGO_TURNO, MOTIVO_ESPECIAL)
     campus = proximo_campus()
+
+    def _dia(nombre: str, turnos: tuple[str, ...]) -> str:
+        etiqueta = "(elegís turno)" if len(turnos) > 1 else f"(turno único, {MOTIVO_ESPECIAL})"
+        rangos = "  o  ".join(RANGO_TURNO.get(h, h) for h in turnos)
+        return f"*{nombre}* {etiqueta}\n{rangos}"
+
     return (
         f"🔥 *DESAFÍO FENIX* — {label_campus(campus)}\n\n"
-        "*VIERNES* (elegís turno)\n17:00 a 18:30  o  19:30 a 20:45\n\n"
-        "*SÁBADO* (elegís turno)\n11:00 a 12:30  o  15:30 a 17:00\n\n"
+        f"{_dia('VIERNES', turnos_viernes_de(campus))}\n\n"
+        f"{_dia('SÁBADO', turnos_sabado_de(campus))}\n\n"
         "*DOMINGO* (todos juntos)\n"
         "12:00 Gran Desafío FENIX\n13:00 Almuerzo en familia\n15:00 Cierre y reconocimiento"
     )

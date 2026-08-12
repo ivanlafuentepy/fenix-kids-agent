@@ -12,6 +12,18 @@ logger = logging.getLogger("agentkit")
 _HORARIOS_VALIDOS = {"11:00", "15:30"}
 
 
+def _horarios_de(fecha_iso: str | None) -> tuple[str, ...]:
+    """Los horarios que corren ESE día — un feriado puede tener uno solo.
+
+    Sin fecha se devuelve el conjunto general: no hay forma de saber qué corre.
+    """
+    base = tuple(sorted(_HORARIOS_VALIDOS))
+    if not fecha_iso:
+        return base
+    from agent.desafio import turnos_de
+    return turnos_de(fecha_iso, base)
+
+
 async def gestionar_prueba(
     telefono: str,
     accion: str,
@@ -97,7 +109,7 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
     # (antes exigía hora: "pasanos al sábado 11, mismo horario" era imposible
     # de reagendar — auditoría 04-07-26 A14)
     if not hora_nueva and not fecha_nueva:
-        opciones = sorted(h for h in _HORARIOS_VALIDOS if h != hora_actual)
+        opciones = [h for h in _horarios_de(fecha_actual) if h != hora_actual]
         info_txt = "\n".join(f"• {r['hijo']} → {r['fecha']} {r['hora']}" for r in reservas_info)
         return {
             "reservas_actuales": info_txt,
@@ -106,10 +118,12 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
             "texto": f"Reserva actual:\n{info_txt}\n\nHorarios disponibles: {' | '.join(opciones)}",
         }
 
-    # Validar hora (solo si vino: puede reagendar cambiando solo la fecha)
-    if hora_nueva and hora_nueva not in _HORARIOS_VALIDOS:
+    # Validar hora (solo si vino: puede reagendar cambiando solo la fecha).
+    # Contra los turnos del día destino: un feriado corre con uno solo.
+    _validos = _horarios_de(_parsear_fecha(fecha_nueva) if fecha_nueva else fecha_actual)
+    if hora_nueva and hora_nueva not in _validos:
         return {
-            "texto": f"Horario no válido. Los horarios son: {' | '.join(sorted(_HORARIOS_VALIDOS))}",
+            "texto": f"Horario no válido. Los horarios de ese día son: {' | '.join(_validos)}",
             "reagendado": False,
         }
 
@@ -283,15 +297,16 @@ async def confirmar_reserva_prueba(telefono: str, fecha: str, hora: str, **kwarg
     Crea la RESERVA real en RESERVAS FENIX para todos los hijos de la familia
     del lead (la familia existe por el dual-write al pagar) y la vincula al LEAD.
     """
-    # Validar hora
-    if hora not in _HORARIOS_VALIDOS:
+    # Validar hora contra los turnos del día pedido (un feriado tiene uno solo)
+    _validos = _horarios_de(_parsear_fecha(fecha))
+    if hora not in _validos:
         return {
-            "texto": f"Horario no válido. Los horarios son: {' | '.join(sorted(_HORARIOS_VALIDOS))}",
+            "texto": f"Horario no válido. Los horarios de ese día son: {' | '.join(_validos)}",
             "confirmada": False,
             "error": True,
             "error_category": "validation",
             "is_retryable": True,
-            "message": f"Hora '{hora}' no es válida. Opciones: {', '.join(sorted(_HORARIOS_VALIDOS))}.",
+            "message": f"Hora '{hora}' no es válida para el {fecha}. Opciones: {', '.join(_validos)}.",
         }
 
     # Parsear fecha

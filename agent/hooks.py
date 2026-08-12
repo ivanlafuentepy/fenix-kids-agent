@@ -66,23 +66,28 @@ _TOOLS_CON_HORA = {
 
 
 async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dict | None:
-    """Valida hora ∈ _HORARIOS_VALIDOS, fecha es sábado futuro. Normaliza fecha a ISO."""
+    """Valida que la hora corra ESE día, que la fecha sea sábado futuro, y normaliza a ISO.
+
+    La fecha se resuelve ANTES que la hora porque los horarios dependen del día:
+    un sábado feriado corre con un solo turno (agent/desafio.TURNOS_ESPECIALES).
+    """
     if tool_name not in _TOOLS_CON_HORA:
         return None
 
-    # Validar hora
     hora = params.get("hora") or params.get("hora_nueva")
-    if hora and hora not in _HORARIOS_VALIDOS:
-        return {
-            "error": True,
-            "error_category": "validation",
-            "is_retryable": False,
-            "message": f"Hora '{hora}' no es válida. Los horarios son: {' y '.join(sorted(_HORARIOS_VALIDOS))}.",
-        }
 
     # Validar y normalizar fecha
     fecha = params.get("fecha")
     if not fecha:
+        # Sin fecha no se puede saber qué turnos corren: se valida contra el
+        # conjunto general, como siempre.
+        if hora and hora not in _HORARIOS_VALIDOS:
+            return {
+                "error": True,
+                "error_category": "validation",
+                "is_retryable": False,
+                "message": f"Hora '{hora}' no es válida. Los horarios son: {' y '.join(sorted(_HORARIOS_VALIDOS))}.",
+            }
         return None  # algunos tools permiten fecha vacía (consultar sin filtro)
 
     from agent.tools.reservas import _parsear_fecha
@@ -93,6 +98,19 @@ async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dic
             "error_category": "validation",
             "is_retryable": False,
             "message": f"No pude interpretar la fecha '{fecha}'. Usá formato como '31 de mayo' o '31/5'.",
+        }
+
+    from agent.desafio import turnos_de
+    _validos = turnos_de(fecha_iso, tuple(sorted(_HORARIOS_VALIDOS)))
+    if hora and hora not in _validos:
+        _motivo = (" Ese día corre con un solo turno."
+                   if len(_validos) < len(_HORARIOS_VALIDOS) else "")
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": (f"Hora '{hora}' no es válida para el {fecha_iso}. "
+                        f"Los horarios de ese día son: {' y '.join(_validos)}.{_motivo}"),
         }
 
     d = date.fromisoformat(fecha_iso)

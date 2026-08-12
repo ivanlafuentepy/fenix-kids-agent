@@ -41,6 +41,10 @@ TURNOS_ESPECIALES: dict[str, tuple[str, ...]] = {
 }
 MOTIVO_ESPECIAL = "es feriado"
 
+# El rango horario que se le comunica al padre para cada turno.
+RANGO_TURNO = {"17:00": "17:00 a 18:30", "19:30": "19:30 a 20:45",
+               "11:00": "11:00 a 12:30", "15:30": "15:30 a 17:00"}
+
 # El campus en curso se deja de vender cuando arranca el turno 1 del viernes.
 _INICIO_VIERNES = time(17, 0)
 

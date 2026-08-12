@@ -67,6 +67,7 @@ from agent.tools.detectores import (
     padre_pregunta_devolucion, padre_pregunta_efectivo, padre_dice_ya_transfiri,
     padre_pregunta_alias,
 )
+from agent.desafio import aviso_horario_especial
 from agent.tool_definitions import TOOLS_IVAN, TOOLS_AURORA
 from agent.tool_executor import ejecutar_tool
 
@@ -3644,6 +3645,15 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 elif agent_actual == "aurora" and (_keywords_reserva or _responde_horario):
                     _tool_choice_override = {"type": "tool", "name": "gestionar_reserva"}
                     logger.info(f"[AURORA] Forzando gestionar_reserva para: {texto[:50]}")
+                # Días con turno especial (feriados): el aviso pisa los horarios
+                # que los dos prompts tienen escritos. Va por acá y no en el YAML
+                # porque aparece y se apaga solo con la fecha, y porque el bloque
+                # dinámico queda FUERA del prompt cacheado.
+                _aviso_horarios = aviso_horario_especial()
+                if _aviso_horarios:
+                    contexto_extra = (f"{contexto_extra}\n\n{_aviso_horarios}"
+                                      if contexto_extra else _aviso_horarios)
+
                 respuesta, _tool_acciones = await generar_respuesta(
                     mensaje=texto,
                     historial=historial,

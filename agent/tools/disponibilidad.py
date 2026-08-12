@@ -16,6 +16,12 @@ _TZ_PY = ZoneInfo("America/Asuncion")
 _HORARIOS = ["11:00", "15:30"]
 
 
+def _horarios_de(fecha: str) -> list[str]:
+    """Los horarios que corren ESE día — un feriado puede tener uno solo."""
+    from agent.desafio import turnos_de
+    return list(turnos_de(fecha, tuple(_HORARIOS)))
+
+
 async def consultar_disponibilidad(
     telefono: str,
     fecha: str | None = None,
@@ -53,10 +59,10 @@ async def consultar_disponibilidad(
                 "slots": slots,
             }
 
-        # Con fecha pero sin hora: mostrar los 3 turnos de ese día
+        # Con fecha pero sin hora: mostrar los turnos de ese día
         if not hora:
             slots = []
-            for h in _HORARIOS:
+            for h in _horarios_de(fecha):
                 ninos = await obtener_ninos_por_horario(fecha, h)
                 slots.append({"fecha": fecha, "hora": h, "cantidad": len(ninos)})
 
