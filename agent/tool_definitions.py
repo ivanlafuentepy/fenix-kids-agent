@@ -172,8 +172,12 @@ TOOLS_AURORA = [
         "name": "registrar_familia",
         "description": (
             "Registra o actualiza el nombre del padre/madre de este teléfono. "
-            "Usar SOLO cuando no hay datos de la familia (el sistema lo indica) "
-            "y la persona ya dijo su nombre. NUNCA inventar el nombre."
+            "Usar cuando: (a) no hay datos de la familia (el sistema lo indica) "
+            "y la persona ya dijo su nombre, o (b) quien escribe corrige su "
+            "propio nombre ('soy Jazmin', 'anotá bien mi nombre'). Actualiza "
+            "SOLO la fila del teléfono que escribe, nunca la de otro tutor. "
+            "NUNCA decir 'ya lo anoté' sin haber usado esta tool. "
+            "NUNCA inventar el nombre."
         ),
         "input_schema": {
             "type": "object",

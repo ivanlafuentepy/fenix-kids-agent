@@ -43,6 +43,11 @@ async def registrar_familia(
         campos = {"NOMBRE": nombre}
         if apellido:
             campos["APELLIDO"] = apellido
+        # GENERO vacío debilita la identidad: el contexto de Aurora pierde
+        # MADRE/PADRE y el saludo queda genérico (caso Jazmin 13/08).
+        # Se completa solo si falta y el nombre lo deduce con confianza.
+        if genero and not ((tutor.get("fields", {}) or {}).get("GENERO") or "").strip():
+            campos["GENERO"] = genero
         ok = await _patch(_ALUMNOS, tutor["id"], campos)
         tutor_id = tutor["id"] if ok else None
         actualizado = True
