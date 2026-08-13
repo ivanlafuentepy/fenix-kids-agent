@@ -36,8 +36,11 @@ HORA_DOMINGO = "12:00"
 # campus pasa — nadie tiene que acordarse de revertir nada el lunes. Las constantes
 # de arriba nunca se tocan: siguen siendo la regla general.
 TURNOS_ESPECIALES: dict[str, tuple[str, ...]] = {
-    "2026-08-14": ("17:00",),   # feriado: un solo turno
-    "2026-08-15": ("11:00",),   # feriado: un solo turno (también el entrenamiento regular)
+    # ⚠️ Estos turnos son SOLO las sesiones del campus: un feriado NO tiene
+    # entrenamiento regular para nadie (regla de Iván 12/08, ver
+    # hay_entrenamiento_regular). Las tools de familias rebotan estas fechas.
+    "2026-08-14": ("17:00",),   # feriado: turno único del campus
+    "2026-08-15": ("11:00",),   # feriado: turno único del campus
 }
 MOTIVO_ESPECIAL = "es feriado"
 
