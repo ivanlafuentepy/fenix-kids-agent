@@ -163,6 +163,12 @@ static/              ← Afiches PNG, profe.html, assets servidos.
     en la DB (primera opción, no última).
 13. **Token de Meta renovado = reiniciar el servicio en Railway** — el proceso lee
     el token solo al arrancar; cambiar la variable no basta.
+14. **La identidad de quien escribe la decide el SISTEMA (teléfono → Airtable),
+    nunca el LLM.** Los saludos de inscriptos van por template determinístico con
+    ese nombre (`alumno_menu.py`). GENERO en ALUMNOS es dato obligatorio de
+    identidad: sin él, el contexto pierde MADRE/PADRE y Haiku puede confundir
+    tutores (caso Jazmin→"Jorge", 13/08). El agente nunca dice "ya lo anoté"
+    sin haber ejecutado una tool.
 
 ---
 
