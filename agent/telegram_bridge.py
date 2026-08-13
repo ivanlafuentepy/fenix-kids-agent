@@ -201,8 +201,26 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
         # group_id=0 es legacy (pre-migración) → tratar como grupo de leads
         topic_group = topic.group_id if topic.group_id else _group_id()
         if topic_group == group:
-            # Mismo grupo → usar el topic existente (actualizar group_id si era 0)
-            if not topic.group_id:
+            # Mismo grupo → usar el topic existente (actualizar group_id si era 0).
+            # Si el nombre resuelto cambió (ej: el tutor no existía en Airtable
+            # cuando se creó el topic y quedó "📱 <número>"), renombrar el topic —
+            # los topics nunca se renombraban y el número pelado quedaba para
+            # siempre (caso Jazmin 13/08). Nunca degradar a solo-número: los
+            # callers sin nombre resuelto pasan justamente "📱 <número>".
+            renombrado = False
+            if nombre != f"📱 {telefono}" and (topic.nombre or "") != nombre:
+                try:
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        r = await client.post(_api_url("editForumTopic"), json={
+                            "chat_id": group,
+                            "message_thread_id": topic.topic_id,
+                            "name": nombre[:128],
+                        })
+                    renombrado = bool(r.json().get("ok"))
+                    print(f"[TELEGRAM] Topic {topic.topic_id} renombrado → '{nombre[:40]}': {renombrado}", flush=True)
+                except Exception as e:
+                    print(f"[TELEGRAM] No se pudo renombrar topic {topic.topic_id}: {e}", flush=True)
+            if not topic.group_id or renombrado:
                 async with async_session() as session:
                     result = await session.execute(
                         select(TopicTelegram).where(TopicTelegram.telefono == telefono)
@@ -210,6 +228,8 @@ async def obtener_o_crear_topic(telefono: str, nombre: str, group_override: int 
                     t = result.scalars().first()
                     if t:
                         t.group_id = group
+                        if renombrado:
+                            t.nombre = nombre
                         await session.commit()
             print(f"[TELEGRAM] Topic existente para {telefono}: id={topic.topic_id}", flush=True)
             return topic.topic_id
