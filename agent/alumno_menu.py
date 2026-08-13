@@ -48,12 +48,56 @@ def _primer_nombre(tutores: list[dict]) -> str:
 
     Niño-eje: recibe los tutores del grupo ya resueltos (obtener_grupo_familiar)
     — el primero es siempre el tutor que matchea el teléfono que escribe.
+    En Airtable el nombre puede venir en mayúsculas ("JAZMIN") → Title Case.
     """
     if not tutores:
         return ""
     t = tutores[0]
     nombre = (t.get("nombre") or "").strip()
-    return nombre.split()[0] if nombre else ""
+    return nombre.split()[0].title() if nombre else ""
+
+
+# ── Saludo simple (determinístico) ───────────────────────────────────────────
+# La identidad de quien escribe la decide el SISTEMA (teléfono → Airtable),
+# nunca el LLM. Un saludo sin contenido se responde acá con el nombre real del
+# tutor que escribe — caso Jazmin 13/08: el historial viejo (lleno de "Jorge",
+# el papá) le ganaba al contexto inyectado y Haiku saludaba con el nombre del
+# otro tutor. Cualquier mensaje con contenido real sigue al flujo conversacional.
+
+# Al menos un token de núcleo tiene que estar para que sea saludo.
+_SALUDO_NUCLEO = {"hola", "holis", "buenas", "buenos", "buen"}
+# Tokens de relleno tolerados junto al saludo ("hola aurora", "buen dia, todo bien?").
+_SALUDO_RELLENO = {
+    "dia", "dias", "tarde", "tardes", "noche", "noches",
+    "que", "tal", "como", "estas", "estan", "va", "todo", "bien",
+    "aurora", "profe", "fenix", "hey",
+}
+
+
+def _es_saludo_simple(texto: str) -> bool:
+    """¿El mensaje es SOLO un saludo? (sin pedido ni contenido real).
+
+    Normaliza: minúsculas, sin acentos, solo letras, letras repetidas
+    colapsadas ("Holaaa" → "hola", "Buen diaa" → "buen dia"). Es saludo si
+    todos los tokens son de saludo/relleno y al menos uno es del núcleo.
+    """
+    import unicodedata
+
+    plano = unicodedata.normalize("NFKD", (texto or "").lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    plano = "".join(c if c.isalpha() else " " for c in plano)
+    # Colapsar letras consecutivas repetidas (ningún token de saludo las tiene)
+    colapsado = []
+    for c in plano:
+        if not colapsado or colapsado[-1] != c:
+            colapsado.append(c)
+    tokens = "".join(colapsado).split()
+
+    if not tokens or len(tokens) > 5:
+        return False
+    if not all(t in _SALUDO_NUCLEO or t in _SALUDO_RELLENO for t in tokens):
+        return False
+    return any(t in _SALUDO_NUCLEO for t in tokens)
 
 
 async def _espejar_telegram(telefono: str, texto: str, topic_id: int | None, tg_group: int):
@@ -171,6 +215,16 @@ async def procesar_menu_inscripto(
         await _enviar_saludo_y_botones(telefono, proveedor, tutores, topic_id, tg_group)
         logger.info(f"[ALUMNO] {telefono}: saludo + botones del menú inscripto")
         return "[saludo + menú inscripto]"
+
+    # ── Saludo simple → respuesta determinística con el nombre de Airtable ──
+    # No pasa por Haiku: el nombre sale del tutor que matchea el teléfono.
+    if _es_saludo_simple(texto):
+        nombre = _primer_nombre(tutores)
+        saludo = f"¡Hola {nombre}! 🌟" if nombre else "¡Hola! 🌟"
+        await _enviar_botones(telefono, proveedor, f"{saludo}\n\n{_TEXTO_BOTONES}", _BOTONES_ALUMNO, topic_id, tg_group)
+        await guardar_mensaje(telefono, "assistant", f"{saludo} {_TEXTO_BOTONES}")
+        logger.info(f"[ALUMNO] {telefono}: saludo determinístico ({nombre or 'sin nombre'})")
+        return "[saludo determinístico]"
 
     # ── Texto libre → Aurora conversacional (los inscriptos pueden consultar) ──
     return None
