@@ -52,7 +52,8 @@ def saludo_desafio() -> str:
     Mismo copy que "Una experiencia transformadora" de la web (decisión de
     Iván 12/08): si cambia allá, cambia acá.
     """
-    from agent.desafio import proximo_campus, label_campus
+    from agent.desafio import proximo_campus, label_campus, nota_sold_out
+    sold_out = nota_sold_out()
     return (
         "Hola! Te saluda Aurora 🌟\n\n"
         "Te cuento: el DESAFÍO FENIX es una experiencia transformadora.\n\n"
@@ -61,7 +62,8 @@ def saludo_desafio() -> str:
         "hacer — y hace amigos en el camino 🧗\n\n"
         "Conoce el lugar, conoce a los entrenadores y conoce, sobre todo, de qué es capaz.\n\n"
         "Son 3 días que serán el comienzo visible de una transformación profunda 🌳\n\n"
-        "El campus se realiza todos los fines de semana.\n"
+        + (f"{sold_out}\n\n" if sold_out else "")
+        + "El campus se realiza todos los fines de semana.\n"
         f"📅 Próximo campus: {label_campus(proximo_campus())}"
     )
 
@@ -98,16 +100,18 @@ _TEXTO_RECORDATORIO = "Tocá una de las opciones 👇"
 
 def texto_precios() -> str:
     """Precios del Desafío para el campus vigente (sin pregunta abierta: van botones)."""
-    from agent.desafio import proximo_campus, precio_desafio, label_campus
+    from agent.desafio import proximo_campus, precio_desafio, label_campus, nota_sold_out
     campus = proximo_campus()
     _monto, anticipada = precio_desafio(1, campus=campus)
     precio = ("💰 *Reservando con anticipación:* 350.000 Gs\n"
               "Precio normal: 550.000 Gs\n"
               if anticipada else
               "💰 *Inversión:* 550.000 Gs\n")
+    sold_out = nota_sold_out()
     return (
         "🔥 *DESAFÍO FENIX* — campus de 3 días\n\n"
-        "*Viernes:* Descubrir · *Sábado:* Superar · *Domingo:* Conquistar\n\n"
+        + (f"{sold_out}\n\n" if sold_out else "")
+        + "*Viernes:* Descubrir · *Sábado:* Superar · *Domingo:* Conquistar\n\n"
         "El domingo cerramos con el Gran Desafío, almuerzo en familia "
         "(el del niño va incluido) y reconocimiento 🏅\n\n"
         f"{precio}"
@@ -146,7 +150,7 @@ def texto_horarios() -> str:
     feriado corre con turno único y este texto es lo primero que ve el lead.
     """
     from agent.desafio import (proximo_campus, label_campus, turnos_viernes_de,
-                               turnos_sabado_de, RANGO_TURNO, MOTIVO_ESPECIAL)
+                               turnos_sabado_de, RANGO_TURNO, MOTIVO_ESPECIAL, nota_sold_out)
     campus = proximo_campus()
 
     def _dia(nombre: str, turnos: tuple[str, ...]) -> str:
@@ -154,9 +158,11 @@ def texto_horarios() -> str:
         rangos = "  o  ".join(RANGO_TURNO.get(h, h) for h in turnos)
         return f"*{nombre}* {etiqueta}\n{rangos}"
 
+    sold_out = nota_sold_out()
     return (
         f"🔥 *DESAFÍO FENIX* — {label_campus(campus)}\n\n"
-        f"{_dia('VIERNES', turnos_viernes_de(campus))}\n\n"
+        + (f"{sold_out}\n\n" if sold_out else "")
+        + f"{_dia('VIERNES', turnos_viernes_de(campus))}\n\n"
         f"{_dia('SÁBADO', turnos_sabado_de(campus))}\n\n"
         "*DOMINGO* (todos juntos)\n"
         "12:00 Gran Desafío FENIX\n13:00 Almuerzo en familia\n15:00 Cierre y reconocimiento"
