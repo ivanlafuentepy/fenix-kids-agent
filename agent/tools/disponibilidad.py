@@ -17,9 +17,12 @@ _HORARIOS = ["11:00", "15:30"]
 
 
 def _horarios_de(fecha: str) -> list[str]:
-    """Los horarios que corren ESE día — un feriado puede tener uno solo."""
-    from agent.desafio import turnos_de
-    return list(turnos_de(fecha, tuple(_HORARIOS)))
+    """Los horarios de entrenamiento regular de ESE día.
+
+    Un feriado devuelve vacío: ese día corre solo el campus, nadie entrena.
+    """
+    from agent.desafio import hay_entrenamiento_regular
+    return list(_HORARIOS) if hay_entrenamiento_regular(fecha) else []
 
 
 async def consultar_disponibilidad(
@@ -61,8 +64,12 @@ async def consultar_disponibilidad(
 
         # Con fecha pero sin hora: mostrar los turnos de ese día
         if not hora:
+            _del_dia = _horarios_de(fecha)
+            if not _del_dia:
+                return {"texto": f"El {fecha} es feriado: no hay entrenamiento ese día.",
+                        "slots": []}
             slots = []
-            for h in _horarios_de(fecha):
+            for h in _del_dia:
                 ninos = await obtener_ninos_por_horario(fecha, h)
                 slots.append({"fecha": fecha, "hora": h, "cantidad": len(ninos)})
 

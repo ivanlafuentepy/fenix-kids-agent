@@ -192,36 +192,41 @@ def dias_especiales_proximos(hoy: date | None = None, dentro_de: int = 7) -> lis
     return sorted(dias)
 
 
-def aviso_horario_especial(hoy: date | None = None) -> str | None:
-    """El bloque que se le inyecta al LLM cuando hay días con turno especial.
+def hay_entrenamiento_regular(fecha_iso: str) -> bool:
+    """¿Ese día hay entrenamiento regular para las familias?
 
-    Devuelve None si no hay ninguno cerca — así el aviso aparece y desaparece
-    solo, sin tocar el prompt (que además está cacheado).
+    Los días de TURNOS_ESPECIALES son feriados: esos días corre ÚNICAMENTE el
+    campus del Desafío (con sus turnos reducidos) y NO hay entrenamiento regular
+    para nadie — regla de Iván del 12/08. Las tools de agendar/reagendar y las
+    listas de horarios disponibles tienen que rebotar esas fechas.
+    """
+    return fecha_iso not in TURNOS_ESPECIALES
+
+
+def aviso_horario_especial(hoy: date | None = None) -> str | None:
+    """El bloque que se le inyecta a AURORA cuando hay un feriado cerca.
+
+    Un feriado NO tiene entrenamiento regular: ese día corre solo el campus del
+    Desafío (regla de Iván 12/08). Devuelve None si no hay ninguno cerca — así
+    el aviso aparece y desaparece solo, sin tocar el prompt (que está cacheado).
     """
     dias = dias_especiales_proximos(hoy)
     if not dias:
         return None
 
-    lineas = []
-    for d, turnos in dias:
-        normales = TURNOS_VIERNES if d.weekday() == 4 else TURNOS_SABADO if d.weekday() == 5 else ()
-        caidos = [h for h in normales if h not in turnos]
-        linea = f"· {_label_dia(d)}: SOLO {' y '.join(turnos)}"
-        if caidos:
-            linea += f" (NO hay turno de {' ni de '.join(caidos)} ese día)"
-        lineas.append(linea)
+    fechas = " ni el ".join(_label_dia(d) for d, _ in dias)
+    agotado = campus_agotado_visible(hoy)
+    campus_txt = (" — que además ya está COMPLETO (sold out)" if agotado else "")
 
     return (
-        f"[SISTEMA — HORARIO ESPECIAL, {MOTIVO_ESPECIAL}. Esto MANDA sobre cualquier "
-        "horario que figure en tus instrucciones:\n"
-        + "\n".join(lineas)
-        + "\nEl domingo no cambia. Aplica tanto al DESAFÍO FENIX como al entrenamiento "
-        "regular de las familias inscriptas.\n"
-        "Si un padre pregunta si hay entrenamiento ese día, la respuesta es SÍ: hay uno "
-        "solo, en el horario de arriba. NUNCA ofrezcas ni menciones los turnos que no "
-        "corren ese día.\n"
-        "Si el padre dice que ese horario no le sirve, NO le inventes otro turno de ese "
-        "mismo día: no existe. Ofrecele el fin de semana siguiente, que corre normal.]"
+        f"[SISTEMA — {MOTIVO_ESPECIAL.upper()}: NO HAY ENTRENAMIENTO REGULAR este fin de "
+        f"semana. El {fechas} NO entrena nadie: esos días corre únicamente el DESAFÍO "
+        f"FENIX (el campus){campus_txt}.\n"
+        "Si un padre pregunta si hay entrenamiento esos días, la respuesta es NO — "
+        f"explicá que {MOTIVO_ESPECIAL} y que ese fin de semana corre solo el campus.\n"
+        "NO agendes, NO reagendes y NO confirmes asistencia para esas fechas. "
+        "El entrenamiento vuelve el fin de semana siguiente, en los horarios de siempre "
+        "(sábados 11:00 o 15:30): ofrecé reagendar para ahí.]"
     )
 
 

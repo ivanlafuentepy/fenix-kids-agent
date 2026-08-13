@@ -100,17 +100,26 @@ async def validar_fecha_hora(tool_name: str, params: dict, context: dict) -> dic
             "message": f"No pude interpretar la fecha '{fecha}'. Usá formato como '31 de mayo' o '31/5'.",
         }
 
-    from agent.desafio import turnos_de
-    _validos = turnos_de(fecha_iso, tuple(sorted(_HORARIOS_VALIDOS)))
-    if hora and hora not in _validos:
-        _motivo = (" Ese día corre con un solo turno."
-                   if len(_validos) < len(_HORARIOS_VALIDOS) else "")
+    from agent.desafio import hay_entrenamiento_regular
+    if not hay_entrenamiento_regular(fecha_iso):
+        # Feriado: ese día corre solo el campus del Desafío, no hay entrenamiento
+        # regular para nadie (regla de Iván 12/08) — no se agenda ni se reagenda.
+        return {
+            "error": True,
+            "error_category": "validation",
+            "is_retryable": False,
+            "message": (f"El {fecha_iso} es feriado y NO hay entrenamiento regular ese día "
+                        "(solo corre el campus del Desafío FENIX). Ofrecé reagendar para el "
+                        "sábado siguiente."),
+        }
+
+    if hora and hora not in _HORARIOS_VALIDOS:
         return {
             "error": True,
             "error_category": "validation",
             "is_retryable": False,
             "message": (f"Hora '{hora}' no es válida para el {fecha_iso}. "
-                        f"Los horarios de ese día son: {' y '.join(_validos)}.{_motivo}"),
+                        f"Los horarios son: {' y '.join(sorted(_HORARIOS_VALIDOS))}."),
         }
 
     d = date.fromisoformat(fecha_iso)

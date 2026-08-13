@@ -13,15 +13,17 @@ _HORARIOS_VALIDOS = {"11:00", "15:30"}
 
 
 def _horarios_de(fecha_iso: str | None) -> tuple[str, ...]:
-    """Los horarios que corren ESE día — un feriado puede tener uno solo.
+    """Los horarios de entrenamiento regular de ESE día.
 
-    Sin fecha se devuelve el conjunto general: no hay forma de saber qué corre.
+    Un feriado devuelve VACÍO: esos días corre solo el campus del Desafío, no
+    hay entrenamiento regular para nadie (regla de Iván 12/08). Sin fecha se
+    devuelve el conjunto general: no hay forma de saber qué corre.
     """
     base = tuple(sorted(_HORARIOS_VALIDOS))
     if not fecha_iso:
         return base
-    from agent.desafio import turnos_de
-    return turnos_de(fecha_iso, base)
+    from agent.desafio import hay_entrenamiento_regular
+    return base if hay_entrenamiento_regular(fecha_iso) else ()
 
 
 async def gestionar_prueba(
@@ -111,11 +113,11 @@ async def reagendar_clase(telefono: str, hora_nueva: str | None = None, fecha_nu
     if not hora_nueva and not fecha_nueva:
         opciones = [h for h in _horarios_de(fecha_actual) if h != hora_actual]
         info_txt = "\n".join(f"• {r['hijo']} → {r['fecha']} {r['hora']}" for r in reservas_info)
-        # Sin opciones (día de turno único): decirlo explícito, no dejar la
-        # lista vacía para que el LLM la rellene solo.
+        # Sin opciones (feriado, no hay entrenamiento ese día): decirlo explícito,
+        # no dejar la lista vacía para que el LLM la rellene solo.
         _disp = (f"Horarios disponibles: {' | '.join(opciones)}" if opciones else
-                 f"Ese día no hay otro horario (turno único el {fecha_actual}); "
-                 "se puede cambiar de fecha.")
+                 f"El {fecha_actual} es feriado y NO hay entrenamiento ese día; "
+                 "hay que reagendar a otra fecha.")
         return {
             "reservas_actuales": info_txt,
             "horarios_disponibles": opciones,

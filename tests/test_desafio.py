@@ -165,16 +165,28 @@ class TestTurnosEspeciales:
         with pytest.raises(ValueError):
             await crear_reservas_campus(["recX"], "17:00", "15:30", self.CAMPUS_FERIADO)
 
-    def test_el_aviso_aparece_los_dias_previos(self):
+    def test_el_feriado_no_tiene_entrenamiento_regular(self):
+        from agent.desafio import hay_entrenamiento_regular
+        assert hay_entrenamiento_regular("2026-08-15") is False
+        assert hay_entrenamiento_regular("2026-08-14") is False
+        assert hay_entrenamiento_regular("2026-08-22") is True
+
+    def test_el_aviso_dice_que_no_hay_entrenamiento(self):
+        # Regla de Iván (12/08): feriado = nadie entrena, solo corre el campus.
         aviso = aviso_horario_especial(date(2026, 8, 12))
-        assert aviso and "17:00" in aviso and "11:00" in aviso
-        assert "NO hay turno de 19:30" in aviso and "NO hay turno de 15:30" in aviso
+        assert aviso and "NO HAY ENTRENAMIENTO REGULAR" in aviso
+        assert "la respuesta es NO" in aviso
+        assert "hay uno solo" not in aviso  # el aviso viejo decía lo contrario
+
+    def test_el_aviso_menciona_que_el_campus_esta_lleno(self):
+        aviso = aviso_horario_especial(date(2026, 8, 12))
+        assert aviso and "COMPLETO" in aviso
 
     def test_el_aviso_sigue_vigente_el_sabado_a_la_mañana(self):
         # proximo_campus() ese día ya apunta al finde siguiente, pero la mamá que
-        # pregunta "¿hay entrenamiento hoy?" tiene que escuchar 11:00.
+        # pregunta "¿hay entrenamiento hoy?" tiene que escuchar que NO hay.
         aviso = aviso_horario_especial(date(2026, 8, 15))
-        assert aviso and "11:00" in aviso
+        assert aviso and "NO HAY ENTRENAMIENTO REGULAR" in aviso
 
     def test_el_aviso_desaparece_solo_cuando_pasa_el_finde(self):
         assert aviso_horario_especial(date(2026, 8, 17)) is None
@@ -184,24 +196,36 @@ class TestTurnosEspeciales:
         assert aviso_horario_especial(date(2026, 7, 20)) is None
 
     @pytest.mark.asyncio
-    async def test_horarios_disponibles_no_ofrece_el_turno_caido(self, monkeypatch):
-        """El slot del turno que no corre EXISTE en Airtable (vacío): la lista
-        de horarios disponibles tiene que saltearlo, no ofrecerlo."""
+    async def test_horarios_disponibles_saltea_el_feriado_entero(self, monkeypatch):
+        """Los slots del feriado EXISTEN en Airtable (son las sesiones del campus),
+        pero como entrenamiento regular no se ofrece NINGUNO: ese día nadie entrena."""
         import agent.airtable_client as ac
 
         async def fake_get_records(tabla, formula=None, max_records=None, **kw):
             return [
-                {"id": "r1", "fields": {"FECHA": "2026-08-15", "HORA": "11:00"}},
-                {"id": "r2", "fields": {"FECHA": "2026-08-15", "HORA": "15:30"}},  # feriado: no corre
+                {"id": "r1", "fields": {"FECHA": "2026-08-15", "HORA": "11:00"}},  # feriado: campus
+                {"id": "r2", "fields": {"FECHA": "2026-08-15", "HORA": "15:30"}},  # feriado: ni existe
                 {"id": "r3", "fields": {"FECHA": "2026-08-22", "HORA": "15:30"}},  # normal: sí
             ]
 
         monkeypatch.setattr(ac, "_get_records", fake_get_records)
         horarios = await ac.obtener_horarios_disponibles()
         slots = [(h["fecha"], h["hora"]) for h in horarios]
-        assert ("2026-08-15", "11:00") in slots
+        assert ("2026-08-15", "11:00") not in slots
         assert ("2026-08-15", "15:30") not in slots
         assert ("2026-08-22", "15:30") in slots
+
+    @pytest.mark.asyncio
+    async def test_el_hook_rebota_el_sabado_feriado(self):
+        """Ni agendar ni reagendar al sábado feriado: no hay entrenamiento ese día."""
+        from agent.hooks import validar_fecha_hora
+        r = await validar_fecha_hora("gestionar_reserva",
+                                     {"fecha": "2026-08-15", "hora": "11:00"}, {})
+        assert r and r["error"] and "feriado" in r["message"]
+        # El sábado siguiente pasa normal
+        r = await validar_fecha_hora("gestionar_reserva",
+                                     {"fecha": "2026-08-22", "hora": "11:00"}, {})
+        assert r is None
 
 
 class TestCampusAgotado:
