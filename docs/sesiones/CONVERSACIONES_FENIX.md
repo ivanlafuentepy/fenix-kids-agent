@@ -828,3 +828,17 @@ compactó `MEMORY.md` de 19.7 a 14.0 KB sin borrar ninguna memoria.
 Commits `9a53cbf`→`eeb5f60`, todos en `fenixkidsacademy-web`.
 
 Detalle completo → `.claude/handoffs/handoff_20260812_1601.md`
+
+## 2026-08-12 (noche) — Sold out
+
+El primer Desafío se llenó: el campus del 14-16 pasó a SOLD OUT y todo vende ya el del
+21-23 a precio anticipado (350k hasta el jueves 20). Una sola palanca — `CAMPUS_AGOTADOS`
+por fecha, que `proximo_campus()` saltea — movió sola precio, turnos, botones, textos,
+links y el contador de la web; el cartel rojo y la línea de sold out se anuncian hasta el
+domingo y mueren solos. Corrección de concepto de Iván sobre la marcha: el feriado NO
+tiene entrenamiento regular para nadie (los turnos especiales son sesiones del campus) →
+regla `hay_entrenamiento_regular()` en el aviso de Aurora, el pre-hook y las 3 fuentes de
+horarios. Fiorella tiene reserva viva el sáb 15: le escribe Iván.
+Commits `7cc5151`→`58f0e91` + `f18d456` (web).
+
+Detalle completo → `.claude/handoffs/handoff_20260812_2330.md`

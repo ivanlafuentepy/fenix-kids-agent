@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-12 — "El slot existe, entonces hay entrenamiento": la semántica del negocio no se infiere del schema
+
+**Qué falló:** al armar el turno único del feriado asumí que la sesión del sábado 15 a las
+11:00 valía también como entrenamiento regular de las familias — y lo dejé escrito en el
+aviso que Aurora tenía EN PRODUCCIÓN: "hay entrenamiento, uno solo, a las 11:00". Iván tuvo
+que corregirlo dos veces: **feriado = no entrena nadie; esos turnos son sesiones del campus**.
+
+**Causa raíz:** inferí el significado de negocio desde la estructura de los datos (el slot
+HORARIOS existía y las familias siempre entrenaron los sábados → "hay entrenamiento"). El
+dato dice QUÉ hay; QUÉ SIGNIFICA lo define Iván. Nadie me dijo que las familias entrenaban
+el feriado — lo asumí yo y lo convertí en texto que hablaba con madres reales.
+
+**Cómo se resolvió:** regla centralizada `hay_entrenamiento_regular(fecha)` en
+`agent/desafio.py` (False para los días de TURNOS_ESPECIALES), consumida por el aviso de
+Aurora, el pre-hook de agendar/reagendar y las 3 fuentes de horarios (commit `5d5334c`).
+
+**Regla para la próxima:** cuando un cambio introduce un estado de negocio nuevo (feriado,
+sold out, suspensión), preguntarle a Iván **qué pasa con cada público** (leads, familias,
+campus) en vez de deducirlo de qué registros existen. Una suposición de semántica que
+termina en un texto al cliente es una decisión de negocio tomada sin permiso.
+
+---
+
 ## 2026-08-12 — El archivo de config que no hace nada: `_redirects` de Pages ignora el dominio
 
 **Qué falló:** para que `www.fenixkidsacademy.com` redirigiera al dominio pelado (dos URLs con
