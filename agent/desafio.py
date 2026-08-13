@@ -41,6 +41,13 @@ TURNOS_ESPECIALES: dict[str, tuple[str, ...]] = {
 }
 MOTIVO_ESPECIAL = "es feriado"
 
+# Campus que ya NO se venden (SOLD OUT decidido por Iván). La clave es el VIERNES
+# ISO del campus. Mismo patrón que TURNOS_ESPECIALES: cuando ese fin de semana
+# pasa, la entrada queda muerta sola — no hay nada que revertir. proximo_campus()
+# saltea estos viernes, así que precio, turnos, botones, textos y web pasan solos
+# al campus siguiente.
+CAMPUS_AGOTADOS = {"2026-08-14"}
+
 # El rango horario que se le comunica al padre para cada turno.
 RANGO_TURNO = {"17:00": "17:00 a 18:30", "19:30": "19:30 a 20:45",
                "11:00": "11:00 a 12:30", "15:30": "15:30 a 17:00"}
@@ -79,6 +86,9 @@ def proximo_campus(ahora: datetime | None = None) -> dict:
     hoy = ahora.date()
     viernes = hoy + timedelta(days=(4 - hoy.weekday()) % 7)
     if viernes == hoy and ahora.time() >= _INICIO_VIERNES:
+        viernes += timedelta(days=7)
+    # Un campus SOLD OUT no se vende: se pasa directo al siguiente.
+    while viernes.isoformat() in CAMPUS_AGOTADOS:
         viernes += timedelta(days=7)
     return {
         "viernes": viernes,
@@ -215,6 +225,37 @@ def aviso_horario_especial(hoy: date | None = None) -> str | None:
     )
 
 
+def campus_agotado_visible(hoy: date | None = None) -> dict | None:
+    """El campus SOLD OUT que todavía vale la pena mencionar, o None.
+
+    Se menciona mientras su domingo no pasó: el lunes siguiente el sold out
+    deja de ser noticia y el aviso se apaga solo, como todo lo demás.
+    """
+    hoy = hoy or ahora_py().date()
+    candidatos = []
+    for viernes_iso in CAMPUS_AGOTADOS:
+        try:
+            v = date.fromisoformat(viernes_iso)
+        except ValueError:
+            logger.error(f"[DESAFIO] Fecha inválida en CAMPUS_AGOTADOS: {viernes_iso!r}")
+            continue
+        if hoy <= v + timedelta(days=2):
+            candidatos.append(v)
+    if not candidatos:
+        return None
+    v = min(candidatos)
+    return {"viernes": v, "sabado": v + timedelta(days=1), "domingo": v + timedelta(days=2)}
+
+
+def nota_sold_out(hoy: date | None = None) -> str | None:
+    """La línea de SOLD OUT para los mensajes del lead, o None si no aplica."""
+    agotado = campus_agotado_visible(hoy)
+    if not agotado:
+        return None
+    return (f"🔥 El campus de este fin de semana ({label_campus(agotado)}) "
+            "ya está *SOLD OUT* — no quedan lugares.")
+
+
 def bloque_turnos_vigentes(campus: dict | None = None) -> str:
     """Los turnos REALES del campus que se está vendiendo, para inyectar SIEMPRE.
 
@@ -241,6 +282,12 @@ def bloque_turnos_vigentes(campus: dict | None = None) -> str:
         bloque += (f"Los días con un solo turno son así porque {MOTIVO_ESPECIAL}. Si al padre "
                    "no le sirve ese horario, NO hay otro ese día: ofrecele el fin de semana "
                    "siguiente, que corre normal.\n")
+    agotado = campus_agotado_visible()
+    if agotado:
+        bloque += (f"⚠️ El campus del {label_campus(agotado)} está SOLD OUT: no queda NINGÚN "
+                   "lugar ese fin de semana, aunque el padre insista o pida 'uno más'. Si "
+                   "pregunta por ese finde, decíselo con orgullo (se llenó) y ofrecele el "
+                   "campus de arriba, que está en precio de reserva anticipada.\n")
     return bloque + "]"
 
 
