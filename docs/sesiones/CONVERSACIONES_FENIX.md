@@ -842,3 +842,17 @@ horarios. Fiorella tiene reserva viva el sáb 15: le escribe Iván.
 Commits `7cc5151`→`58f0e91` + `f18d456` (web).
 
 Detalle completo → `.claude/handoffs/handoff_20260812_2330.md`
+
+## 2026-08-13 (noche) — Identidad la decide el sistema
+
+`/endpoint 595981683435`: Aurora llamó "Jorge" (el papá) a Jazmin (la mamá de Fio) toda la
+conversación y mintió "ya anoté tu nombre ✅" con 0 tools en el log. El dato de Airtable
+estaba bien — falló Haiku (el historial viejo pisó al contexto) y GENERO vacío dejaba a los
+tutores sin etiqueta MADRE/PADRE. Fix en 4 frentes: saludo determinístico de inscriptos
+(template + nombre de Airtable, sin LLM), `registrar_familia` acepta corrección del propio
+nombre y completa GENERO, regla "el CONTEXTO manda" en `aurora_prompt`, y los topics de
+Telegram se renombran. GENERO cargado en las filas de Jazmin y Jorge. Regla 14 en CLAUDE.md.
+De paso quedó resuelto lo de Fiorella: la mamá reagendó el 15→29 (quedan 22 y 29, 11:00).
+Commits `0698805`→`79887e3`.
+
+Detalle completo → `.claude/handoffs/handoff_20260814_0116.md`

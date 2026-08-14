@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-08-13 — El contexto correcto no alcanza: Haiku le hace caso al historial (caso "Jorge"/Jazmin)
+
+**Qué falló:** Aurora llamó "Jorge" (el papá) a Jazmin (la mamá de Fio, 595981683435) durante
+toda una conversación, y cuando ella se corrigió respondió "ya tengo anotado tu nombre ✅"
+**sin ejecutar ninguna tool** (`0 tools` en el log). El 03/08 le había "confirmado" como suyo
+el celular del papá (0981397589) — sacado de la lista de tutores del contexto.
+
+**Causa raíz (tres capas, verificadas una por una):**
+1. El dato de Airtable estaba BIEN y el contexto decía `Quien escribe: Nombre: JAZMIN` —
+   pero la ventana de 20 mensajes venía cargada de un chat viejo lleno de "Jorge" y **el LLM
+   le hizo caso a su propio historial antes que al contexto inyectado**.
+2. **GENERO vacío** en las dos filas de ALUMNOS → ambos tutores salían como `TUTOR:` genérico
+   y "género: padre/madre" — sin señal de quién es la mamá.
+3. La tool `registrar_familia` decía "usar SOLO cuando no hay datos" → ante la corrección,
+   el modelo no tenía tool "permitida" y **alucinó la confirmación**.
+
+**Cómo se resolvió:** saludo determinístico de inscriptos en `alumno_menu.py` (template +
+nombre por teléfono→Airtable, sin LLM) · `registrar_familia` acepta la corrección del propio
+nombre y completa GENERO · regla "el CONTEXTO manda sobre el historial" + prohibición de
+afirmar registros sin tool en `aurora_prompt` · GENERO cargado en las dos filas · los topics
+de Telegram se renombran cuando el nombre resuelto cambia (el de Jazmin era "📱 <número>"
+desde abril). Commits `0698805`→`79887e3`.
+
+**La regla para la próxima:**
+- **Todo dato de identidad que el sistema ya conoce se responde por template, no por LLM.**
+  El LLM redacta solo turnos con contenido real. (Es la generalización de "el aviso que
+  corrige al prompt pierde contra el prompt" del 12/08 — el historial también le gana al
+  contexto.)
+- Ante un "saludó con el nombre equivocado": mirar (1) qué dice el contexto generado
+  (`_build_contexto_aurora` local), (2) el historial de 20 mensajes, (3) GENERO/APODO de la
+  fila — en ese orden. No asumir que el dato está mal en Airtable.
+- Si el agente afirma "ya lo anoté/registré", buscar el `[TOOL]` en el log ANTES de creerle.
+
+---
+
 ## 2026-08-12 — "El slot existe, entonces hay entrenamiento": la semántica del negocio no se infiere del schema
 
 **Qué falló:** al armar el turno único del feriado asumí que la sesión del sábado 15 a las
