@@ -3298,6 +3298,39 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 await guardar_airtable_record_id(telefono, record_id)
             await actualizar_agent_lead(telefono, agent_actual.upper(), modo_nixie)
 
+        # ── Re-chequeo del router para conversaciones EXISTENTES ─────────
+        # El router de arriba corre UNA sola vez (cuando la fila se crea): un
+        # lead que se inscribe DESPUÉS por fuera del bot quedaba congelado en
+        # modo lead para siempre (caso Nayila 14/08: alumna regular recibió la
+        # venta del Desafío y "mañana horario normal" en feriado). Una vez por
+        # día se le vuelve a preguntar a Airtable; si ahora es cliente, se
+        # promueve a Aurora. No se promueve a mitad de un flujo de lead activo:
+        # cortaría la agenda post-pago, la elección de turnos o la factura.
+        elif agent_actual == "ivan":
+            try:
+                _flags_router = await obtener_estado_flags(telefono)
+                _flujo_lead_activo = any(_flags_router.get(k) for k in (
+                    "modo_agenda", "desafio_espera_turno", "esperando_formulario_reserva",
+                    "pago_esperando_factura", "factura_esperando_datos"))
+                _ultimo_recheck = _flags_router.get("router_recheck_ts")
+                _ahora_utc = datetime.now(timezone.utc)
+                _recheck_vencido = True
+                if _ultimo_recheck:
+                    try:
+                        _recheck_vencido = (_ahora_utc - datetime.fromisoformat(_ultimo_recheck)).total_seconds() >= 86400
+                    except ValueError:
+                        pass  # timestamp corrupto → re-chequear igual
+                if _recheck_vencido and not _flujo_lead_activo:
+                    await actualizar_estado_flags(telefono, router_recheck_ts=_ahora_utc.isoformat())
+                    if await es_cliente_activo_por_telefono(telefono):
+                        agent_actual = "aurora"
+                        modo_nixie = "cliente_inscripto"
+                        await actualizar_agent_actual(telefono, "aurora", modo_nixie)
+                        logger.info(f"[ROUTER] {telefono} ahora es inscripto → promovido a Aurora")
+            except Exception as e:
+                # Nunca dejar mudo al webhook por el re-chequeo
+                logger.error(f"[ROUTER] Error re-chequeando cliente activo de {telefono}: {e}")
+
         # ── Actualizar grupo Telegram si el router cambió el agente ──────
         _tg_group = group_id_para_agente(agent_actual or "ivan")
 
