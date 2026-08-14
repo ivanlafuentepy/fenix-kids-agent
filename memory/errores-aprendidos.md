@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-08-14 — El router decide UNA vez: inscripta congelada en modo lead (caso Nayila)
+
+**Qué falló:** Nayila Duarte (595992311715), alumna regular con hijo ACTIVO/AL DÍA, preguntó
+"¿mañana hay clases?" y el agente: (1) le vendió el Desafío FENIX con su SOLD OUT, (2) le dijo
+"mañana horario normal" siendo feriado (15/08, NO entrena nadie), y (3) le confirmó que sus
+240.000 Gs (su mensualidad) eran "el paquete de 5 clases que tenés activo" — inventado.
+
+**Causa raíz (una sola, con dos agravantes):**
+1. **El router leads/alumno corría solo dentro de `if es_nuevo:`** (main.py). Su conversación
+   se creó el 25/06 como lead; se inscribió DESPUÉS por fuera del bot → `agent_actual='ivan'`
+   para siempre. Con el prompt de lead, Haiku recibió el contexto del campus (SOLD OUT incluido)
+   y NUNCA el aviso de feriado ni sus datos de familia. Los errores 1-3 son consecuencia directa.
+2. Agravante A: el `aurora_prompt` tenía la semántica VIEJA de feriado ("la respuesta es SÍ,
+   hay un turno único") contradiciendo el aviso del sistema post-12/08 ("NO entrena nadie").
+3. Agravante B: ningún prompt prohibía confirmar a qué corresponde un pago sin dato del sistema.
+
+**Cómo se resolvió:** re-chequeo del router cada 24h por teléfono (flag `router_recheck_ts`)
+que promueve a Aurora si Airtable ya lo tiene como cliente, sin promover a mitad de un flujo
+de lead activo (`3849372`) · el aviso de feriado manda sobre el prompt (`99bfda7`) · regla de
+pagos en los dos modos: verificar y escalar, nunca adivinar (`fbd646a`) · Nayila promovida a
+mano con `POST /restaurar-aurora/{tel}` · auditoría en prod: 15 clientes más congelados en
+modo lead (5 ACTIVO, 5 BAJA, 6 sin estado) — decisión de promoción con Iván.
+
+**La regla para la próxima:**
+- **Toda decisión de identidad/estado que toma el sistema tiene fecha de vencimiento.** Si un
+  dato externo (Airtable) puede cambiar después de decidir, la decisión se re-evalúa — no se
+  congela en la fila de conversación. (Es la regla 14 completada: el sistema decide, y RE-decide.)
+- Ante una respuesta absurda del agente, mirar PRIMERO `agent_actual`/`modo_nixie` en
+  `/debug/{tel}`: el 90% de "por qué dijo esto" es "porque estaba en el modo equivocado".
+- Cuando cambia una regla de negocio (feriado, sold out, producto nuevo), grep de la semántica
+  VIEJA también en los prompts — el 12/08 se cambió el código y el aviso, pero quedó la
+  instrucción contraria en `aurora_prompt` línea 205.
+
+---
+
 ## 2026-08-13 — El contexto correcto no alcanza: Haiku le hace caso al historial (caso "Jorge"/Jazmin)
 
 **Qué falló:** Aurora llamó "Jorge" (el papá) a Jazmin (la mamá de Fio, 595981683435) durante
