@@ -164,11 +164,14 @@ static/              ← Afiches PNG, profe.html, assets servidos.
 13. **Token de Meta renovado = reiniciar el servicio en Railway** — el proceso lee
     el token solo al arrancar; cambiar la variable no basta.
 14. **La identidad de quien escribe la decide el SISTEMA (teléfono → Airtable),
-    nunca el LLM.** Los saludos de inscriptos van por template determinístico con
-    ese nombre (`alumno_menu.py`). GENERO en ALUMNOS es dato obligatorio de
-    identidad: sin él, el contexto pierde MADRE/PADRE y Haiku puede confundir
-    tutores (caso Jazmin→"Jorge", 13/08). El agente nunca dice "ya lo anoté"
-    sin haber ejecutado una tool.
+    nunca el LLM — y la RE-decide.** Toda clasificación guardada en la conversación
+    (modo lead/familia) caduca: el estado real vive en Airtable y se re-consulta
+    (re-chequeo 24h del router), nunca se congela en la fila (caso Nayila, 14/08:
+    inscripta atendida como lead durante semanas). Los saludos de inscriptos van
+    por template determinístico con ese nombre (`alumno_menu.py`). GENERO en
+    ALUMNOS es dato obligatorio de identidad: sin él, el contexto pierde
+    MADRE/PADRE y Haiku puede confundir tutores (caso Jazmin→"Jorge", 13/08).
+    El agente nunca dice "ya lo anoté" sin haber ejecutado una tool.
 
 ---
 
