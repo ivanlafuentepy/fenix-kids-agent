@@ -856,3 +856,17 @@ De paso quedó resuelto lo de Fiorella: la mamá reagendó el 15→29 (quedan 22
 Commits `0698805`→`79887e3`.
 
 Detalle completo → `.claude/handoffs/handoff_20260814_0116.md`
+
+## 2026-08-14 — Caso Nayila
+
+`/endpoint nayila duarte`: a una alumna regular le vendieron el Desafío con su SOLD OUT, le
+dijeron "mañana horario normal" siendo feriado, y le confirmaron que sus 240.000 eran "el
+paquete de 5 clases". Una sola causa raíz: el router leads/alumno solo corría dentro de
+`if es_nuevo:`, así que la que se inscribió por fuera del bot quedó en modo lead para siempre
+— y ese modo define qué prompt y qué contexto recibe Haiku. Fix: re-chequeo throttled de 24h
+que promueve a Aurora sin cortar flujos de lead activos. Dos agravantes arreglados aparte: el
+`aurora_prompt` tenía la semántica vieja de feriado contradiciendo al aviso del sistema, y
+ningún prompt prohibía inventar a qué corresponde un pago. Auditoría en prod: 15 clientes más
+congelados; los 16 promovidos, re-corrida en 0. Commits `3849372`→`43f46a1`.
+
+Detalle completo → `.claude/handoffs/handoff_20260814_2057.md`
