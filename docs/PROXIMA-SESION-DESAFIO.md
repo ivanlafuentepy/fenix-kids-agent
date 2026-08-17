@@ -3,6 +3,13 @@
 > Escrito el 2026-08-10 al cerrar la sesión del lanzamiento del Desafío.
 > **El primer campus es el viernes 14, sábado 15 y domingo 16 de agosto.**
 
+> ⚠️ **DESACTUALIZADO desde el 2026-08-17: el campus pasó a 2 DÍAS** — sábado
+> (11:00 o 15:30) + domingo 15:30 con merienda en familia incluida (niño + padres).
+> Precios 300.000 anticipada (hasta viernes 23:59) / 450.000 normal, +150.000 por
+> hermano. El viernes salió también del entrenamiento regular. Fuente de verdad:
+> `docs/FENIX_RESUMEN.md` §8 y `agent/desafio.py`. Lo de abajo queda como historia
+> del lanzamiento.
+
 ## Contexto: qué quedó funcionando anoche
 
 El DESAFÍO FENIX (campus de 3 días) reemplazó a la clase de prueba. Ya está en producción:

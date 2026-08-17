@@ -420,16 +420,24 @@ Fuente única de asistencia. Una fila = un niño presente en un sábado. Separa 
 
 ## 8. Precios y Planes
 
-### Vigente desde el 2026-07-28 — el PACK reemplazó al mensual
+### Vigente desde el 2026-08-17 — el campus pasó a 2 días (sábado + domingo)
 
-**Clase de prueba (1 sábado):**
-| Hijos | Precio |
-|---|---|
-| 1 hijo | 100.000 Gs |
-| 2 hermanos | 150.000 Gs |
-| 3 hermanos | 200.000 Gs |
+**DESAFÍO FENIX — la única puerta de entrada (reemplazó a la clase de prueba el 09/08):**
+Campus de 2 días: **sábado** (turno a elegir: 11:00-12:30 o 15:30-17:00, Descubrir) +
+**domingo 15:30** (entrenamiento + Gran Desafío, 17:00 merienda en familia y cierre, Conquistar).
+La merienda del domingo está **incluida para el niño y los padres**. El viernes salió de la
+oferta el 17/08 (tres días eran demasiado para las familias).
 
-Lógica: +50.000 por cada hijo extra. Solo transferencia bancaria. NO se descuenta de paquetes. NO hay devolución.
+| Hijos | Anticipada (hasta viernes 23:59) | Normal (desde sábado 00:00) |
+|---|---|---|
+| 1 hijo | 300.000 Gs | 450.000 Gs |
+| 2 hermanos | 450.000 Gs | 600.000 Gs |
+| 3 hermanos | 600.000 Gs | 750.000 Gs |
+
+Lógica: +150.000 por cada hermano. La venta del campus en curso cierra el sábado a las 11:00
+(arranca el turno 1) — todo lo calcula `agent/desafio.py` (espejo web: `assets/campus.js`).
+Transferencia o tarjeta (link firmado). NO se descuenta de paquetes. NO hay devolución.
+Post-pago: formulario → elige turno del sábado (botones) → **2 reservas por niño**, `CONCEPTO=DESAFIO`.
 
 **Pack 5 clases — 5 sábados que NO vencen:** (sin matrícula)
 | Hijos | Precio |
@@ -452,7 +460,8 @@ Adultos entran GRATIS.
 
 Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 
-**Horarios invierno:** Sábados 11:00h | 15:30h — 80 min aprox. (9:30 eliminado en invierno)
+**Entrenamiento regular (inscriptos):** SOLO sábados 11:00h | 15:30h — 80 min aprox.
+(el viernes salió también del regular el 17/08; el 9:30 se eliminó en invierno)
 
 ---
 
@@ -836,7 +845,7 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 | 305 | Cruzar comprobantes del topic de Telegram vs filas de PAGOS **desde el 25/07** — saber si se perdió algún pago real por el bug del link `PAGA` | ⏳ Pendiente |
 | 306 | Medios del doc de auditoría sin tocar: aviso de saldo en QR/HQ (hoy solo facial), saldo negativo repite "era la última clase", hora en el prefijo cacheado, links de tarjeta sin expiración, CAPI Purchase sin `value` | ⏳ Pendiente |
 | 307 | ~~**Primer contacto del Desafío**~~ — los 3 trabajos hechos y en prod (`4f36436`, `2d314d3`, `055d99f`): camino propio para el que viene de la web a pagar con tarjeta, saludo que cuenta el campus + foto de La Casona, y "agendar llamada" con aviso al admin. **Falta probarlo desde un WhatsApp real** | ✅ Hecho 10/08 (sin verificar en vivo) |
-| 308 | **Probar el Desafío end-to-end en vivo**: pago → formulario → turnos, verificando en Airtable `CONCEPTO=DESAFIO` y las **3 reservas**. Nunca se pudo ejercer sin un mensaje entrante real | ⏳ Pendiente |
+| 308 | **Probar el Desafío end-to-end en vivo**: pago → formulario → turno del sábado, verificando en Airtable `CONCEPTO=DESAFIO` y las **2 reservas** (desde el 17/08 el campus es de 2 días). Nunca se pudo ejercer sin un mensaje entrante real | ⏳ Pendiente |
 | 309 | ~~Definir las 3 opciones de horario de "agendar llamada"~~ — **ya no aplica**: Iván decidió (10/08) que NO se pregunta la hora. Se pide el nombre y le llega un WhatsApp con link `wa.me` prellenado para contactar de un clic | ✅ Resuelto por decisión |
 | 313 | **`_admin_modo_padre` vive en memoria del proceso** (`main.py:157`) → cada deploy devuelve al admin a modo secre, donde el agente **no responde nada** y se ve idéntico a estar muerto (perdió 20 min el 10/08). Mover a flags de DB, igual que `_fotos_sesion`, `_asistencia_pendiente` e `_inscripcion_pendiente` (ya estaba en `AUDITORIA-2026-07-12.md:144`) | ⏳ Pendiente |
 | 314 | **`static/afiche_horarios.png` es una copia exacta de `afiche_fenix.png`** (md5 `93b52709…` los dos): quien pide horarios recibe el afiche de precios. Por eso el paquete de info manda el afiche una sola vez. Diseñar el afiche real de horarios o dejarlo en texto | ⏳ Pendiente |
@@ -844,12 +853,16 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 | 311 | `pagos-bancard` rechaza para fenix cualquier link cuya firma no cubra el teléfono (`main.py:341-343`). Hoy no molesta porque los links salen del agente, pero **cualquier cobro futuro desde una web va a fallar igual** (pasó con los links de pack y matrícula, rotos desde el 12/07) | ⏳ Pendiente |
 | 312 | Los `.md` internos de Mundo Fenix son accesibles públicamente (`mundo-fenix.pages.dev/COMPRAS-Y-PENDIENTES.md`, los `SPEC-*`) — viene de deploys viejos, el direct upload sube el directorio entero | ⏳ Pendiente |
 | 315 | **Controlar si Google indexó la web** (pedido el 12/08 desde Search Console): Inspección de URLs → `https://fenixkidsacademy.com/` debe decir "La URL está en Google". Si a los 10 días sigue afuera, revisar cobertura y backlinks | ⏳ Pendiente |
-| 316 | Cargar en la ficha de Google Business los 4 turnos de 90 min (vie 17:00-18:30 y 19:30-21:00 · sáb 11:00-12:30 y 15:30-17:00) — la web ya los publica en su JSON-LD | ⏳ Operacional |
-| 317 | `desafio.html` tiene **"350.000 Gs" escrito a mano en la meta description** — queda viejo al pasar a 550k. Sumar ese lugar al skill `/cambioprecio` | ⏳ Pendiente |
+| 316 | Cargar en la ficha de Google Business los turnos vigentes desde el 17/08 (sáb 11:00-12:30 y 15:30-17:00 · dom 15:30-17:00) — la web ya los publica en su JSON-LD; **si había cargados los de viernes, sacarlos** | ⏳ Operacional |
+| 317 | `desafio.html` tiene **el precio escrito a mano en la meta description** (hoy 300.000, actualizado el 17/08) — sumar ese lugar al grep del skill `/cambioprecio` para el próximo cambio | ⏳ Pendiente |
 | 318 | **Ver el re-chequeo del router disparándose solo** (`3849372`): buscar en logs de Railway `[ROUTER] ... ahora es inscripto → promovido a Aurora`. Los 16 del 14/08 se promovieron a mano — el camino automático nunca corrió con un mensaje real | ⏳ Pendiente |
 | 319 | **Decisión de negocio:** el criterio del router es `ESTADO2 ≠ 'A PRUEBA'` → incluye **BAJA** y sin-estado. Los 5 congelados con hijo BAJA quedaron en Aurora. Si una familia dada de baja debe volver al flujo de venta, hay que cambiar el criterio | ⏳ Decisión de Iván |
 | 320 | **`programar_llamada` no verifica que la llamada ocurra**: Nayila pidió el retorno 5 veces (03/07→10/07) y el bot prometió "te llama en unos minutos" cada vez, sin seguimiento. Evaluar que el Monitor alerte cuando una llamada prometida no se registró | ⏳ Pendiente |
 | 321 | Mover el script de auditoría de congelados (Postgres × Airtable, quedó en el scratchpad del 14/08) a `scripts/` si se va a correr seguido — hoy da 0 y tiene que seguir dando 0 | ⏳ Pendiente |
+| 322 | **AFICHES NUEVOS del campus de 2 días (los hace Iván)**: reemplazar `static/afiche_fenix.png` + `static/afiche_horarios.png` (agente) y `assets/afiche-precios.jpg` (web, también es la imagen OG). Los vigentes dicen 350.000 y 3 días — precio MÁS ALTO que el real, nadie paga de más, pero hay que cambiarlos YA. Verificar con Read que digan 300/450/sábado-domingo/merienda antes de publicar | 🔴 P0 — espera los PNG de Iván |
+| 323 | `afiches._armar_mensaje_agenda_post_pago` todavía dice **"agendar tu clase de prueba"** (texto del modelo viejo) y sigue importado como fallback profundo en `main.py`, `flujo_pagos.py` y `formulario_reserva.py` — reescribirlo o eliminar el camino | ⏳ Pendiente |
+| 324 | La **Promo Madre** tiene 350.000 hardcodeado en `main.py:3019/3064` — promo legada; decidir si sigue viva y con qué monto | ⏳ Decisión de Iván |
+| 325 | `assets/afiche-horario.jpg` del repo web está **huérfano** (ningún HTML lo referencia) — candidato a borrar | ⏳ Pendiente |
 
 ---
 
@@ -857,6 +870,7 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 
 | Fecha | Cambio realizado |
 |---|---|
+| 2026-08-17 (El campus pasa a 2 días) | **3 commits en el agente (`ea39a7c` código+tests, `76dfc7f` prompt, + docs) y 1 en la web (`3adefca`), todos deployados SUCCESS y verificados por contenido.** El viernes salió de la oferta (decisión de Iván: tres días eran demasiado): el campus queda **sábado (11:00 o 15:30, Descubrir) + domingo 15:30 (Gran Desafío, Conquistar)** con **merienda en familia incluida para el niño Y los padres** (antes almuerzo solo del niño). Precios **300.000 anticipada (hasta viernes 23:59) / 450.000 normal**, +150.000 por hermano; la venta cierra el sábado 11:00. `agent/desafio.py` re-anclado al SÁBADO (el dict de campus perdió la clave `"viernes"` a propósito — un consumidor olvidado explota ruidoso); elección de turno post-pago en **UN paso** con guard para el flag viejo `"viernes"` en DB; **2 reservas por niño**; `ofrecer_turnos_viernes` → `ofrecer_turnos_campus`; `/agenda` pasa a `300mil\|450mil\|600mil\|750mil\|gratis` (mapa por monto: los hijos salen del historial). El viernes salió TAMBIÉN del entrenamiento regular (solo sábados 11:00/15:30). Web re-anclada igual (`campus.js?v=5`, JSON-LD con Sunday, narrativa "Sábado descubre · Domingo conquista"). 123 tests verdes; feriados/sold-outs de los tests ahora se inyectan con monkeypatch (los dicts reales quedaron vacíos). **Quedan los afiches nuevos (P0, #322) y la prueba end-to-end real (#308).** |
 | 2026-08-14 (noche — Caso Nayila) | **4 commits (`3849372`→`43f46a1`), todos SUCCESS.** `/endpoint nayila duarte`: a una **alumna regular** le vendieron el Desafío con su SOLD OUT, le dijeron "mañana horario normal" siendo **feriado**, y le confirmaron que sus 240.000 eran "el paquete de 5 clases". **Una sola causa raíz:** el router leads/alumno corría únicamente dentro de `if es_nuevo:` → la que se inscribió por fuera del bot quedó en modo lead **para siempre**, y con ese modo el sistema le inyecta a Haiku el contexto de venta del campus en vez del aviso de feriado. Fix: **re-chequeo throttled de 24h** (`router_recheck_ts`) que promueve a Aurora, sin cortar flujos de lead activos. Dos agravantes arreglados aparte: el `aurora_prompt` tenía la semántica VIEJA de feriado peleando contra el aviso del sistema, y ningún prompt prohibía inventar a qué corresponde un pago. Auditoría en prod: **15 clientes más congelados** en modo lead → los 16 promovidos, re-corrida en **0**. Regla 14 completada (el sistema decide **y re-decide**). **Detalle en `.claude/handoffs/handoff_20260814_2057.md`.** |
 | 2026-08-13 (noche — Identidad la decide el sistema) | **5 commits (`0698805`→`79887e3`), todos SUCCESS.** `/endpoint 595981683435`: Aurora llamó "Jorge" (el papá) a Jazmin (la mamá) toda la conversación — el contexto decía JAZMIN pero el historial viejo pesó más, `GENERO` vacío en ALUMNOS dejaba a los tutores sin etiqueta MADRE/PADRE, y el "ya anoté tu nombre ✅" fue mentira (0 tools en el log). Fix en 4 frentes: **saludo determinístico** de inscriptos (template + nombre de Airtable, sin Haiku, `alumno_menu.py`), `registrar_familia` acepta la corrección del propio nombre y completa GENERO, regla de identidad en `aurora_prompt` (el CONTEXTO manda sobre el historial), y los **topics de Telegram se renombran** cuando el nombre resuelto cambió. GENERO cargado a mano en las filas de Jazmin y Jorge. Regla 14 nueva en CLAUDE.md. **Detalle en `.claude/handoffs/handoff_20260814_0116.md`.** |
 | 2026-08-12 (noche — Sold out) | **4 commits en el agente (`7cc5151`→`58f0e91`) + 1 en la web (`f18d456`), todos SUCCESS.** El primer Desafío se llenó: **SOLD OUT del campus 14-16** vía `CAMPUS_AGOTADOS` (por fecha, se apaga solo) — `proximo_campus()` lo saltea y precio (350k hasta el jueves 20), turnos completos, botones, textos, links firmados, contador y web pasaron **solos** al 21-23. Cartel rojo SOLD OUT en hero y bandas + la línea en saludo/precios/horarios + el bloque del LLM (no cede ni al "metele un lugarcito"). **Corrección de Iván:** el feriado NO tiene entrenamiento regular para nadie (los turnos especiales son sesiones del campus) → `hay_entrenamiento_regular()` consumida por el aviso a Aurora ("la respuesta es NO"), el pre-hook y las 3 fuentes de horarios. Queda en manos de Iván avisarle a Fiorella (reserva viva el sáb 15). **Detalle en `.claude/handoffs/handoff_20260812_2330.md`.** |

@@ -40,10 +40,10 @@ registra con el fallback de 100k en silencio. Verificarlo explícitamente.
 
 ## Paso 2 — Los lugares del agente
 
-> **Cambió el 09/08 con el DESAFÍO FENIX.** El precio ahora depende del día (350.000 hasta el
-> jueves 23:59, 550.000 desde el viernes), así que se CALCULA en un solo lugar en vez de estar
-> escrito en siete. Los textos pasaron de constantes a funciones: una constante congela el
-> precio del deploy y a la semana miente.
+> **Cambió el 09/08 con el DESAFÍO FENIX (y el 17/08 pasó a 2 días).** El precio depende del
+> día (300.000 hasta el viernes 23:59, 450.000 desde el sábado), así que se CALCULA en un solo
+> lugar en vez de estar escrito en siete. Los textos pasaron de constantes a funciones: una
+> constante congela el precio del deploy y a la semana miente.
 
 | # | Archivo | Qué tiene |
 |---|---|---|
