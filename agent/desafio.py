@@ -509,7 +509,7 @@ async def manejar_eleccion_turno(telefono: str, texto: str, btn_id: str | None,
         f"📅 *Domingo {d.day}* — 15:30 entrenamiento + Gran Desafío, "
         "17:00 merienda en familia y cierre (Conquistar)\n\n"
         "📍 La Casona Lafuente — Maestras Paraguayas 2056\n"
-        "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb\n\n"
+        "https://maps.app.goo.gl/Mpo3g9wqBvALMvNEA\n\n"
         "Traé ropa cómoda, zapatillas y agua 🌳"
     )
     await proveedor.enviar_mensaje(telefono, confirmacion)

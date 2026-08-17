@@ -3609,7 +3609,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                     _partes.append(
                         "📍 FENIX Kids Academy — Parque Fenix dentro de La Casona Lafuente\n"
                         "Maestras Paraguayas 2056\n"
-                        "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
+                        "https://maps.app.goo.gl/Mpo3g9wqBvALMvNEA"
                     )
 
                 if _pide_duracion:

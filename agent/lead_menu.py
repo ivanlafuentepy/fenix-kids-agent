@@ -172,7 +172,7 @@ def texto_horarios() -> str:
 TEXTO_UBICACION = (
     "📍 FENIX Kids Academy — Parque Fenix dentro de La Casona Lafuente\n"
     "Maestras Paraguayas 2056\n"
-    "https://maps.app.goo.gl/nZT5zGA7N8B76xmD6?g_st=iwb"
+    "https://maps.app.goo.gl/Mpo3g9wqBvALMvNEA"
 )
 
 # Mensajes puente al pasar a modo conversacional. El cerebro de leads toma el
