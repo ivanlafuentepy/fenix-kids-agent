@@ -4,7 +4,7 @@
 # bien pero moría ahí. /pago-confirmado solo gestionaba pagos con "Pedido activo"
 # (los que el agente inicia cuando manda el link por WhatsApp); el de la web caía
 # al else, le respondía "¡Pago confirmado!" y no creaba el PAGO en Airtable, no
-# pedía los datos del niño y no reservaba ninguno de los 3 días del campus.
+# pedía los datos del niño y no reservaba ninguno de los días del campus.
 #
 # Correr:  py -3 -m pytest tests/test_pago_web.py -q
 
@@ -32,7 +32,7 @@ def _firma(spid, telefono, monto):
                     hashlib.sha256).hexdigest()
 
 
-def _aviso(spid, concepto, monto=350000, telefono=TEL):
+def _aviso(spid, concepto, monto=300000, telefono=TEL):
     """El cuerpo que manda la pasarela cuando Bancard confirma el cobro."""
     return {
         "telefono": telefono, "monto": monto, "concepto": concepto,
@@ -103,14 +103,14 @@ def test_pago_del_desafio_desde_la_web_dispara_el_flujo_completo(espia):
     assert len(espia) == 1, "tenía que entrar al flujo de comprobante"
     assert espia[0]["tipo_override"] == "prueba"
     assert espia[0]["concepto_pago"] == "DESAFIO"
-    assert espia[0]["monto_override"] == 350000
+    assert espia[0]["monto_override"] == 300000
     assert espia[0]["metodo_pago"] == "CREDIT CARD"
 
 
 def test_el_precio_normal_tambien_entra(espia):
-    r = _llamar(_aviso("spid-web-2", "Desafío FENIX", monto=550000))
+    r = _llamar(_aviso("spid-web-2", "Desafío FENIX", monto=450000))
     assert r["gestionado"] is True
-    assert espia[0]["monto_override"] == 550000
+    assert espia[0]["monto_override"] == 450000
 
 
 def test_sin_tilde_tambien_matchea(espia):

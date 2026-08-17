@@ -57,11 +57,11 @@ def saludo_desafio() -> str:
     return (
         "Hola! Te saluda Aurora 🌟\n\n"
         "Te cuento: el DESAFÍO FENIX es una experiencia transformadora.\n\n"
-        "En 3 días tu hijo vive todo lo que hacemos en FENIX: trepa, corre, se cuelga, "
+        "En 2 días tu hijo vive todo lo que hacemos en FENIX: trepa, corre, se cuelga, "
         "cruza obstáculos, se cae y se levanta, se anima a cosas que no creía poder "
         "hacer — y hace amigos en el camino 🧗\n\n"
         "Conoce el lugar, conoce a los entrenadores y conoce, sobre todo, de qué es capaz.\n\n"
-        "Son 3 días que serán el comienzo visible de una transformación profunda 🌳\n\n"
+        "Son 2 días que serán el comienzo visible de una transformación profunda 🌳\n\n"
         + (f"{sold_out}\n\n" if sold_out else "")
         + "El campus se realiza todos los fines de semana.\n"
         f"📅 Próximo campus: {label_campus(proximo_campus())}"
@@ -94,7 +94,7 @@ _TEXTO_RECORDATORIO = "Tocá una de las opciones 👇"
 # horarios / ubicación siguen vivos (ver _ID_A_OPCION): un padre puede tocar la
 # lista de un mensaje viejo que quedó en su chat y tiene que seguir funcionando.
 
-# Los precios del DESAFÍO dependen del día (anticipada hasta el jueves 23:59) y las
+# Los precios del DESAFÍO dependen del día (anticipada hasta el viernes 23:59) y las
 # fechas dependen del campus que se esté vendiendo → estos textos son funciones, no
 # constantes: una constante congelaba el precio del deploy y a la semana mentía.
 
@@ -103,17 +103,17 @@ def texto_precios() -> str:
     from agent.desafio import proximo_campus, precio_desafio, label_campus, nota_sold_out
     campus = proximo_campus()
     _monto, anticipada = precio_desafio(1, campus=campus)
-    precio = ("💰 *Reservando con anticipación:* 350.000 Gs\n"
-              "Precio normal: 550.000 Gs\n"
+    precio = ("💰 *Reservando con anticipación:* 300.000 Gs\n"
+              "Precio normal: 450.000 Gs\n"
               if anticipada else
-              "💰 *Inversión:* 550.000 Gs\n")
+              "💰 *Inversión:* 450.000 Gs\n")
     sold_out = nota_sold_out()
     return (
-        "🔥 *DESAFÍO FENIX* — campus de 3 días\n\n"
+        "🔥 *DESAFÍO FENIX* — campus de 2 días\n\n"
         + (f"{sold_out}\n\n" if sold_out else "")
-        + "*Viernes:* Descubrir · *Sábado:* Superar · *Domingo:* Conquistar\n\n"
-        "El domingo cerramos con el Gran Desafío, almuerzo en familia "
-        "(el del niño va incluido) y reconocimiento 🏅\n\n"
+        + "*Sábado:* Descubrir · *Domingo:* Conquistar\n\n"
+        "El domingo cerramos con el Gran Desafío, merienda en familia "
+        "(incluida para el niño y los padres) y reconocimiento 🏅\n\n"
         f"{precio}"
         "👦👦 Hermano adicional: +150.000 Gs\n\n"
         f"📅 Próximo campus: {label_campus(campus)}\n"
@@ -129,27 +129,27 @@ def texto_hermanos() -> str:
     anticipada = precio_desafio(1)[1]
     if anticipada:
         tabla = ("*Con reserva anticipada:*\n"
-                 "1 hijo: 350.000 Gs\n"
-                 "2 hermanos: 500.000 Gs\n"
-                 "3 hermanos: 650.000 Gs\n\n"
+                 "1 hijo: 300.000 Gs\n"
+                 "2 hermanos: 450.000 Gs\n"
+                 "3 hermanos: 600.000 Gs\n\n"
                  "*Precio normal:*\n"
-                 "1 hijo: 550.000 Gs\n"
-                 "2 hermanos: 700.000 Gs\n"
-                 "3 hermanos: 850.000 Gs")
+                 "1 hijo: 450.000 Gs\n"
+                 "2 hermanos: 600.000 Gs\n"
+                 "3 hermanos: 750.000 Gs")
     else:
-        tabla = ("1 hijo: 550.000 Gs\n"
-                 "2 hermanos: 700.000 Gs\n"
-                 "3 hermanos: 850.000 Gs")
+        tabla = ("1 hijo: 450.000 Gs\n"
+                 "2 hermanos: 600.000 Gs\n"
+                 "3 hermanos: 750.000 Gs")
     return f"👦👦 *Hermanos en el Desafío FENIX:*\n\n{tabla}"
 
 
 def texto_horarios() -> str:
-    """Los 3 días del campus con sus turnos.
+    """Los 2 días del campus con sus turnos.
 
     Los turnos salen de desafio.py y no están escritos acá: un fin de semana
     feriado corre con turno único y este texto es lo primero que ve el lead.
     """
-    from agent.desafio import (proximo_campus, label_campus, turnos_viernes_de,
+    from agent.desafio import (proximo_campus, label_campus,
                                turnos_sabado_de, RANGO_TURNO, MOTIVO_ESPECIAL, nota_sold_out)
     campus = proximo_campus()
 
@@ -162,10 +162,10 @@ def texto_horarios() -> str:
     return (
         f"🔥 *DESAFÍO FENIX* — {label_campus(campus)}\n\n"
         + (f"{sold_out}\n\n" if sold_out else "")
-        + f"{_dia('VIERNES', turnos_viernes_de(campus))}\n\n"
-        f"{_dia('SÁBADO', turnos_sabado_de(campus))}\n\n"
+        + f"{_dia('SÁBADO', turnos_sabado_de(campus))}\n\n"
         "*DOMINGO* (todos juntos)\n"
-        "12:00 Gran Desafío FENIX\n13:00 Almuerzo en familia\n15:00 Cierre y reconocimiento"
+        "15:30 Entrenamiento + Gran Desafío FENIX\n"
+        "17:00 Merienda en familia, cierre y reconocimiento"
     )
 
 # Texto de ubicación (reusado del interceptor existente en main.py).
@@ -468,7 +468,7 @@ async def _enviar_link_tarjeta(
     viaja por monto y cobrar de menos no se deshace.
 
     Deja el Pedido abierto: es lo que hace que /pago-confirmado reconozca el
-    cobro como del campus y dispare formulario + reserva de los 3 días.
+    cobro como del campus y dispare formulario + reserva de los 2 días.
     """
     from agent.desafio import precio_desafio, proximo_campus, label_campus
     from agent.pagos import formatear_monto, DATOS_BANCARIOS

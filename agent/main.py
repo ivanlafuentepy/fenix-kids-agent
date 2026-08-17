@@ -1321,7 +1321,7 @@ async def pago_confirmado(request: Request):
         # Pago del DESAFÍO hecho desde la WEB: no hay Pedido porque el link no lo
         # mandó el agente, pero el padre igual tiene que quedar inscripto. Antes
         # caía al else de abajo: se le decía "pago confirmado" y ahí moría —
-        # sin PAGO en Airtable, sin datos del niño y sin reserva de los 3 días.
+        # sin PAGO en Airtable, sin datos del niño y sin reserva de los 2 días.
         # El teléfono lo pide la propia pasarela antes de mostrar la tarjeta, y
         # el concepto (que viaja firmado en el link) distingue el pago del campus
         # de uno hecho a mano desde el panel /admin, que NO debe crear reservas.
@@ -2258,7 +2258,7 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 "• `/rechazado` — evaluación rechazada\n"
                 "• `/fenix` — reset conversación + reactivar\n"
                 "• `/registro` — activar Aurora para registrar familia\n"
-                "• `/agenda 350mil|500mil|650mil|gratis nombre` — cerrar agenda manual\n"
+                "• `/agenda 300mil|450mil|600mil|750mil|gratis nombre` — cerrar agenda manual\n"
                 "• _(texto libre)_ — se reenvía como mensaje de Ivan al padre"
             )
             await proveedor.enviar_mensaje(telefono, msg_comandos)
@@ -3354,8 +3354,8 @@ async def _procesar_mensaje_interno(telefono: str, texto: str, msg):
                 return {"status": "ok"}
 
         # ── Turnos del DESAFÍO (post-pago) ────────────────────────────────
-        # El padre pagó y completó el formulario: ahora elige turno del viernes
-        # y del sábado. Se intercepta ANTES del menú y del brain — igual que la
+        # El padre pagó y completó el formulario: ahora elige el turno del
+        # sábado. Se intercepta ANTES del menú y del brain — igual que la
         # confirmación del sábado en Aurora — para que el botón del turno no
         # caiga en el flujo conversacional. Solo actúa si el flag está puesto.
         _flags_turno = await obtener_estado_flags(telefono)

@@ -37,17 +37,17 @@ _tareas_activas: dict[str, list[asyncio.Task]] = {}
 _tareas_seguimiento: dict[str, list[asyncio.Task]] = {}
 
 # Los 3 mensajes se resuelven al PROGRAMAR el seguimiento y se envían hasta 6h
-# después: un precio escrito acá se congela y puede cruzar el corte del jueves
-# 23:59 (350.000 → 550.000) y llegarle mentido al padre. Por eso el follow-up
+# después: un precio escrito acá se congela y puede cruzar el corte del viernes
+# 23:59 (300.000 → 450.000) y llegarle mentido al padre. Por eso el follow-up
 # cuenta el Desafío y ofrece pasar los precios; el número exacto lo da el flujo
 # de precios, que lo calcula en el momento (lead_menu.texto_precios).
 _MENSAJES_SEGUIMIENTO = {
     "A": [
         "Hola! ¿Te quedó alguna duda sobre el Parque FENIX? Acá estoy para contarte lo que necesités 😊",
         (
-            "Te cuento cómo es el DESAFÍO FENIX 🔥 Son 3 días: viernes, sábado y domingo.\n"
+            "Te cuento cómo es el DESAFÍO FENIX 🔥 Son 2 días: sábado y domingo.\n"
             "Tu hijo conoce la metodología, entrena, enfrenta desafíos reales, y el domingo "
-            "cerramos con el Gran Desafío y un almuerzo en familia 🌳\n"
+            "cerramos con el Gran Desafío y una merienda en familia 🌳\n"
             "¿Te paso los precios y los horarios?"
         ),
         "Imaginate a tu hijo el domingo, terminando su primer Desafío FENIX frente al río, "
@@ -56,8 +56,8 @@ _MENSAJES_SEGUIMIENTO = {
     "B": [
         "¿Todo bien? Si querés te cuento más sobre el Parque FENIX, entrenamiento al aire libre en plena naturaleza 🌿",
         (
-            "El DESAFÍO FENIX es así: viernes descubre, sábado supera, domingo conquista 💪\n"
-            "Tres días para que tu hijo se anime a cosas que hoy no se anima, en 3000m² "
+            "El DESAFÍO FENIX es así: sábado descubre, domingo conquista 💪\n"
+            "Dos días para que tu hijo se anime a cosas que hoy no se anima, en 3000m² "
             "frente al río.\n¿Te paso los detalles?"
         ),
         "El desafío termina el domingo, pero la transformación recién empieza 🔥 "
@@ -186,7 +186,7 @@ def programar_recordatorios_formulario(
     Args:
         telefono:            número WhatsApp del lead
         dia:                 día de la clase agendada (ej: "martes")
-        hora:                hora de la clase (ej: "19:30")
+        hora:                hora de la clase (ej: "15:30")
         proveedor:           instancia de ProveedorWhatsApp
         formulario_check_fn: coroutine function que recibe telefono y retorna bool
         guardar_fn:          coroutine function guardar_mensaje(tel, role, content)

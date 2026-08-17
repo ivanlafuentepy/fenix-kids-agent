@@ -2,7 +2,7 @@
 #
 # Por qué existe: el saludo contaba la academia en general ("es tu hijo trepando
 # árboles...") y ofrecía "Hablar con Aurora". Desde el 09/08 la única puerta de
-# entrada es el campus de 3 días, así que el primer mensaje tiene que contar ESO
+# entrada es el campus (2 días desde el 17/08), así que el primer mensaje tiene que contar ESO
 # y ofrecer llamada con el profe, que es lo que pide el padre que no quiere
 # escribir. Las fechas del campus se mueven cada semana: van calculadas.
 #
@@ -89,7 +89,7 @@ def test_el_saludo_cuenta_el_campus_y_no_la_academia_en_general():
     transformadora"), no el relato descubre/supera/conquista."""
     s = menu.saludo_desafio()
     assert "DESAFÍO FENIX" in s
-    assert "3 días" in s
+    assert "2 días" in s
     assert "experiencia transformadora" in s
     for frase in ("trepa, corre, se cuelga", "hace amigos en el camino",
                   "de qué es capaz", "transformación profunda",
@@ -134,8 +134,8 @@ def test_info_y_precios_manda_todo_sin_hacerlo_elegir_de_una_lista(prov):
 
     assert r == "[info completa: precios + horarios + ubicación]"
     cuerpo = "\n".join(_al_padre(prov)[-3:])
-    assert "350.000" in cuerpo or "550.000" in cuerpo, "faltan los precios"
-    assert "VIERNES" in cuerpo and "17:00" in cuerpo, "faltan los horarios"
+    assert "300.000" in cuerpo or "450.000" in cuerpo, "faltan los precios"
+    assert "SÁBADO" in cuerpo and "11:00" in cuerpo, "faltan los horarios"
     assert "Maestras Paraguayas" in cuerpo, "falta la ubicación"
     assert len(prov.imagenes) == 1, "el afiche de precios, una sola vez"
 

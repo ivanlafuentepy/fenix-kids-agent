@@ -309,10 +309,10 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
     if not flags.get("esperando_formulario_reserva") and flags.get("desafio_espera_turno"):
         logger.info(f"[RESERVA-FORM] {telefono}: turnos ya ofrecidos — no los repito")
         return
-    # DESAFÍO FENIX: ya no se ofrece "un sábado", se eligen los turnos del
-    # viernes y del sábado del campus (el domingo es uno solo para todos).
+    # DESAFÍO FENIX: ya no se ofrece "un sábado", se elige el turno del
+    # sábado del campus (el domingo es uno solo para todos).
     try:
-        from agent.desafio import ofrecer_turnos_viernes
+        from agent.desafio import ofrecer_turnos_campus
         _topic = None
         _grp = 0
         try:
@@ -321,6 +321,6 @@ async def procesar_formulario_reserva(telefono: str, flow_data: dict) -> None:
             _topic = await obtener_o_crear_topic(telefono, f"📱 {telefono}", group_override=_grp)
         except Exception as e:
             logger.error(f"[RESERVA-FORM] no pude resolver el topic de Telegram: {e}")
-        await ofrecer_turnos_viernes(telefono, proveedor, topic_id=_topic, tg_group=_grp)
+        await ofrecer_turnos_campus(telefono, proveedor, topic_id=_topic, tg_group=_grp)
     except Exception as e:
         logger.error(f"[RESERVA-FORM] error ofreciendo los turnos del campus: {e}")

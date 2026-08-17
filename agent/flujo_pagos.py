@@ -340,9 +340,9 @@ async def _procesar_comprobante(
                 # Fallback: si el formulario no salió (token/flow), igual hay que
                 # cerrarle los turnos del campus. Antes caía a "elegí un sábado",
                 # que con el Desafío ya no existe.
-                from agent.desafio import ofrecer_turnos_viernes
-                await ofrecer_turnos_viernes(telefono, proveedor,
-                                             topic_id=topic_id, tg_group=group_override)
+                from agent.desafio import ofrecer_turnos_campus
+                await ofrecer_turnos_campus(telefono, proveedor,
+                                            topic_id=topic_id, tg_group=group_override)
                 logger.warning(f"[PAGOS] Formulario no salió — voy directo a los turnos para {telefono}")
         except Exception as e:
             logger.error(f"[PAGOS] Error en post-pago (formulario/agenda): {e}")
@@ -350,21 +350,24 @@ async def _procesar_comprobante(
 
 # ── /agenda — Ivan cierra agenda tras llamada telefónica ──────────────────────
 
-# Montos vigentes del DESAFÍO: anticipada 350/500/650 y normal 550/700/850 según
-# hermanos. Los de la clase de prueba (100/150/200) se retiraron con el producto:
-# dejarlos era cerrar una agenda cobrando 100.000 por un campus de 350.000.
+# Montos vigentes del DESAFÍO: anticipada 300/450/600 y normal 450/600/750 según
+# hermanos. Es el CONJUNTO de montos distintos, no una tabla por concepto: 450mil
+# puede ser 2 hermanos anticipada o 1 hijo normal — da igual, el monto es lo
+# acordado por teléfono y la cantidad de niños sale del historial (Haiku), nunca
+# del monto. Los de la clase de prueba (100/150/200) se retiraron con el producto.
 _MONTOS_AGENDA = {
-    "350mil": 350_000, "500mil": 500_000, "650mil": 650_000,
-    "550mil": 550_000, "700mil": 700_000, "850mil": 850_000,
+    "300mil": 300_000, "450mil": 450_000, "600mil": 600_000,
+    "750mil": 750_000,
     "gratis": 0,
 }
 
 
 async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: int, group_override: int = 0):
     """
-    /agenda 350mil Carolina  → 1 hijo, anticipada (550mil después del jueves)
-    /agenda 500mil Carolina  → 2 hermanos, anticipada (700mil después)
-    /agenda 650mil Carolina  → 3 hermanos, anticipada (850mil después)
+    /agenda 300mil Carolina  → 1 hijo, anticipada (450mil desde el sábado)
+    /agenda 450mil Carolina  → 2 hermanos anticipada o 1 hijo normal
+    /agenda 600mil Carolina  → 3 hermanos anticipada o 2 hermanos normal
+    /agenda 750mil Carolina  → 3 hermanos, precio normal
     /agenda gratis Carolina  → Desafío sin cargo (referidos/promo)
 
     Ivan usa esto cuando cierra la agenda por llamada telefónica.
@@ -375,7 +378,7 @@ async def _cerrar_agenda_desde_telegram(telefono: str, comando: str, thread_id: 
     if len(partes) < 3 or partes[1].lower() not in _MONTOS_AGENDA:
         await enviar_a_topic(
             thread_id,
-            "⚠️ Uso: /agenda 350mil|500mil|650mil|550mil|700mil|850mil|gratis nombre\nEj: /agenda 350mil Carolina",
+            "⚠️ Uso: /agenda 300mil|450mil|600mil|750mil|gratis nombre\nEj: /agenda 300mil Carolina",
             telefono=telefono,
             group_override=group_override,
         )

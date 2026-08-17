@@ -30,16 +30,17 @@ CI_BANCARIO = "1604338"
 # ── Precios ──────────────────────────────────────────────────────────────────
 
 PRECIOS = {
-    # DESAFÍO FENIX — campus de 3 días, la única puerta de entrada desde el 09/08/26.
-    # Reemplaza la clase de prueba de un sábado (100/150/200K), que ya no se vende.
-    # Anticipada = hasta el jueves 23:59 PY; desde el viernes 00:00 rige el normal
+    # DESAFÍO FENIX — campus de 2 días (sábado + domingo), la única puerta de
+    # entrada desde el 09/08/26. Reemplaza la clase de prueba de un sábado
+    # (100/150/200K), que ya no se vende.
+    # Anticipada = hasta el viernes 23:59 PY; desde el sábado 00:00 rige el normal
     # (el corte lo calcula agent/desafio.py, esta tabla es la referencia).
-    "desafio": {"cuota": 350_000, "matricula": 0, "total": 350_000, "label": "DESAFÍO 350K (1 hijo, anticipada)"},
-    "desafio_2": {"cuota": 500_000, "matricula": 0, "total": 500_000, "label": "DESAFÍO 500K (2 hermanos, anticipada)"},
-    "desafio_3": {"cuota": 650_000, "matricula": 0, "total": 650_000, "label": "DESAFÍO 650K (3 hermanos, anticipada)"},
-    "desafio_normal": {"cuota": 550_000, "matricula": 0, "total": 550_000, "label": "DESAFÍO 550K (1 hijo)"},
-    "desafio_normal_2": {"cuota": 700_000, "matricula": 0, "total": 700_000, "label": "DESAFÍO 700K (2 hermanos)"},
-    "desafio_normal_3": {"cuota": 850_000, "matricula": 0, "total": 850_000, "label": "DESAFÍO 850K (3 hermanos)"},
+    "desafio": {"cuota": 300_000, "matricula": 0, "total": 300_000, "label": "DESAFÍO 300K (1 hijo, anticipada)"},
+    "desafio_2": {"cuota": 450_000, "matricula": 0, "total": 450_000, "label": "DESAFÍO 450K (2 hermanos, anticipada)"},
+    "desafio_3": {"cuota": 600_000, "matricula": 0, "total": 600_000, "label": "DESAFÍO 600K (3 hermanos, anticipada)"},
+    "desafio_normal": {"cuota": 450_000, "matricula": 0, "total": 450_000, "label": "DESAFÍO 450K (1 hijo)"},
+    "desafio_normal_2": {"cuota": 600_000, "matricula": 0, "total": 600_000, "label": "DESAFÍO 600K (2 hermanos)"},
+    "desafio_normal_3": {"cuota": 750_000, "matricula": 0, "total": 750_000, "label": "DESAFÍO 750K (3 hermanos)"},
     # Pack de 5 sábados que NO vencen (reemplaza al mensual de 4 sábados, 28/07/26)
     "pack5": {"cuota": 350_000, "matricula": 100_000, "total": 450_000, "label": "PACK 5 CLASES 350K + MATRÍCULA 100K (1 hijo)"},
     "pack5_2": {"cuota": 500_000, "matricula": 200_000, "total": 700_000, "label": "PACK 5 CLASES 500K + MATRÍCULA 200K (2 hermanos)"},
@@ -108,9 +109,9 @@ def monto_prueba_por_hijos_detallado(historial: list[dict]) -> tuple[int, bool]:
             match = re.search(r"\**(\d{2,3})[.\s](\d{3})\s*(?:[Gg]s)?\**", contenido)
             if match:
                 return int(match.group(1)) * 1000 + int(match.group(2)), False
-    # Fallback: el precio VIGENTE del Desafío para 1 hijo (350K anticipada / 550K
-    # desde el viernes), no un número fijo. Con el fallback viejo de 100.000 un
-    # comprobante de 350.000 que ninguna regex parseara quedaba registrado como
+    # Fallback: el precio VIGENTE del Desafío para 1 hijo (300K anticipada / 450K
+    # desde el sábado), no un número fijo. Con el fallback viejo de 100.000 un
+    # comprobante de 300.000 que ninguna regex parseara quedaba registrado como
     # 100.000 y la diferencia no aparecía en ningún lado. Sigue marcado como
     # ADIVINADO para que el admin verifique el comprobante a mano.
     from agent.desafio import precio_desafio

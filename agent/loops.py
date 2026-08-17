@@ -226,13 +226,13 @@ async def _enviar_recordatorio(rec):
                 logger.info(f"[FORM-RESCATE] Flow re-enviado a {rec.telefono} (+2h)")
             return ok
 
-        # form_rescate_24h: soltar el formulario y pasar directo a elegir turnos.
+        # form_rescate_24h: soltar el formulario y pasar directo a elegir turno.
         # El padre ya pagó: si el Flow nunca vuelve, igual tiene que quedar
-        # anotado en los 3 días del campus.
+        # anotado en los 2 días del campus.
         from agent.ab_test import actualizar_estado_flags
-        from agent.desafio import ofrecer_turnos_viernes
+        from agent.desafio import ofrecer_turnos_campus
         await actualizar_estado_flags(rec.telefono, esperando_formulario_reserva=False)
-        ok = await ofrecer_turnos_viernes(rec.telefono, proveedor)
+        ok = await ofrecer_turnos_campus(rec.telefono, proveedor)
         if ok:
             logger.info(f"[FORM-RESCATE] {rec.telefono} pasado a elegir turnos (+24h)")
         try:

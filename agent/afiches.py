@@ -29,7 +29,7 @@ async def _enviar_afiche_horarios(telefono: str, topic_id: int | None, tg_group:
         if ok:
             logger.info(f"[AFICHE HORARIOS] Imagen enviada a {telefono}")
             await asyncio.sleep(3)
-            await proveedor.enviar_mensaje(telefono, "¿Te gustaría venir a probar un sábado? 🌳")
+            await proveedor.enviar_mensaje(telefono, "¿Te reservo el lugar de tu hijo en el próximo Desafío? 🌳")
         else:
             logger.error(f"[AFICHE HORARIOS] Error enviando imagen a {telefono}")
 
@@ -118,14 +118,14 @@ async def _armar_followup_afiche(telefono: str) -> str:
             pass
     if nombre_hijo and _es_nombre_hijo_valido(nombre_hijo):
         return (
-            f"El DESAFÍO FENIX son 3 días — viernes, sábado y domingo — para que {nombre_hijo} "
+            f"El DESAFÍO FENIX son 2 días — sábado y domingo — para que {nombre_hijo} "
             "descubra de qué es capaz 🔥 ¿Te paso los precios? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo un rato "
             "así te explico todo 🤝"
         )
     else:
         return (
-            "El DESAFÍO FENIX son 3 días — viernes, sábado y domingo — para que tu hijo "
+            "El DESAFÍO FENIX son 2 días — sábado y domingo — para que tu hijo "
             "descubra de qué es capaz 🔥 ¿Te paso los precios? 😊\n\n"
             "Te puedo reservar por acá, o si preferís te llamo "
             "un rato así te explico todo 🤝"
