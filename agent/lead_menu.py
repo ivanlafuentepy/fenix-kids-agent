@@ -11,7 +11,9 @@
 #   4. "Reservar lugar" → recién acá pasa a modo conversacional
 #      (el cerebro de leads toma el control, branded Aurora).
 #   5. Si el lead escribe texto libre antes de pasar a conversacional, se le
-#      insiste con los botones.
+#      insiste con los botones UNA vez. A la segunda —o si ya recibió la info—
+#      el menú se aparta y le contesta el cerebro: hay preguntas que ningún
+#      botón responde y quedaban sin respuesta.
 #
 # EXCEPCIÓN — el que llega desde el botón "pagar con tarjeta" de la web no entra
 # al menú de venta: se le pregunta solo para cuántos hijos es y se le manda el
@@ -197,6 +199,12 @@ _ID_A_OPCION = {
     "lead_aurora": "aurora",
     "lead_llamada": "llamada",
 }
+
+# Opciones que solo ENTREGAN información. El que tocó una de estas ya usó el
+# menú: si después escribe una pregunta que ningún botón contesta, se la
+# responde el cerebro (ver el final de procesar_menu_lead). Antes se le
+# insistía con los botones para siempre y la pregunta moría ahí.
+_OPCIONES_INFORMATIVAS = {"info_clases", "precios", "horarios", "ubicacion", "combo_hermanos"}
 
 
 # ── Pedido de llamada ────────────────────────────────────────────────────────
@@ -601,6 +609,11 @@ async def procesar_menu_lead(
     if es_boton and btn_id:
         opcion = _ID_A_OPCION.get(btn_id)
 
+        # Ya recibió lo que el menú tiene para dar → el próximo texto libre lo
+        # atiende el cerebro, no otro recordatorio de botones.
+        if opcion in _OPCIONES_INFORMATIVAS:
+            await actualizar_estado_flags(telefono, menu_estado="menu_libre")
+
         if opcion == "info_clases":
             await _handle_info_completa(telefono, proveedor, topic_id, tg_group)
             return "[info completa: precios + horarios + ubicación]"
@@ -649,12 +662,24 @@ async def procesar_menu_lead(
         logger.info(f"[MENU] {telefono}: saludo Aurora + botones del menú principal")
         return "[saludo + menú principal]"
 
-    # ── Texto libre mientras está en el menú → insistir con botones ───────
-    # El lead escribió en vez de tocar un botón: NO pasa a conversacional.
+    # ── Texto libre mientras está en el menú ──────────────────────────────
+    # Se insiste con los botones UNA sola vez: puede haber escrito "hola" sin
+    # mirarlos. A la segunda ya no — el padre que pregunta algo que ningún botón
+    # contesta ("¿hacen todos los meses?", 18/08) se quedaba con un "Tocá una
+    # opción" y su pregunta se perdía. De acá en adelante lo atiende el cerebro.
     if menu_estado == "menu":
         await _enviar_recordatorio_botones(telefono, proveedor, topic_id, tg_group)
+        await actualizar_estado_flags(telefono, menu_estado="menu_libre")
         logger.info(f"[MENU] {telefono}: texto libre en menú → recordatorio de botones")
         return "[recordatorio botones]"
+
+    # Ya se le insistió (o ya recibió la info): suelta el menú y devuelve None
+    # para que main.py responda ESTE mismo mensaje con interceptores + brain.
+    # Los botones que ya tiene en el chat siguen funcionando igual.
+    if menu_estado == "menu_libre":
+        await actualizar_estado_flags(telefono, menu_estado="conversacional")
+        logger.info(f"[MENU] {telefono}: texto libre → conversacional (lo atiende el cerebro)")
+        return None
 
     # Cualquier otro caso (lead viejo mid-conversación, sin menú) → flujo normal.
     return None

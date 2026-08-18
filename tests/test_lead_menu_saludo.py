@@ -206,3 +206,58 @@ def test_si_el_aviso_a_ivan_no_sale_queda_registrado(prov, caplog):
         r = _procesar(prov, "Juan")
     assert r == "[llamada: pedido enviado]"
     assert any("NO salió" in m for m in caplog.messages), "tiene que gritar en los logs"
+
+
+# ── El menú no es una jaula ──────────────────────────────────────────────────
+# Caso real 18/08 (595982862766): el padre tocó "Info y precios", leyó todo y
+# preguntó "Hacen todos los meses.?" — el sistema le contestó "Tocá una de las
+# opciones 👇" y su pregunta se perdió. Ningún botón contestaba eso.
+
+def test_al_primer_texto_libre_se_le_insiste_una_vez(prov):
+    """Puede haber escrito sin mirar los botones: la primera vez se le recuerdan."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    r = _procesar(prov, "hola?")
+    assert r == "[recordatorio botones]"
+    assert prov.flags["menu_estado"] == "menu_libre", "ya no queda atrapado en el menú"
+
+
+def test_al_segundo_texto_libre_lo_atiende_el_cerebro(prov):
+    """None = main.py sigue el flujo normal y responde ESTE mismo mensaje."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    _procesar(prov, "hola?")
+    antes = len(_al_padre(prov))
+    r = _procesar(prov, "¿hacen todos los meses?")
+    assert r is None, "el menú tiene que soltarlo, no insistir de nuevo"
+    assert prov.flags["menu_estado"] == "conversacional"
+    assert len(_al_padre(prov)) == antes, "el menú no manda nada: contesta el cerebro"
+
+
+def test_el_que_ya_recibio_la_info_pregunta_y_le_contestan(prov):
+    """El caso de 595982862766: tocó el botón, leyó todo y preguntó. Sin
+    recordatorio de por medio — ya usó el menú."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    _procesar(prov, "", btn_id="lead_info", es_boton=True)
+    assert prov.flags["menu_estado"] == "menu_libre"
+
+    antes = len(_al_padre(prov))
+    r = _procesar(prov, "Hacen todos los meses.?")
+    assert r is None, "la pregunta la contesta el cerebro, no un botón"
+    assert prov.flags["menu_estado"] == "conversacional"
+    assert len(_al_padre(prov)) == antes
+
+
+def test_los_botones_siguen_andando_despues_de_escribir(prov):
+    """El padre escribió, se le insistió, y después sí tocó un botón."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    _procesar(prov, "hola?")
+    r = _procesar(prov, "", btn_id="lead_info", es_boton=True)
+    assert r == "[info completa: precios + horarios + ubicación]"
+
+
+def test_el_camino_de_llamada_no_se_afloja(prov):
+    """Ahí el texto libre ES el dato que se espera (el nombre): no suelta al cerebro."""
+    _procesar(prov, "Hola", es_primer_contacto=True)
+    _procesar(prov, "", btn_id="lead_llamada", es_boton=True)
+    r = _procesar(prov, "   ")
+    assert r == "[llamada: repregunta nombre]"
+    assert prov.flags["menu_estado"] == "llamada"
