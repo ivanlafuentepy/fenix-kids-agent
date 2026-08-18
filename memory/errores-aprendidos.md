@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-08-17 — "No cambiaste el afiche" y sí estaba cambiado: cache de un asset sin versionar
+
+**Qué falló:** publicamos el afiche nuevo del campus de 2 días en la web, verificado en prod, y
+Iván igual veía el viejo (350.000 / 3 días).
+
+**Causa raíz:** el archivo del servidor ERA el nuevo — el md5 del JPG local coincidía exactamente
+con el que servía `fenixkidsacademy.com`. Lo viejo estaba en el cache del navegador, porque
+`<img src="assets/afiche-precios.jpg">` y el `og:image` iban **sin `?v=N`**. La regla de versionar
+assets ya existía desde el 10/08, pero estaba escrita pensando en `<script src>`: las imágenes
+propias quedaron fuera del criterio y nadie las versionó.
+
+**Cómo se resolvió:** `?v=2` en el `<img>` y en el `og:image` de `index.html` y `desafio.html`
+(commit `5aeadee`). El `og:image` importa aparte: sin versión, el scraper de WhatsApp sigue
+mostrando el afiche viejo al compartir el link.
+
+**Regla para la próxima:** (1) TODO asset propio que se reemplaza in situ —JS, CSS **e imágenes**—
+va con `?v=N`, y se sube N en todas las páginas que lo cargan, `og:image` incluido. (2) Ante un
+"no se ve el cambio", primero probar el archivo del servidor por **md5** (`curl -s <url> | md5sum`
+contra el local): si coincide, el deploy está bien y el problema es cache del cliente. Recargar la
+página no prueba nada, y pedirle al usuario Ctrl+F5 no es el arreglo — los padres no lo van a hacer.
+
+---
+
+## 2026-08-17 — El preview del link de ubicación mostraba una foto grupal
+
+**Qué falló:** al mandar la ubicación por WhatsApp, la vista previa mostraba una foto grupal en
+vez de algo de FENIX.
+
+**Causa raíz:** el link (`maps.app.goo.gl/nZT5zGA7N8B76xmD6`) abría la ficha de **LA CASONA
+LAFUENTE** en Google Maps, no la de Fenix Kids Academy. La imagen del preview no la controla
+nuestro código: la pone Google desde la foto de portada de la ficha del lugar.
+
+**Cómo se resolvió:** Iván pasó el link de la ficha propia (`maps.app.goo.gl/Mpo3g9wqBvALMvNEA`) y
+se reemplazó en los 3 lugares del agente y en la web (commits `b02d547` y `44a0721`). Antes de
+publicarlo se verificó por **geocodificación inversa** (Nominatim) que el pin cayera en Maestras
+Paraguayas, Itá Enramada — un pin equivocado manda a un padre a 7 km el sábado a la mañana.
+
+**Regla para la próxima:** un link de mapa que se le manda a un cliente se verifica por
+coordenadas contra la dirección oficial, no por "abre Google Maps". Y si se quiere controlar la
+imagen del preview, hay que cambiar la foto de portada de la ficha en Google Business — desde el
+código solo se puede evitar el preview mandando la imagen aparte.
+
+---
+
 ## 2026-08-14 — El router decide UNA vez: inscripta congelada en modo lead (caso Nayila)
 
 **Qué falló:** Nayila Duarte (595992311715), alumna regular con hijo ACTIVO/AL DÍA, preguntó

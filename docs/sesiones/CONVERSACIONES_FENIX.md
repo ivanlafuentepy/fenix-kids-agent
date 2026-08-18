@@ -870,3 +870,16 @@ ningún prompt prohibía inventar a qué corresponde un pago. Auditoría en prod
 congelados; los 16 promovidos, re-corrida en 0. Commits `3849372`→`43f46a1`.
 
 Detalle completo → `.claude/handoffs/handoff_20260814_2057.md`
+
+## 2026-08-17 — El campus pasa a 2 días
+
+El viernes salió de la oferta (tres días eran demasiado para las familias): el Desafío queda
+sábado (turno a elegir, 11:00 o 15:30) + domingo 15:30 con merienda en familia incluida para el
+niño y los padres. Precios 300.000 anticipada (hasta el viernes 23:59) / 450.000 normal; la venta
+cierra el sábado 11:00 y el entrenamiento regular queda solo sábados. `agent/desafio.py` y
+`assets/campus.js` se re-anclaron al SÁBADO, la elección de turno post-pago pasó a un solo paso
+y son 2 reservas por niño. Afiche nuevo de Iván publicado en las 3 rutas y link de ubicación
+apuntando a la ficha propia de Fenix Kids Academy (antes abría la de La Casona, por eso el
+preview mostraba una foto grupal). Commits `ea39a7c`→`b02d547` (agente) y `3adefca`→`5aeadee` (web).
+
+Detalle completo → `.claude/handoffs/handoff_20260817_2224.md`
