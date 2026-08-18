@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-08-18 — El menú de botones se comía las preguntas de los leads
+
+**Qué falló:** un lead (595982862766) tocó "Info y precios", recibió todo el paquete y preguntó
+"Hacen todos los meses.?". El sistema le respondió **"Tocá una de las opciones 👇"** — y se lo
+habría respondido todas las veces que preguntara. Su pregunta nunca llegó al cerebro.
+
+**Causa raíz:** el flujo de botones de `lead_menu.py` no tenía salida hacia el LLM.
+`_handle_info_completa` entregaba la información pero **no cambiaba `menu_estado`**, así que el
+lead seguía en `"menu"` y todo texto libre caía en `_enviar_recordatorio_botones`, que tampoco
+cambiaba el estado. Las únicas puertas de salida eran los botones *Reservar lugar* y *Agendar
+llamada*. No fue un bug de código: fue un flujo diseñado sin contemplar que un padre pregunte
+algo que ningún botón contesta.
+
+**Cómo se resolvió:** el mismo flag con un valor más, `"menu_libre"` (commit `e3e3500`). Los
+botones informativos lo activan; el primer texto libre en `"menu"` recibe UN recordatorio y pasa
+a `menu_libre`; en `menu_libre` `procesar_menu_lead` devuelve `None` y `main.py` responde **ese
+mismo mensaje** con interceptores + brain. Sin regex nuevos.
+
+**Regla para la próxima:** *todo flujo cerrado por botones necesita una puerta de salida al
+cerebro.* Antes de dar por terminado un menú, preguntarse "¿qué pasa si el padre escribe algo que
+ningún botón contesta?" — si la respuesta es "se le insiste con los botones", el flujo pierde
+leads en silencio, y con un lead el silencio se ve igual que un "no me interesa". Aplica a los
+menús de `lead_menu.py`, `alumno_menu.py` y a cualquier flujo con estado que espere un click.
+
+---
+
 ## 2026-08-17 — "No cambiaste el afiche" y sí estaba cambiado: cache de un asset sin versionar
 
 **Qué falló:** publicamos el afiche nuevo del campus de 2 días en la web, verificado en prod, y

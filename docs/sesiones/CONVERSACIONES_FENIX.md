@@ -883,3 +883,19 @@ apuntando a la ficha propia de Fenix Kids Academy (antes abría la de La Casona,
 preview mostraba una foto grupal). Commits `ea39a7c`→`b02d547` (agente) y `3adefca`→`5aeadee` (web).
 
 Detalle completo → `.claude/handoffs/handoff_20260817_2224.md`
+
+## 2026-08-18 — El menú era una jaula
+
+`/endpoint 595982862766` destapó que el menú de botones se comía las preguntas: el lead tocó
+*Info y precios*, leyó todo y preguntó "Hacen todos los meses.?" — le contestaron "Tocá una de
+las opciones 👇" y su pregunta murió ahí, sin tope ni salida. El flujo de botones no tenía puerta
+hacia el cerebro. Fix con el mismo flag `menu_estado` y un valor más (`menu_libre`): un solo
+recordatorio y después `procesar_menu_lead` devuelve `None` para que responda Aurora en ese mismo
+mensaje. 5 tests nuevos, validados reintroduciendo el bug. Commit `e3e3500`, deploy SUCCESS.
+
+Antes de eso, Mundo Fenix: se evaluó poner una TV en cada estación del circuito con la foto del
+niño. Software casi gratis (el evento `estacion` y el canal `/juego/eventos` ya existen), pero el
+costo real es fierro a la intemperie y caras de niños en un endpoint sin auth → primero el test
+con un celular viejo en la estación del gym.
+
+Detalle completo → `.claude/handoffs/handoff_20260818_1134.md`
