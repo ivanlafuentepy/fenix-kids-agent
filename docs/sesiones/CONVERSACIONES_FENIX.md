@@ -899,3 +899,14 @@ costo real es fierro a la intemperie y caras de niños en un endpoint sin auth �
 con un celular viejo en la estación del gym.
 
 Detalle completo → `.claude/handoffs/handoff_20260818_1134.md`
+
+## 2026-08-19 — Cierre de la web
+
+Ivan pidió cerrar fenixkidsacademy.com: solo el logo bien grande y nada más, sin
+WhatsApp/IG/YouTube/teléfono. Un commit en `fenixkidsacademy-web` (`e296570`): la home quedó
+logo-only sobre fondo crema (se fue también el JSON-LD con teléfono e Instagram), `/desafio`
+redirige a `/` (los links de anuncios viejos no dan 404). `/fotos/` y `/catalogo/` intactos
+(operativos, sin contactos); el bot no manda links de venta a la web → cero flujos rotos.
+Pendiente si el cierre es total: la ficha de Google Business sigue publicando teléfono y horarios.
+
+Detalle completo → `.claude/handoffs/handoff_20260819_1704.md`
