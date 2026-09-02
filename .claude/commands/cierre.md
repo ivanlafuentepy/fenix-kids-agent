@@ -6,6 +6,34 @@ NUNCA volver a contar la historia completa en más de un lugar.**
 
 Ejecuta estos pasos EN ORDEN, sin saltarte ninguno:
 
+## ⚠️ ANTES DE EMPEZAR — ASUMIR QUE HAY OTRA SESION CORRIENDO (obligatorio)
+
+Ivan trabaja con **varias sesiones de Claude en paralelo sobre el MISMO repo y la MISMA
+carpeta**. Un cierre descuidado pisa el trabajo de otra sesion o se lo atribuye. Antes de
+escribir nada:
+
+- `git fetch origin -q` y `git log --oneline <tu-primer-commit>..HEAD` → **los commits que no
+  reconozcas son de otra sesion**. NO los cuentes como tuyos en el handoff ni en el resumen;
+  mencionalos aparte ("commits de una sesion paralela") solo si tocan lo mismo que vos.
+- `git status` → **NO commitear NADA que no hayas tocado vos**. Lo que no reconozcas es de
+  otra sesion o preexistente: se deja intacto y se avisa al final. `git add` SIEMPRE archivo
+  por archivo, **NUNCA `git add -A` ni `git add .`**.
+- **Antes de sobreescribir `.claude/handoff.md`**: es un archivo compartido y puede tener el
+  handoff de otra sesion. Verificar que ya este archivado (`grep -l "<su titulo>"` en la
+  carpeta de handoffs) y recien ahi pisarlo; si no esta, archivarlo primero.
+- **Editar los archivos de estado/memoria de forma quirurgica**: leerlos JUSTO antes de
+  escribir (otra sesion pudo agregar algo hace un minuto), insertar o reemplazar bloques
+  puntuales con un script, y NUNCA reescribir el archivo entero desde una copia vieja.
+- **El numero de sesion (#NNN)**, si el repo lo usa, sale de leer el archivo en el momento:
+  otra sesion pudo cerrar antes y ya haberlo incrementado.
+- **Verificar el deploy por commit, no por status**: el health de produccion puede devolver el
+  commit de OTRA sesion que deployo despues. Confirmar que el tuyo entro con
+  `git merge-base --is-ancestor <tu-commit> <commit-desplegado>`.
+- `git fetch` OTRA VEZ justo antes del push. Si falla: `git pull --rebase && git push`.
+- **Cerrar el aviso final listando lo que NO tocaste**: archivos sin commitear ajenos y
+  commits de otras sesiones. Ivan necesita saber que quedo suelto y de quien es.
+
+
 0. **Pedir nombre de sesion (SIEMPRE con 3 opciones marcables):**
    - ANTES de hacer cualquier otra cosa, ofrecer el nombre con la herramienta **AskUserQuestion** — NUNCA preguntar abierto pidiendo que Iván escriba.
    - Generar **3 propuestas de nombre** basadas en lo que se hizo en la sesión (descriptivas, no genéricas). Iván solo marca una (o usa "Other" si ninguna le cierra).
