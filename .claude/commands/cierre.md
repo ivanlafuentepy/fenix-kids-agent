@@ -26,6 +26,10 @@ escribir nada:
   puntuales con un script, y NUNCA reescribir el archivo entero desde una copia vieja.
 - **El numero de sesion (#NNN)**, si el repo lo usa, sale de leer el archivo en el momento:
   otra sesion pudo cerrar antes y ya haberlo incrementado.
+- **Y VERIFICAR DESPUES DE ESCRIBIR, no solo antes**: leer achica la ventana pero no la
+  cierra —entre tu lectura y tu escritura la otra sesion puede haber insertado la suya—. Al
+  terminar, releer el archivo y comprobar que no quedaron numeros repetidos ni notas
+  duplicadas. Paso el 02/09/2026: dos sesiones escribieron la nota #205.
 - **Verificar el deploy por commit, no por status**: el health de produccion puede devolver el
   commit de OTRA sesion que deployo despues. Confirmar que el tuyo entro con
   `git merge-base --is-ancestor <tu-commit> <commit-desplegado>`.
