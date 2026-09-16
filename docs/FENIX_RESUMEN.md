@@ -1,3 +1,10 @@
+
+
+> ⚠️ **FENIX KIDS ACADEMY CERRO (agosto 2026) y el agente esta APAGADO desde el 16/09/2026.**
+> Este documento queda como referencia tecnica historica. El sistema sigue en **MAMBA BASKET ACADEMY**:
+> repo `mamba-basket-agent`, plan en su `docs/TRANSICION-FENIX-A-MAMBA.md`.
+> Un `git push` a main de este repo **revive el servicio en Railway**.
+
 up:: [[FENIX KIDS/FENIX KIDS|FENIX KIDS]]
 
 # FENIX KIDS ACADEMY — Documentación Completa del Sistema
@@ -489,6 +496,9 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 
 ## 10. Variables de Entorno Necesarias
 
+> Estado al 16/09/2026: **`AGENTE_PAUSADO=true`** en Railway. El servicio ademas
+> esta con el deployment detenido, asi que ninguna de estas variables esta en uso.
+
 | Variable | Estado | Descripción |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ✅ Configurada | API de Claude |
@@ -525,6 +535,10 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 ---
 
 ## 11. Pendientes para el Deploy
+
+> ⚠️ **Lista CONGELADA el 16/09/2026**: Fenix cerro y el agente esta apagado.
+> Lo que queda pendiente de verdad es la transicion a Mamba, y vive en
+> `docs/TRANSICION-FENIX-A-MAMBA.md` del repo `mamba-basket-agent`.
 
 | # | Tarea | Estado |
 |---|---|---|
@@ -875,6 +889,7 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 
 | Fecha | Cambio realizado |
 |---|---|
+| 2026-09-16 (Fenix cierra, arranca Mamba) | **Cierre del negocio, no una sesion de features. El agente de Fenix quedo APAGADO** (`AGENTE_PAUSADO=true` + deployment detenido en Railway; hicieron falta las dos capas porque los loops de recordatorios, facturas y keep-alive envian por fuera del webhook). Verificado: `HTTP 200` -> `502` en `/` y en las dos rutas del webhook; el Postgres quedo prendido. El sistema sigue en **MAMBA BASKET ACADEMY**: tabla `NIÑOS MAMBA` en Airtable, modulo Mamba en el control de acceso (`salsa-soul-acceso` `049494a`+`b475b24`, probado end-to-end) y repo `mamba-basket-agent` como fork. Este repo queda congelado con el tag `fenix-final`. Detalle: `.claude/handoffs/handoff_20260916_0108.md` |
 | 2026-08-19 (Cierre de la web) | **1 commit en `fenixkidsacademy-web` (`e296570`), deployado y verificado por contenido; el repo del agente no se tocó.** fenixkidsacademy.com quedó **cerrada**: la home es solo el logo bien grande sobre fondo crema, sin WhatsApp/IG/teléfono/precios ni JSON-LD con datos de contacto; `/desafio` redirige a `/` (la URL sigue viva por los anuncios viejos). `/fotos/` y `/catalogo/` quedaron intactos (operativos, sin contactos) y el bot no manda links de venta a la web → cero flujos rotos. Pendiente si el cierre es total: ficha de Google Business (sigue publicando teléfono y horarios). **Detalle en `.claude/handoffs/handoff_20260819_1704.md`.** |
 | 2026-08-18 (El menú era una jaula) | **1 commit (`e3e3500`), deploy SUCCESS.** `/endpoint 595982862766`: el lead tocó *Info y precios*, leyó todo y preguntó "Hacen todos los meses.?" — el sistema le contestó **"Tocá una de las opciones 👇"** y su pregunta murió ahí. **Causa raíz:** el flujo de botones no tenía salida al cerebro — `_handle_info_completa` no cambiaba `menu_estado`, así que el lead quedaba en `"menu"` y todo texto libre caía en el recordatorio, sin tope. Fix con el mismo flag y un valor más (`menu_libre`): los botones informativos lo activan, el primer texto libre recibe UN recordatorio, y de ahí en adelante `procesar_menu_lead` devuelve `None` para que `main.py` responda **ese mismo mensaje** con interceptores + brain. 5 tests nuevos, validados reintroduciendo el bug (3 fallan con el código viejo). **De paso, Mundo Fenix:** se descartó por ahora poner una TV en cada estación — el software es una página más (el evento `estacion` y `/juego/eventos` ya existen), pero el costo real son 4 TVs con enchufe y wifi a la intemperie, las caras de los niños no pueden salir por un endpoint sin auth, y la celebración vive en el tótem por diseño; primero el test con un celular viejo. **Detalle en `.claude/handoffs/handoff_20260818_1134.md`.** |
 | 2026-08-17 (El campus pasa a 2 días) | **6 commits en el agente (`ea39a7c`→`b02d547`) + 4 en la web (`3adefca`→`5aeadee`), todos SUCCESS y verificados.** El campus dejó el viernes: pasa a **sábado (11:00 o 15:30) + domingo 15:30** con merienda en familia incluida (niño y padres), **300.000 / 450.000**, anticipada hasta el viernes 23:59 y venta hasta el sábado 11:00; el regular queda solo sábados. Afiche nuevo y link de ubicación a la ficha propia de Fenix Kids Academy. **Detalle en `.claude/handoffs/handoff_20260817_2224.md`.** |
@@ -889,5 +904,4 @@ Datos bancarios: **ALIAS 1604338** | Banco Itaú | Ivan Lafuente
 | 2026-08-10 (Nace el Desafío FENIX — el campus de 3 días reemplaza a la clase de prueba) | **22 commits (16 en el agente `5caaf03`→`243087e` + 6 en la web), todos deployados SUCCESS.** Murió la clase de prueba de un sábado: la puerta de entrada es el **DESAFÍO FENIX**, campus de viernes a domingo (350.000 hasta el jueves / 550.000 desde el viernes, +150.000 por hermano). `agent/desafio.py` nuevo calcula campus, precio y cupos; los textos pasaron de constantes a funciones porque el precio depende del día. Post-pago se eligen los turnos del viernes y del sábado con botones y se crean **3 reservas**; el pago va con `CONCEPTO=DESAFIO`. En Airtable: opciones `17:00/19:30/12:00` y los 20 slots de los 4 campus. Web rehecha (home + landing `/desafio` + `campus.js` compartido) y el pago con tarjeta pasó a pedirse por WhatsApp — el cobro desde la web estaba **roto desde el 12/07** y además no inscribía a nadie. De arranque, dos bugs del pago de Iván (el PAGO sin nombre por el link `ALUMNO`, y el formulario del admin creando duplicados). **Detalle en `.claude/handoffs/handoff_20260810_0141.md`.** |
 | 2026-08-09 (Adiós TUTORES FENIX — auditoría, migración completa y los caminos de silencio) | **37 commits + 1 en facturador-set, todos deployados SUCCESS.** Auditoría con 5 agentes (~50 hallazgos, `docs/estado/AUDITORIA-2026-08-09.md`) destapó que **el bot no registraba pagos desde el 25/07** (los links `PAGA`/`TUTOR FENIX` apuntaban a TUTORES legacy y recibían ids de ALUMNOS → 422 del POST entero) y que **el texto de Aurora creaba/cancelaba reservas** por regex. Se ejecutó la **Etapa 2 completa**: `CODIGO FENIX`/`FACTURA FENIX` en ALUMNOS, `FACTURAS.TUTOR (ALUMNOS)` + lookup, backfill, juego y facturas migrados, robot facturador actualizado, tabla renombrada **TUTORES FENIX LEGACY** (canario ~30 días). Dos fixes propios rompieron prod (el agente quedó **mudo** 8 min por un `import` dentro de una rama) → de ahí salió la **auditoría de caminos de silencio**: los 14 arreglados (el `except` del webhook ahora responde y alerta al admin, envío con reintento, shutdown que espera los mensajes en vuelo) + **`tests/test_webhook_no_muda.py`**, validado reintroduciendo el bug. **Detalle en `.claude/handoffs/handoff_20260809_2206.md`.** |
 | 2026-08-08 (madrugada — Aurora saluda por el número: control de identidad + 2do teléfono) | El "Hola Raul" a Ilse (17/07) era un fallback que rellenaba el nombre con **el primer tutor de la lista** cuando el teléfono no identificaba a nadie — eliminado. Mirándolo apareció el problema vivo: tras la migración a ALUMNOS el WhatsApp de Ilse no resolvía (su fila tenía un **teléfono fijo**) y Aurora, sin contexto, **le inventó una reserva inexistente**. Control sobre los 24 números en modo Aurora contra el router real: **7 no resolvían**, 2 eran familias activas (Ilse y Gaudi). Campo fórmula nuevo **`TELEFONO2 LIMPIO`** en ALUMNOS + `buscar_tutor_por_telefono` busca en los dos números (Gaudi comparte fila con Salsa/Impulso: no se le pisa el principal) + helper único `tutor_tiene_telefono()` para los 4 call sites que comparaban a mano. Commits `3c0a3d7`, `13ef71e`, `bd7d88a`. **Detalle en `.claude/handoffs/handoff_20260808_0040.md`.** |
-| 2026-08-07 (noche — estación NFC `basket` armada + el RC522 mudo que se destraba desenchufando) | **Segunda estación del circuito NFC terminada end-to-end.** Iván soldó el header del RC522, se cableó lector + buzzer HW-508 y se flasheó `estacion.ino` con `ESTACION_ID=basket` (mismo binario que quincho). Verificado con hardware real: `VersionReg 0x92`, WiFi OK, `UID 7B45DE00`/`3A90EF55` → `POST /juego/estacion → 200`. Se agregó `basket` a `JUEGO_ESTACIONES` en Railway (antes solo `quincho`) + redeploy → ⚠️ **una vuelta ahora exige tocar quincho Y basket**. Tres trampas de hardware: (1) el pin del **medio** del HW-508 es **GND**, no VCC — al revés da zumbido continuo; (2) boot loop `invalid header: 0xffffffff` por cableado → aislar alimentación primero, señales después; (3) **el RC522 se traba mudo** (`VersionReg` OK + cero detecciones) y **solo se destraba cortándole la alimentación** — el botón `EN` no se la corta (costó ~2h, probablemente el mismo modo de falla sin explicar del 25/07). Sin cambios en los sketches. Detalle completo → `.claude/handoffs/handoff_20260807_2318.md` |
 > Las filas anteriores a esta lista viven en [`FENIX_RESUMEN_archivo.md`](FENIX_RESUMEN_archivo.md).

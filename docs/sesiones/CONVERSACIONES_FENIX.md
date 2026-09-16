@@ -910,3 +910,17 @@ redirige a `/` (los links de anuncios viejos no dan 404). `/fotos/` y `/catalogo
 Pendiente si el cierre es total: la ficha de Google Business sigue publicando teléfono y horarios.
 
 Detalle completo → `.claude/handoffs/handoff_20260819_1704.md`
+
+## 2026-09-16 — Fenix cierra, arranca Mamba
+
+Ivan dio el proyecto por terminado: los entrenamientos cerraron en agosto y se está mudando de
+La Casona. Vuelve al centro con **Mamba Basket Academy**, en el local de Salsa Soul. Pidió
+apagar el agente ("si alguien escribe a ese número, nadie contesta") y aprovechar todo el
+sistema de Fenix para el negocio nuevo. Se apagó Railway en dos capas (el kill switch solo
+frena el webhook; los loops de recordatorios y facturas envían por fuera), se creó la tabla
+`NIÑOS MAMBA` en Airtable, se convirtió el módulo Fenix del control de acceso en módulo Mamba
+(`salsa-soul-acceso` `049494a`+`b475b24`) y se forkeó el repo a `mamba-basket-agent`. Este repo
+queda con el tag `fenix-final`. El producto de Mamba quedó en stand-by, así que la marca del
+agente no se migró todavía.
+
+Detalle completo → `.claude/handoffs/handoff_20260916_0108.md`

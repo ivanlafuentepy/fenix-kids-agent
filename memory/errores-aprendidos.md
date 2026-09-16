@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-09-16 — Agregar una opción a un select de Airtable NO se puede por Metadata API
+
+**Qué falló:** para que el control de acceso pudiera cobrarle a Mamba hacía falta la opción
+`MAMBA BASKET ACADEMY` en `ALUMNOS.NEGOCIO` y `PAGOS.NEGOCIO`. El `PATCH` del campo devolvía
+siempre `422 "Changing a field's type or number precision is not currently supported"` — un
+mensaje que no tiene NADA que ver con lo que pasa y manda a buscar un cambio de tipo que nadie
+hizo. Se probaron 6 variantes (con y sin `type`, con ids de choice, con names sueltos, con las
+`options` crudas tal cual vienen) en un multipleSelects y en un singleSelect: fallan todas.
+
+**Causa raíz:** el endpoint de schema de Airtable no soporta EDITAR las choices de un select.
+Solo permite definirlas al CREAR el campo.
+
+**Cómo se resolvió:** escribir un registro con `typecast: true`. Eso crea la opción y queda en
+el SCHEMA, no solo en la fila.
+
+**Regla para la próxima:** ante un 422 de "changing a field's type" al tocar un select, no
+perseguir el mensaje — ir directo al typecast. Elegir un registro al que la opción le
+corresponda de verdad y **sumarla** a las que ya tiene (nunca pisar, la tabla es compartida).
+Si no hay ninguno, crear uno inofensivo y borrarlo en el acto **verificando el DELETE**.
+
+---
+
+## 2026-09-16 — El kill switch del agente no frena lo que sale
+
+**Qué falló:** al apagar Fenix, poner `AGENTE_PAUSADO=true` parecía suficiente. No lo era: ese
+flag corta el webhook en `main.py:1800`, o sea SOLO lo que ENTRA. Tres loops del `lifespan`
+mandan mensajes por fuera — `_recordatorios_loop` (cada 60s), `_envio_facturas_fenix_loop` (PDF
+al tutor, cada 90s) y `_keepalive_ventana_admin_loop` (botón diario al admin). Las familias de
+un negocio cerrado habrían seguido recibiendo cosas.
+
+**Causa raíz:** el kill switch se diseñó para pausar respuestas, no para apagar el servicio.
+
+**Cómo se resolvió:** además de la variable, `deploymentStop` del deployment activo y
+`deploymentCancel` del build que el propio cambio de variable había disparado. Verificado por
+CONTENIDO: `HTTP 200` → `502` en `/`, `POST /webhook` y `GET /webhook`, sostenido 12 minutos.
+
+**Regla para la próxima:** "apagar un agente" nunca es solo el flag del webhook. Listar los
+loops del `lifespan` que envían solos y confirmar el apagado con una petición real, no con el
+estado que muestra el panel. Ojo: un `git push` a main revive el servicio.
+
+---
+
 ## 2026-08-18 — El menú de botones se comía las preguntas de los leads
 
 **Qué falló:** un lead (595982862766) tocó "Info y precios", recibió todo el paquete y preguntó
